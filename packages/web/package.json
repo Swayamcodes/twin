@@ -1,0 +1,5 @@
+{
+  "name": "@twin-cli/web",
+  "private": true,
+  "type": "module"
+}
