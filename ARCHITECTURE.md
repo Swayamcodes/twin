@@ -86,5 +86,6 @@ changing shape.
 
 Development and all testing happen inside WSL2 (Ubuntu, ext4). ext4 has no
 reflink, so the plain-copy fallback is the default and only path exercised
-locally; the reflink/copy-on-write path is implemented but only verified in
-CI on a macOS runner. Native Windows is out of scope for v1.
+locally; the reflink/copy-on-write path is planned for implementation and
+future verification in CI on a macOS runner. Native Windows is out of scope
+for v1.

@@ -81,10 +81,10 @@ handles those well through isolation. The real, evidenced differentiator is
 narrower: ignored-file and non-git-folder coverage, plus reporting that
 doesn't claim success on damage it never saw. Effort is weighted toward
 correctness of the receipt and the ignored-file clone, not toward "beating"
-existing recovery counts. If in the course of building this, this holds up
-at day 4/5 mark, ill continue on this path; if a later tool release closes
-this gap first, the priority shifts to the receipt-accuracy layer and to
-contributing findings upstream rather than duplicating solved work.
+existing recovery counts. We will continue while the evidence supports
+this direction. If a later tool release closes this gap first, the priority
+shifts to the receipt-accuracy layer and to contributing findings upstream
+rather than duplicating solved work.
 
 ## Scoring: five independent fields per scenario
 
