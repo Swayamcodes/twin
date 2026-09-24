@@ -76,6 +76,10 @@ changing shape.
   need explicit handling or an explicit "not supported" note.
 - **Absolute paths baked into files** (e.g. Python virtualenvs) can break
   once the clone lives at a different path.
+- **Concurrent mutation of Twin-owned temporary roots** is unsupported.
+  Path and identity checks validate filesystem state at specific moments;
+  Twin does not pin filesystem objects against concurrent same-user
+  replacement. A clone is still not an OS sandbox.
 - **An agent that resolves the real project's absolute path** (rather than
   operating relative to its working directory) can write outside the clone
   entirely, bypassing isolation. This is a fundamental limit of process-level
