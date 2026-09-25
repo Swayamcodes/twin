@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist/test-harness",
+    "declaration": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["../../vitest.config.ts", "test/**/*.ts", "test/**/*.cts"]
+}

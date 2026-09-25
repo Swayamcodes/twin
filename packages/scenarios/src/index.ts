@@ -1,47 +1,30 @@
-import type { Writable } from "node:stream";
+import { write } from "node:fs";
 import { errorMessage } from "./fixture.js";
 import { runScenario } from "./runner.js";
 import type { ScenarioRunResult } from "./types.js";
 
-function writeOutput(stream: Writable, text: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const detach = (): void => {
-      stream.off("error", onError);
-      stream.off("close", onClose);
-    };
-    const onError = (error: Error): void => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-      // A failed write callback can precede the error event. Keep its handler
-      // until close so that the later error cannot become unhandled.
-    };
-    const onClose = (): void => {
-      onError(new Error("Output stream closed before delivery completed"));
-      detach();
-    };
-    stream.on("error", onError);
-    stream.once("close", onClose);
-    try {
-      stream.write(text, (error: Error | null | undefined) => {
-        if (error) {
-          onError(error);
-        } else if (!settled) {
-          settled = true;
-          detach();
-          resolve();
-        }
+async function writeOutput(fd: 1 | 2, text: string): Promise<void> {
+  const bytes = Buffer.from(text, "utf8");
+  let offset = 0;
+  while (offset < bytes.length) {
+    const remaining = bytes.length - offset;
+    const bytesWritten = await new Promise<number>((resolve, reject) => {
+      write(fd, bytes, offset, remaining, null, (error, written) => {
+        if (error) reject(error);
+        else resolve(written);
       });
-    } catch (error: unknown) {
-      onError(error instanceof Error ? error : new Error(errorMessage(error)));
+    });
+    if (!Number.isInteger(bytesWritten) || bytesWritten < 0 || bytesWritten > remaining) {
+      throw new Error(`Output write reported invalid byte count: ${bytesWritten}`);
     }
-  });
+    if (bytesWritten === 0) throw new Error(`Output write made no progress on fd ${fd}`);
+    offset += bytesWritten;
+  }
 }
 
 async function reportError(message: string): Promise<void> {
   try {
-    await writeOutput(process.stderr, message + "\n");
+    await writeOutput(2, message + "\n");
   } catch {
     // Delivery cannot be guaranteed if stderr is unavailable too.
   }
@@ -63,7 +46,7 @@ export async function main(args: readonly string[]): Promise<number> {
   }
   // Lifecycle evidence and cleanup are complete before output delivery starts.
   try {
-    await writeOutput(process.stdout, JSON.stringify(result, null, 2) + "\n");
+    await writeOutput(1, JSON.stringify(result, null, 2) + "\n");
   } catch (error: unknown) {
     await reportError(`JSON delivery failed: ${errorMessage(error)}; scenarioRoot=${result.scenarioRoot}; cleanup=${result.cleanup.status}`);
     return 1;
