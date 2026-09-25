@@ -7,7 +7,7 @@
     "node": ">=24.2.0"
   },
   "scripts": {
-    "test:scenarios": "tsc -p packages/scenarios/tsconfig.json && tsc -p packages/scenarios/tsconfig.test.json && vitest run --config vitest.config.ts packages/scenarios/test/definitions.test.ts packages/scenarios/test/entrypoint.test.ts packages/scenarios/test/guards.test.ts packages/scenarios/test/cleanup-failure.test.ts packages/scenarios/test/spawn-policy.test.ts && vitest run --config vitest.config.ts packages/scenarios/test/runner.test.ts"
+    "test:scenarios": "tsc -p packages/scenarios/tsconfig.json && tsc -p packages/scenarios/tsconfig.test.json && vitest run --config vitest.config.ts packages/scenarios/test/definitions.test.ts packages/scenarios/test/entrypoint.test.ts packages/scenarios/test/guards.test.ts packages/scenarios/test/cleanup-failure.test.ts packages/scenarios/test/spawn-policy.test.ts packages/scenarios/test/oracle.test.ts packages/scenarios/test/contract.test.ts && vitest run --config vitest.config.ts packages/scenarios/test/runner.test.ts"
   },
   "devDependencies": {
     "@types/node": "~26.6.2",

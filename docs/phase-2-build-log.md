@@ -95,7 +95,78 @@ Process crashes can retain roots before they can be reported. The current
 preload covers `child_process.spawn` only, and concurrent same-user replacement
 is outside the test model. The trusted automated Git layout requires canonical
 `/usr/bin/git` on Linux or macOS and safely refuses unsupported layouts.
-Scoring, recovery, adapters, watch lists, process monitoring, a general
+Automatic recovery-tool scoring, recovery, adapters, watch lists, process monitoring, a general
 manifest, and the clone/cage core are deferred. The tests do not claim to prove
 race-proof containment or arbitrary future process-launch behavior, and they
 do not make Twin an OS sandbox.
+
+## Step 2.4: versioned oracle and scoring contract
+
+Step 2.4 added a pure S12/S6 oracle and a separate dimension-specific
+`ToolScore` schema. The oracle validates the existing raw `ScenarioRunResult`
+shape at runtime, compares fixture observations against independently pinned
+version-1 bytes, checks the intended command and operational errors, and
+derives validity and score eligibility. Cleanup disposition remains separate.
+Its `sourceRunId` hashes canonical raw evidence, including run-specific paths
+and timestamps. The direct runner is still not Twin and still does not score
+recovery tools. A successful S6 deletion is a valid accident, not a safety
+pass.
+
+The audit corrections make missing setup records unknown/indeterminate, while
+recorded wrong or failed setup commands remain invalid. The strict version-1
+evaluation context is scenario-discriminated and must match the raw run. S12
+supplies nonblank expected executable and script-path strings, preserving
+their exact values. S6 supplies no S12 identity. Context comes from the
+interpreter of the captured run, not the evaluator's own process or
+installation; it is not independent attestation of the binary executed. It is
+excluded from `sourceRunId`, which identifies canonical raw evidence only.
+Canonical string ordering uses JavaScript code units, not locale collation.
+If cleanup names a different root, cleanup disposition is unknown without
+changing semantic checks or validity. The oracle still sees only seven named
+fixture paths. Semantic validity requires a syntactically absolute POSIX
+scenario root and its exact workspace child under the supported POSIX, WSL,
+and macOS model; this does not attest to filesystem existence, safety, or
+provenance. Setup references identify exact command vectors regardless of
+array position. Ambiguous duplicates do not resolve, and a `scenario-run`
+reference names the complete enclosing raw result when no narrower reference
+is truthful.
+For these corrections, production no-emit typechecking, production compilation,
+and test TypeScript compilation passed. The permitted prerequisite Vitest run
+passed **7 files and 84 tests**. The runner tests and scenario actions were not
+run for this correction pass.
+Final correction verification passed production no-emit typechecking,
+production compilation, and test TypeScript compilation. The same seven
+permitted prerequisite files passed **101 tests**. No scenario runner test,
+S12 action, S6 action, or complete package test script ran for these final
+corrections.
+
+The score contract records factual outcomes with reasons, typed references,
+and evaluation methods. Structural validation enforces the version, outcome
+vocabulary, required evidence, applicable rubric rules for `not-applicable`,
+and manual-review references. It does not prove that future tool evidence
+exists or supports a claim. A test-private synthetic registry exercises those
+future cross-evidence rules without publishing an adapter format. Private raw
+tool artifacts, normalized adapter evidence, adapters, automatic scoring,
+redaction, renderers, and core integration remain deferred.
+
+Verification in this implementation turn compiled the scenarios production
+and test TypeScript projects. Static inspection found no runner, fixture,
+child-process, or test-harness execution imports in the new tests. Only the
+seven permitted prerequisite Vitest files ran: **7 files and 71 tests passed**.
+`runner.test.ts`, S12, S6, and the complete `test:scenarios` script were not
+run. The previously recorded 38-test result remains the Step 2.3 checkpoint,
+not a claim about this turn's complete suite.
+
+## Final Step 2.4 verification run
+
+The production no-emit TypeScript check passed. `pnpm run test:scenarios`
+completed successfully: the prerequisite process passed **7 files and 101
+tests**, and the separately gated runner process passed **1 file and 3 tests**,
+for **8 files and 104 tests total**. The runner cases verified extra-argument
+rejection before allocation, S12, and S6.
+
+`git diff --cached --check` passed, and `pnpm-lock.yaml` remained unchanged.
+The post-run `/tmp` search printed no `twin-scenario-*` or `twin-test-*` roots.
+Git status contained only the staged 11-file Step 2.4 slice. This verification
+does not extend the oracle beyond its seven observed paths or establish
+executable attestation, adapters, or automated tool scoring.

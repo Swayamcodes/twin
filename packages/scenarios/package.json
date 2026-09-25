@@ -3,6 +3,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./contract": { "types": "./dist/contract/index.d.ts", "default": "./dist/contract/index.js" }
+  },
   "dependencies": {
     "@twin-cli/core": "workspace:*",
     "zod": "4.3.6"

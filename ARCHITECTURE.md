@@ -37,36 +37,59 @@ testable in isolation.
   states (before/after) can't detect "you also touched this file
   meanwhile" — three can.
 
-## Receipt / results JSON (sketch)
+## Scenario oracle and tool score
 
-```json
-{
-  "schemaVersion": 1,
-  "tool": "twin",
-  "scenarioId": "S6",
-  "run": {
-    "startedAt": "...",
-    "command": ["bash", "bad-clean.sh"]
-  },
-  "files": [
-    { "path": "scratch.txt", "category": "untracked", "change": "deleted" }
-  ],
-  "watchList": [
-    { "path": "$HOME/.fakerc", "change": "modified", "recovered": false }
-  ],
-  "score": {
-    "recovered": true,
-    "reported": true,
-    "blockedBeforeExecution": false,
-    "workspaceUsable": true,
-    "boundaryAccuratelyDescribed": true
-  }
-}
-```
+`ScenarioRunResult` remains raw S12/S6 command, filesystem, issue, and cleanup
+evidence. The direct runner is not Twin or a recovery tool. The versioned
+scenario oracle checks whether the scripted accident happened as specified in
+the disposable fixture. A valid S6 oracle result means the intended deletion
+occurred; it is not a safety pass. Oracle validity, later score eligibility,
+and cleanup disposition are separate fields. The oracle observes seven named
+fixture paths, not a complete workspace manifest.
+Missing setup command evidence yields an unknown precondition and an
+indeterminate oracle result; a recorded wrong command or operational failure
+yields an invalid result. Cleanup-root inconsistencies affect only cleanup
+interpretation, where the scenario root's disposition is unknown.
+Semantic validity also requires a non-empty POSIX absolute scenario root and
+the exact `workspace` child. This is a syntax check for supported POSIX, WSL,
+and macOS evidence, not proof that the root existed, was safe, or came from
+the runner. Setup evidence references resolve by exact command identity,
+regardless of array position; duplicate identities are ambiguous. A
+`scenario-run` reference names the complete enclosing raw result when a
+narrower reference cannot truthfully identify evidence.
 
-`schemaVersion` exists because this is a public contract other people's
-scripts may parse — a breaking format change bumps it rather than silently
-changing shape.
+The separate versioned `ToolScore` contract has five factual dimensions:
+
+| Dimension | Outcomes |
+| --- | --- |
+| `recoveredOrPreserved` | `preserved`, `recovered`, `not-recovered`, `unknown`, `not-applicable` |
+| `reported` | `reported`, `not-reported`, `unknown`, `not-applicable` |
+| `blockedBeforeExecution` | `blocked`, `not-blocked`, `unknown`, `not-applicable` |
+| `workspaceUsable` | `usable`, `unusable`, `unknown`, `not-applicable` |
+| `boundaryAccuratelyDescribed` | `accurate`, `inaccurate`, `unknown`, `not-applicable` |
+
+Every dimension has a reason, typed evidence references, and an evaluation
+method. There is no composite score, total, percentage, ranking, or color.
+Structural `ToolScore` validation cannot establish that adapter evidence exists
+or proves a claim. Adapters, automatic tool scoring, private raw tool artifacts,
+redaction, and rendering are deferred.
+
+Consumers import the pure oracle and versioned schemas from
+`@twin-cli/scenarios/contract`, which does not import the CLI entry point.
+`evaluateScenarioOracle(raw, context)` requires a strict versioned context
+whose scenario ID matches the raw run. S12 context supplies nonblank expected
+executable and script-path strings, preserving their exact values; this is not
+independent proof of which binary executed. S6 context requires no S12 action
+identity and retains its fixed `git clean -fdx` identity. The evaluator does
+not derive S12 identity from its own process or installation path.
+`schemaVersion: 1` identifies the public shape; `oracleVersion: 1` and
+`rubricVersion: 1` identify judgment rules. The oracle's `sourceRunId` is
+`sha256:` followed by the digest of canonical UTF-8 JSON for one complete raw
+run. It excludes evaluation context and includes run-specific timestamps and paths; different executions are
+not expected to share an ID. Object keys and named observations are sorted,
+identical issues are grouped by phase and message digest, and semantically
+ordered command arrays retain their order. String sorting uses JavaScript
+code-unit order, independent of locale. Undefined values are rejected.
 
 ## Documented limits (known, from Step 1.3 findings and reasoning)
 
