@@ -17,3 +17,6 @@ export type {
   ToolScore, WorkspaceUsable,
 } from "./score-schema.js";
 export { evaluateScenarioOracle } from "../oracle.js";
+
+export * from "./normalized-evidence-schema.js";
+export * from "./normalized-evidence-validation.js";

@@ -170,3 +170,142 @@ The post-run `/tmp` search printed no `twin-scenario-*` or `twin-test-*` roots.
 Git status contained only the staged 11-file Step 2.4 slice. This verification
 does not extend the oracle beyond its seven observed paths or establish
 executable attestation, adapters, or automated tool scoring.
+
+## Step 2.5a: normalized tool-evidence contract
+
+Added strict version-1 normalized schemas and inferred types through the existing
+side-effect-free `@twin-cli/scenarios/contract` export. The normalized envelope
+records a tool attempt independently of accident-oracle validity. Reference
+accident linkage may be declared or unknown with a reason; same-execution linkage
+is additional evidence only. No raw scenario result, evaluation context, oracle
+verdict, or tool-attempt result is required by normalized validation. A synthetic
+blocked S6 attempt validates without a reference accident. Existing oracle and
+ToolScore schemas and semantics were not modified.
+
+The five fact variants cover original-state points, reported events, execution,
+workspace inputs, and boundary observations. Capabilities remain outside the fact
+union with capability identity only. Point observations do not establish never-lost
+preservation or infer recovery from a final matching state. Provenance, reasoned
+unknowns, channel applicability, capture completeness, interpretation completeness,
+and evidence availability are explicit. Positive report mentions can survive
+partial capture; unreported boundary assertions require complete applicable capture
+and interpretation. No ToolScore outcomes are computed.
+
+Public private-segment metadata is a flat artifact/segment registry without raw
+output, excerpts, commands, paths, storage locations, or content digests. Resolving
+metadata does not authenticate or expose private bytes. Private persistence,
+redaction implementation, accident-reference resolution, attempt validity, support
+validation, scoring, and all real adapters remain deferred.
+
+The pure validator checks internal identities, uniqueness, references, provenance,
+channel/completeness consistency, availability, and known chronology. It preserves
+unknown evidence and returns sorted, deduplicated diagnostic codes and schema
+paths without rejected values, unknown property names, or exception messages.
+
+Verification in this turn:
+
+- Inspected both new test files before execution. They import only Vitest and the
+  public contract and contain no scenario, child-process, filesystem, adapter,
+  runner, or harness calls. All evidence is frozen synthetic data.
+- Production no-emit TypeScript checking passed.
+- Production TypeScript compilation passed.
+- Test TypeScript compilation passed.
+- The explicitly selected two-file Vitest run passed **2 files and 73 tests**.
+  Tests include blocked S6 with unknown accident linkage, reference integrity,
+  strict shapes, point-observation limits, capture/interpretation consistency,
+  chronology, provenance, deterministic immutable validation, and secret-safe
+  diagnostics. No test-private scorer was added.
+
+The package script adds only the two synthetic files to its prerequisite process;
+runner tests retain their separate process after the existing barrier. The complete
+prerequisite suite, package script, runner tests, scenarios, tool adapters, and
+compiled scenario CLI were not run. No dependencies were installed and no commit
+or push was performed.
+
+Final repository checks: `git diff --check` and the lockfile-only diff check
+passed. Git status listed exactly the eight approved files (four modified and
+four new), with no staged changes. Dependencies and `pnpm-lock.yaml` were unchanged.
+
+## Step 2.5a audit corrections
+
+Checkpoint clarification: the preceding statement "no staged changes" describes
+the original implementation turn, before the user staged its eight-file slice.
+That staged slice was preserved during this correction turn. These corrections
+were applied as unstaged working-tree changes; no staging or unstaging occurred.
+
+Tool-output interpretation provenance now checks every referenced segment across
+all five fact kinds against matching, inventory-owned report-capture metadata.
+Capture and interpretation must each be partial or complete; unknown/unavailable
+capture and unknown/not-performed interpretation cannot support an interpreted
+fact. Complete interpretation still requires complete capture. Positive reporting
+boundary evidence must name a capture used by its provenance. The stronger global
+completeness requirement for unreported boundaries remains unchanged.
+
+Execution chronology includes the direct attempt-to-completion comparison even
+when start position is unknown. Workspace pre-action observations are compared
+with every applicable known attempt, start, block, and completion boundary.
+Equal sequence values are a shared batch, not reversed order or proof of strict
+precedence. Unknown intermediate evidence cannot conceal contradictory known
+endpoints, while internally coherent incomplete ordering remains representable.
+
+Public token regexes now use absolute end-of-input assertions, including shared
+source-run and SHA-256 schemas. Timestamp validation requires exact UTC millisecond
+syntax, a finite epoch, and calendar round-tripping. Public version identifiers
+exclude both forward and backward slashes; unsafe version output must become a
+reasoned unknown. The exported diagnostic issue schema and the validator share
+one closed property-key vocabulary and nonnegative safe numeric indexes.
+
+Public normalized evidence may contain an original-state file-content SHA-256
+when the producer determines disclosure is appropriate. Producers must use a
+reasoned unknown hash such as redacted or private-only for secret-bearing content
+where a public digest creates disclosure or guessing risk. Version 1 publishes
+no raw artifact or raw segment integrity digests. Schema validation cannot prove
+whether an opaque ID or supplied hash derives from secret material, or prevent a
+malicious producer from encoding secrets in permitted tokens. Adapter privacy
+policy remains deferred.
+
+Focused verification performed during this correction turn:
+
+- Inspected both normalized test files before execution; their imports and test
+  bodies cannot invoke scenarios, child commands, Git, AgentTX, Twin, filesystem
+  mutation, or destructive helpers. Inputs remain frozen synthetic evidence.
+- Production no-emit TypeScript checking and production compilation passed.
+- Test TypeScript compilation passed, including after the final test correction.
+- The initial focused run passed 129 tests and exposed one assertion assuming
+  only one Zod issue for an unsafe integer. The test was corrected to require
+  every issue to identify the same exact intended path, allowing duplicate checks
+  at that location. No production rule was weakened.
+- The final focused run passed **2 files and 130 tests**. Added coverage includes
+  all interpreted fact kinds, unavailable/uninterpreted captures, truthful capture
+  links, transitive chronology, equal batches, absolute token boundaries and
+  maximum lengths, five trailing line-terminator forms, real dates, safe version
+  tokens, and closed diagnostic paths. The three confounded negative tests now
+  isolate their intended conditions and assert exact issue locations.
+- Unstaged and staged diff whitespace checks passed. The lockfile-only diff check
+  passed. The original eight staged files remain staged; corrections are unstaged
+  in the seven allowed files. Package configuration and dependencies were not
+  changed in this turn.
+
+No full prerequisite suite, runner test, package test script, scenario, compiled
+scenario CLI, real adapter, AgentTX, or Twin execution occurred. No destructive
+command, commit, or push occurred.
+
+## Final Step 2.5a verification run
+
+The following records the supplied final full-run verification, separately from
+the earlier focused two-file implementation and correction runs preserved above.
+
+- Production no-emit TypeScript check passed.
+- `pnpm run test:scenarios` completed successfully.
+- The prerequisite process passed **9 files and 232 tests**.
+- The separately gated runner process passed **1 file and 3 tests**.
+- Total: **10 files and 235 tests**.
+- Runner cases verified extra-argument rejection before allocation, S12, and S6.
+- `git diff --cached --check` passed.
+- `pnpm-lock.yaml` remained unchanged.
+- The post-run `/tmp` search printed no `twin-scenario-*` or `twin-test-*` roots.
+- Git status contained only the staged 9-file Step 2.5a slice.
+
+This verification does not establish adapters, automatic scoring, oracle
+resolution, private artifact persistence, public verification, or preservation
+proof.

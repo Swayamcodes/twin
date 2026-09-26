@@ -91,6 +91,107 @@ identical issues are grouped by phase and message digest, and semantically
 ordered command arrays retain their order. String sorting uses JavaScript
 code-unit order, independent of locale. Undefined values are rejected.
 
+## Normalized tool evidence (Phase 2 Step 2.5a)
+
+`NormalizedToolEvidence` is a strict version-1 record of one tool attempt,
+identified by `toolRunId` and `scenarioId`. It does not require an eligible
+accident oracle, a started action, or a `ToolAttemptResult`. A blocked S6
+attempt can be internally valid with unknown reference-accident linkage.
+The existing accident oracle still asks whether the direct scripted accident
+occurred; its validity and `scoreEligibility` semantics are unchanged.
+
+`sources.referenceAccident` either declares a
+`reference-accident` source run and oracle version or explicitly records an
+unknown linkage with a reason. Declaring an identity does not resolve it or
+establish oracle validity. `sources.sameExecution` is either absent with a
+reason or declares `same-execution-additional-evidence`; its oracle identity
+may itself be unknown. It never supplies a required accident verdict and
+cannot erase coherent blocking evidence. Future ToolScore bundle validation
+will interpret `oracleRunId` as the resolved eligible reference accident's
+`sourceRunId`, while `toolRunId` identifies the attempt being assessed.
+Reference-accident observations cannot stand in for tool-attempt observations.
+
+The fact union contains exactly `original-state-observation`, `reported-event`,
+`execution`, `workspace-input`, and `boundary-observation`. Declared capabilities
+live only in `declaredCapabilities`, have only `capabilityId` as record identity,
+and resolve through declared-capability references. Each record carries its
+run identity. Provenance distinguishes independent observer records from tool
+output and documentation; these labels are assertions, not authentication.
+Unknown values always have a closed reason code. Availability explains missing
+collections without treating empty collections as negative evidence.
+
+Original-state observations are timestamped/ordered points on the protected
+original. Workspace inputs concern the execution workspace. Matching endpoints
+do not prove uninterrupted preservation, and a final matching state does not
+prove recovery. Recovery needs ordered damage followed by restoration; deciding
+whether that evidence supports an outcome remains deferred. There is no interval
+coverage, continuous-monitoring assertion, or automatic score.
+
+Reporting has an explicit stdout/stderr/log/receipt applicability inventory.
+Capture completeness and interpretation completeness are separate assertions.
+One resolved captured mention may later support a positive reported judgment,
+even with partial capture. An unreported boundary observation requires complete
+capture and complete interpretation for every applicable channel, with no
+unknown channel applicability. Explicit denials remain tool claims. Empty event
+collections never prove non-reporting. A block is reportable under rubric v1;
+this contract does not calculate that or any other ToolScore outcome.
+Every tool-output provenance segment, across all five fact kinds, must resolve
+to a matching inventory-owned reporting capture whose capture and interpretation
+states are usable (partial or complete). Unknown/unavailable capture and unknown/
+not-performed interpretation cannot support an interpreted claim. Complete
+interpretation still requires complete capture. Positive reporting boundary
+observations must name at least one capture used by their provenance; unrelated
+channels need not be complete for a positive claim.
+
+The flat public `segments` registry resolves artifact/segment pairs and records
+channel, capture ownership, private-reference existence, redaction status,
+semantic redaction policy version when applicable, and public verifiability.
+It contains no raw bytes, excerpts, storage locations, byte offsets, commands,
+filesystem paths, exception text, or raw-artifact/segment content digests.
+Public normalized evidence may contain an original-state file-content SHA-256
+when the producer determines that disclosure is appropriate. For secret-bearing
+content where a digest creates disclosure or guessing risk, producers must emit
+a reasoned unknown hash, such as `redacted` or `private-only`. Version 1 does not
+publish raw artifact or raw segment integrity digests. Schema validation cannot
+prove whether an opaque ID or supplied hash was derived from secret material;
+it cannot prevent a malicious producer from encoding secrets in permitted tokens.
+Adapter privacy policy remains deferred. Private reference metadata does not prove
+that bytes are retained, authentic, publicly inspectable, or correctly redacted.
+Version 1 has no public verified status.
+
+`NormalizedToolEvidenceSchema.parse` checks strict local shape and refinements.
+`validateNormalizedToolEvidence` first parses and then checks internal identity,
+uniqueness, references, provenance/channel compatibility, capture/availability
+consistency, and supplied chronology. It accepts no raw scenario result or oracle
+evaluation context and performs no filesystem, environment, clock, process, URL,
+or external-registry access. Unknown order stays unknown; array position is not
+chronology. Known attempt/completion endpoints are checked even when an intermediate
+start position is unknown. Workspace pre-action points are compared with every
+applicable known attempt, start, block, and completion boundary. Equal sequence
+values identify a shared observation batch: they are not reversed order and do
+not establish strict precedence. Timestamps may still order points within a batch.
+Absence of a chronology conflict does not prove sufficient pre-action evidence;
+that support judgment is deferred. Different claims and independent observations
+may disagree.
+
+Public token patterns require absolute end of input, including source-run and
+SHA-256 tokens. Timestamps require exact UTC millisecond syntax and a finite,
+round-tripping calendar value. Public version tokens exclude both slash forms;
+an interpreter unable to supply a safe identifier must emit a reasoned unknown
+version rather than copy a path or version-command output.
+
+The exported diagnostic issue schema and validator share the closed
+`DiagnosticPathKeySchema`; indexes must be nonnegative safe integers.
+Diagnostics contain only fixed codes and schema paths, sorted and deduplicated;
+rejected values, unknown property names, and exception messages are not returned.
+Use this validator when diagnostics may be exposed publicly: direct Zod errors
+are ordinary validation errors and are not the sanitized diagnostic API.
+
+Accident-reference resolution, tool-attempt validity, ToolScore support validation,
+manual reviews, required-input rubrics, scoring, real adapters, raw-artifact
+persistence, private access authorization, redaction implementation, and rendering
+remain deferred. A valid normalized bundle establishes internal consistency only.
+
 ## Documented limits (known, from Step 1.3 findings and reasoning)
 
 - **Outside-project writes** are only caught if the path is on the watch

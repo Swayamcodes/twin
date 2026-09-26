@@ -3,8 +3,8 @@ import { z } from "zod";
 import type { ScenarioRunResult } from "../types.js";
 
 export const NonEmptySchema = z.string().trim().min(1);
-export const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
-export const RunIdSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+export const Sha256Schema = z.string().regex(/^[0-9a-f]{64}(?![\s\S])/);
+export const RunIdSchema = z.string().regex(/^sha256:[0-9a-f]{64}(?![\s\S])/);
 export const ScenarioIdSchema = z.enum(["S12", "S6"]);
 export const PathKeySchema = z.enum(["notes", "app", "gitignore", "scratch", "env", "dependency", "control"]);
 export const SetupIdSchema = z.enum(["init", "add", "commit", "top-level", "tracked", "untracked", "ignored"]);
