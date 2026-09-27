@@ -74,6 +74,22 @@ I learned that a caller-supplied verification label proves nothing, and redactio
 
 ## Documentation checkpoint — product-led evidence scope
 
-Status: `pending commit`.
+Commit: `cb0578d` — `docs: ground evidence planning in real Twin behavior`.
+Commit date: 2026-09-27.
 
 I learned that evidence infrastructure should follow real product behavior instead of becoming the product. I should test the smallest working Twin core early, then keep only the evidence machinery that actual runs need.
+
+## Early Phase 3.0 — minimal Twin core
+
+Status: `pending commit`.
+
+I learned to make a complete independent copy the prerequisite for a runnable session, while keeping cleanup authority outside the command workspace. Preserving relative link objects supports dependency trees, but lexical containment and direct-child settlement still do not turn the copy into an OS sandbox.
+
+Phase 3.0 audit correction (still `pending commit`): I learned that a narrow Git
+policy must guard the metadata names and bare-directory inventory before trusting
+its config checks. I also separate result delivery from resource disposal: an
+unconfirmed child exit still needs a listener after its bounded result returns.
+
+Phase 3.0 input-boundary correction (still `pending commit`): I learned that reading
+options can itself execute caller code. I acquire lifecycle ownership before input
+access and validate the captured command rather than rereading mutable inputs.
