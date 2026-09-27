@@ -1316,3 +1316,191 @@ disposable copy and original endpoint preservation. It does not establish
 recovery, reporting, receipt generation, sandboxing, full S6 completion,
 Phase 2 completion or Phase 3 completion. Every earlier verification and
 correction entry is preserved.
+
+## 2.5R-3 — Twin S13 ignored-input usability product proof
+
+Implementation and verification: 2026-09-27. Initial HEAD and local origin/main
+both matched `7e5606fdb503332a9ddd8f294867750c7d122f71`, and the working tree was
+clean. This focused six-file slice adds a separate test-only S13 helper/test and
+one root script, plus this log, the current S13 catalog row and decision bookkeeping.
+The approved reduced suite contains 28 tests; the earlier 104-test proposal was
+not implemented. All earlier verification records remain unchanged.
+
+### Fixed action, targeting and privacy
+
+Pinned module bytes are prepared in memory with ownership material before root
+allocation, then written exclusively as
+`<registered-support>/actions/read-ignored-inputs.mjs`. The asset stays outside
+both compared workspaces. Its regular-file identity, registered support, parent
+identity, ownership and exact bytes are checked after creation and immediately
+before action forwarding. SHA-256 from the actual verified asset bytes was:
+
+`caf57944d69b0a6e630e98e88964a32cc155f23760d91265b8a8e6ac6ffea413`
+
+The fixed module accepts no arguments or stdin. It attempts only the two literal
+relative reads `.env` and `node_modules/lib.txt`, comparing both buffers with the
+pinned fake fixture bytes including final LF. It performs no project write,
+child launch or network operation. Success emits exactly these ASCII bytes,
+including one final LF:
+
+```text
+{"action":"twin-s13-inputs-v1","env":true,"dependency":true}
+```
+
+A missing, unreadable or changed input produces exit 1, zero stdout bytes and
+exactly `TWIN_S13_INPUT_FAILURE\n` on stderr. Both reads are attempted even when
+one fails. Actual missing/changed cases exercised this failure path; a separate
+permission-specific unreadability experiment was not run. Comparisons and
+accounting never publish raw ignored-file bytes, base64 inventories or action
+streams. Fake-input handling and a fixed safe output do not prove a production
+redaction system.
+
+The guard is installed closed before setup. It admits only the seven existing
+ordered fixture Git vectors, replaces semantic `git` with independently trusted
+absolute `/usr/bin/git`, and requires the registered original cwd and exact
+established isolated Git environment. Git discovery performs no child launch;
+its existing ownership/permission rules are unchanged.
+
+Action admission requires the captured absolute `process.execPath`, exactly the
+owned module argument, exact canonical returned Twin workspace and captured
+identity, `shell:false`, `detached:false`, fixed pipe/ignore stdio, and exactly
+LANG=C, LC_ALL=C, TZ=UTC. A returned running session, verified pre-state, private
+dispatch and a single action allowance are required. Snapshot values are validated
+once and only reconstructed plain arguments/options/environment are forwarded.
+Other direct child-process APIs reject. Tests remain serialized using existing
+configuration; there is no caller command/path input or generalized adapter.
+
+### Product observations and focused failures
+
+The helper reuses production registered fixture setup/observation/cleanup and
+public `@twin-cli/core`. It imports the runner module solely for `observePaths`;
+no direct runner is called. Independently pinned seven-path checks establish the
+six exact fixture files and absent control path. Complete recursive inventories
+include tracked, untracked, ignored and `.git` content and reject symlinks or
+unsupported entries. The original and complete Twin pre-state match; every
+copied regular file has a different device/inode identity from its original.
+
+The successful real action starts, exits 0 and settles with exact stdout bytes,
+zero-byte stderr, complete untruncated streams and no signal/spawn/termination
+error. The session proceeds ready → finished → discarded; repeated discard says
+already-removed. Independent complete inventories show no action effects in Twin
+and an unchanged original after action and after discard. Inventories compare
+paths, types and bytes, not access timestamps or all filesystem metadata.
+
+Exactly four real negative controls begin with complete verified Twin copies:
+missing `.env`, missing dependency, changed `.env`, and changed dependency. With
+the gate closed, each makes one fixed mutation only in Twin and independently
+verifies the expected complete negative pre-state. The same module runs through
+that returned session, exits 1 with no success output, and causes no additional
+filesystem changes. Original endpoint checks and guarded teardown pass. These
+controls are not successful usability proofs.
+
+The remaining focused cases cover three forbidden temporary bases, unavailable
+trusted Git, token/action preparation failures before allocation, owned action
+byte mismatch, real factory copy-read failure without a session, failure after
+session return but before action, post-state observation failure, Twin/original
+cleanup refusals, and one pure restoration failure. Ten pure guard cases cover
+wrong cwd, extra argv/Node flag, alternate executable/asset, changed/extra
+environment, a second action and an alternate child API. No synthetic
+nonzero/spawn/unsettled child suite or broad accessor/result matrix was added.
+
+Every acquisition is recorded immediately. Cleanup uses only existing registered
+authorities; discovered paths are diagnostics. Primary errors remain first and
+independent observation/cleanup/accounting/restoration errors are appended.
+Known injected preflight refusals are observed/accounted before restoring their
+specific cause or collecting a fresh genuine snapshot. Unknown refusal and
+partial deletion are not retried or swept. Support removal checks identities,
+exact entries and empty scratch, and uses nonrecursive unlink/rmdir operations.
+Global restoration attempts every registered restoration and builtin export
+synchronization even after another restoration fails.
+
+### Verification and actual accounting
+
+Before Vitest, both new files, their transitive source/compiled imports, action
+body, admitted commands and cleanup paths were inspected. The only reachable
+real child launches are the seven fixture setup commands and the fixed S13 Node
+action through `session.run()`. No S12/S6 action, direct runner, CLI, AgentTX,
+arbitrary agent/command, shell, network, capture projection or scorer was called.
+
+- Production scenarios no-emit TypeScript check passed.
+- Initial test TypeScript compilation caught an inventory-entry inference error;
+  an explicit `Entry | undefined` annotation fixed it before Vitest. Test
+  TypeScript compilation then passed.
+- `pnpm run test:scenarios:twin-s13` passed its unchanged core/scenarios build and
+  scenario test compilation sequence, then **1 file / 28 tests passed**, with
+  Vitest duration **2.89 seconds**.
+- The focused run used the approved host execution environment because the
+  earlier checkpoints documented sandbox Git ownership rejection. No trust rule
+  was weakened and no blocked sandbox run was repeated.
+- Actual accounting: **70 real Git setup launches, 8 real S13 Node actions,
+  0 synthetic child forwards and 1 pure guard forward**. The eight actions are
+  the successful proof, four negative input controls, post-observation failure,
+  and the two cleanup-refusal cases.
+- **11 support roots, 10 original roots, 10 Twin allocations and 9 returned
+  sessions** were recorded. The factory copy failure accounts for a Twin
+  allocation without a session; action mismatch allocates only support.
+- All **31 acquired roots were confirmed removed**, with **0 retained/unknown**
+  final dispositions. All before/after temporary-root sets matched and were
+  empty; final scratch inventories and support registries were empty.
+
+The dedicated script selects only `twin-s13.test.ts`; existing S12/S6 scripts and
+all production/core/tests/configuration outside this slice are unchanged. S13
+remains test-only, with no production ScenarioId/direct-runner registration.
+Evidence and scoring infrastructure remains frozen. This proves fixed input
+usability, not generalized dependency usability, reporting, redaction, scoring,
+receipts, recovery, continuous preservation, sandboxing or full S13 completion.
+Concurrent same-user mutation, arbitrary descendants and process-crash retention
+remain outside this proof. No broader suite or excluded scenario ran.
+
+Final working-tree and staged whitespace checks passed. The HEAD-to-working-tree
+lockfile comparison was empty. Exact tracked/untracked inspection showed only
+the six approved files; the staged file list was empty. The pending S6 decision
+marker now records `7e5606f — test(scenarios): prove Twin S6 destructive isolation`
+with its lesson preserved, and the requested first-person S13 lesson is appended
+under `pending commit`. Only S13's current catalog status changed, after passing
+verification; historical definitions and predictions are preserved. Nothing was
+staged, unstaged, committed or pushed.
+
+### Final 2.5R-3 verification
+
+These supplied final results are recorded separately from the earlier
+implementation runs above. The dedicated `test:scenarios:twin-s13` script
+completed successfully. Core/scenario builds and scenario test compilation
+passed as prerequisites. The focused Vitest result was **1 file, 28 tests
+passed**, with duration **2.76 seconds**.
+
+The fixed owned S13 action retained SHA-256:
+
+`caf57944d69b0a6e630e98e88964a32cc155f23760d91265b8a8e6ac6ffea413`
+
+Established final accounting remained:
+
+- 70 approved fixture-setup Git launches;
+- 8 real harmless S13 Node actions through Twin;
+- 0 synthetic child forwards;
+- 1 pure in-memory guard forward;
+- 11 support roots;
+- 10 original scenario roots;
+- 10 Twin allocations;
+- 9 returned sessions;
+- all 31 roots removed;
+- no retained or unknown roots;
+- final scratch inventories and support registries empty.
+
+The positive proof consumed both pinned ignored inputs. Four real negative
+controls covered missing and changed forms of both inputs. Raw input contents
+were not emitted by the action or recorded in public-style diagnostics.
+
+The supplied final checks reported that `git diff --check` and
+`git diff --cached --check` passed, `pnpm-lock.yaml` remained unchanged, and
+`git diff --name-only` and the untracked-file check were empty. All six approved
+2.5R-3 files were staged before this documentation update; this addition remains
+unstaged.
+
+No S12, S6, `git clean`, broader scenario suite, AgentTX, CLI, capture projection,
+scoring or arbitrary agent ran.
+
+This proves fixed ignored-input usability inside Twin. It does not establish
+generalized dependency compatibility, production redaction, reporting, scoring,
+recovery, receipts, sandboxing, continuous preservation, full S13 completion,
+Phase 2 completion or Phase 3 completion.

@@ -103,6 +103,12 @@ I keep action targeting, endpoint observations and separate cleanup authorities 
 
 ## 2.5R-2 — Twin S6 destructive-action product proof
 
-Status: `pending commit`.
+Commit: `7e5606f` — `test(scenarios): prove Twin S6 destructive isolation`.
 
 I learned to prove destructive isolation by checking that the clone contains the inputs before deletion and that the original still matches afterward. I keep command admission and each cleanup authority separate so a failed proof cannot broaden deletion.
+
+## 2.5R-3 — Twin S13 ignored-input usability proof
+
+Status: `pending commit`.
+
+I learned that copying ignored files is only a precondition for usability. I need a fixed action to consume their verified bytes inside Twin, with independent unchanged inventories and separate cleanup accounting.
