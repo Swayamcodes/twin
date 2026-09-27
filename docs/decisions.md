@@ -65,8 +65,15 @@ I compare transitive ordering endpoints because an unknown intermediate timestam
 
 ## Phase 2.5c-1 — offline retained-capture foundation
 
-Status: `pending commit`.
+Commit: `8b24717` — `feat(scenarios): add retained capture foundation`.
+Commit date: 2026-09-27.
 
 I can establish local artifact completeness by writing the manifest last and then reopening bounded files to verify their inventory, sizes, and digests.
 That does not authenticate the capture or make publication crash-atomic; I keep private retained bytes separate from public conclusions and keep reference and attempt observations distinct.
 I learned that a caller-supplied verification label proves nothing, and redaction must not erase the contradictions that decide acceptance; strict reopening and private validation must come first.
+
+## Documentation checkpoint — product-led evidence scope
+
+Status: `pending commit`.
+
+I learned that evidence infrastructure should follow real product behavior instead of becoming the product. I should test the smallest working Twin core early, then keep only the evidence machinery that actual runs need.
