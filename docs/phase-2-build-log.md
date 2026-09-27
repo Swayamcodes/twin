@@ -1041,3 +1041,278 @@ These supplied final results are separate from all earlier focused runs:
 
 This proves real S12 clone/run/discard behavior only. It does not satisfy the
 historical reporting condition or complete S12, Phase 2 or Phase 3.
+
+
+## 2.5R-2 — Twin S6 destructive-action product proof
+
+Implementation and verification: 2026-09-27. HEAD and local origin/main both
+matched `48e316c10abe9b5109db3c6ed92655c031154730`; the initial working tree was
+clean. This six-file slice adds a separate test-only S6 helper and focused tests,
+one root script, this log, the current S6 catalog status and decision bookkeeping.
+Core, scenario production, S12's helper/tests/script, configuration, dependencies,
+lockfile and all frozen evidence infrastructure remain unchanged. Earlier results
+and historical scenario conditions above are preserved.
+
+### Trusted command and observations
+
+The helper accepts only closed fault selectors. Before allocation it installs a
+closed launch guard, checks the temporary base against the repository and both
+reserved Twin state roots, resolves trusted system Git using the unchanged
+`git-trust.cts` resolver, and generates support ownership material. The observed
+trusted executable was `/usr/bin/git`. Trust discovery executes no Git command;
+canonical path, root ownership, permissions and ancestor checks are unchanged.
+
+Setup admits only the seven established literal Git vectors in order, the
+fixture's semantic executable `git`, and its registered original workspace.
+After snapshot validation it forwards the trusted absolute executable. The action
+requires that absolute executable directly, exactly `["clean", "-fdx"]`, and the
+exact returned Twin workspace; it cannot normalize an alternative executable.
+No `-C`, pathspec, shell, wrapper or additional action flag is admitted.
+
+Both phases use the explicit fixture Git environment: PATH contains only the
+trusted Git directory; LANG/LC_ALL are C and TZ is UTC; system/global Git config,
+hooks, excludes and attributes are disabled with the established `/dev/null`
+settings, prompts are disabled, and commit signing is false. Exactly four
+controlled Git configuration entries are present. HOME, XDG_CONFIG_HOME,
+NODE_OPTIONS, loader variables, Git directory/worktree overrides and arbitrary
+caller environment are not inherited. Only the temporary setup PATH modification
+is made to the worker environment, and it is restored.
+
+The guard snapshots caller arguments/options once, validates captured primitives,
+and forwards independent arrays and plain options/environment objects. The action
+requires completed pre-state, a returned running session, a private dispatch flag,
+canonical workspace identity and an unused single-action allowance. It consumes
+that allowance before forwarding. Other direct child_process launch APIs reject.
+Tests are serialized, and overlapping proof calls reject. An unexpected real
+RunResult or output stops subsequent proof calls instead of permitting further
+real destructive actions.
+
+The original's seven named states use independently pinned fixture bytes, checked
+against production literals. Complete recursive inventories include `.git` and
+all ignored/untracked inputs, reject symlinks and unsupported types, and compare
+relative paths, entry types and file bytes. Every regular-file device/inode pair
+in the Twin differs from its original. Successful S6 removes exactly `.env`,
+`scratch.txt`, `node_modules/lib.txt` and the `node_modules` directory. The tracked
+files and complete prior `.git` inventory/bytes remain unchanged, and the control
+file stays absent. Original seven-path states and complete contents match after
+action and after discard. Timestamps and unsupported metadata are excluded.
+
+Real RunResult assertions require started/exited, confirmed direct-child
+settlement, exit 0, no signal/spawn/termination error, and complete untruncated
+error-free streams. On the first authorized run, stdout matched exactly these
+complete lines (the assertion does not depend on order):
+
+```text
+Removing .env
+Removing node_modules/
+Removing scratch.txt
+```
+
+Stderr was empty. The assertion was not weakened or broadened. Git's removal
+output is not a Twin receipt.
+
+### Failure isolation and independent cleanup
+
+The helper collects Twin and original post-state independently of result
+assertions. The same session follows ready, finished and discarded on success;
+repeated discard returns already-removed. Original cleanup requires its own
+registered handle and fresh successful observation. Support cleanup checks its
+registration, marker, identity and exact inventory, requires empty scratch, and
+uses only nonrecursive rmdir/unlink operations. Discovered paths never authorize
+deletion. Allocation-return instrumentation records factory allocations even
+when no session returns; each acquired path receives removed/retained/unknown
+accounting after exhaustive restoration.
+
+The 16 lifecycle/prerequisite cases include three forbidden bases; injected trust
+and token failures before allocation; a real factory copy-read failure; failure
+after session return; guard rejection before native action forwarding; synthetic
+nonzero/spawn-failed/unsettled children; post-state observation failures; and real
+Twin/original cleanup refusals. Synthetic child objects have no OS child and
+never execute a command. The unsettled case observes a real core discard refusal,
+accounts for retention, then emits an explicitly synthetic late settlement before
+using the same guarded discard. Known injected mode/snapshot refusals are recorded
+before restoring the known cause or collecting fresh real observations. Unknown
+refusal and partial deletion are never retried or swept.
+
+Another 48 pure admission cases exercise exact cwd, executable, argv, environment,
+phase/session/dispatch requirements, one-action consumption, changing single-read
+inputs, later mutation and throwing accessors. Three pure cleanup/restoration
+cases verify independent authority attempts, no retry after simulated cleanup
+failure, exhaustive restoration and preservation of the primary error. Those 51
+cases allocate no roots and launch no native commands. Cleanup-failure callbacks
+are synthetic; they do not deliberately induce real partial deletion.
+
+### Focused verification and accounting
+
+- Inspected both new files, transitive runtime imports, fixed command vectors,
+  compiled execution routes, cleanup bodies and serialization before Vitest.
+  The runner module is imported only for `observePaths`; no direct runner is
+  called. No S12 action/helper, CLI entry point, AgentTX, arbitrary agent, shell,
+  capture projection or scorer is invoked.
+- Production scenarios no-emit TypeScript checking passed. Initial scenario test
+  compilation found one entry inference error and two overly narrow synthetic
+  cwd assignments; explicit types corrected them before any Vitest execution.
+  Scenario test compilation then passed.
+- The dedicated `test:scenarios:twin-s6` script builds core/scenarios, compiles
+  scenario tests and executes only `twin-s6.test.ts`. The first approved run
+  passed **1 file, 67 tests, 13.24 seconds**.
+- Used the approved execution environment because S12 verification had already
+  documented the sandbox Git ownership limitation. No blocked sandbox run was
+  repeated and no trust check was relaxed.
+- First-run accounting: **77 approved setup Git launches, 5 real S6 actions,
+  3 synthetic action forwards, 11 support roots, 11 original fixtures,
+  11 Twin allocations and 10 returned sessions**. One additional action attempt
+  was rejected before forwarding; copy and before-run faults dispatched none.
+  All **33 allocated roots** were removed. Every before/after temporary-root set
+  matched, and final scratch inventories and support registries were empty.
+- The five real actions were the success case plus Twin/original observation
+  failure and Twin/original refusal cases. Each action used its own returned
+  Twin workspace. No destructive action ran in an original fixture or repository.
+
+Retained capture, normalized evidence, attempt protocol and scoring stay frozen.
+No artifact, projection, bundle, adapter framework, schema or version is added.
+The original survives because the fixed command ran in Twin's disposable copy;
+this does not establish recovery, continuous preservation, reporting, receipts,
+OS sandboxing, S13 coverage, full historical S6 completion or Phase 3 completion.
+Concurrent same-user mutation and arbitrary descendants remain outside the proof.
+No full suite, runner test, S12 test, CLI, AgentTX or capture/scoring pipeline ran.
+Nothing was staged, unstaged, committed or pushed.
+
+Final verification after tightening negative-case error counts: the same dedicated
+script passed **1 file, 67 tests, 13.22 seconds**, including all three compilation
+stages. Static inspection confirmed the follow-up changed assertions only.
+Per-run accounting again recorded **77 setup launches, 5 real S6 actions,
+3 synthetic action forwards, 11 support roots, 11 original fixtures,
+11 Twin allocations and 10 returned sessions**, with all 33 roots removed and
+empty final scratch inventories/registries. Across the two successful focused
+runs: **154 setup launches, 10 real S6 actions, 6 synthetic action forwards,
+66 allocated roots removed and 20 returned sessions**. No additional scenario
+or test suite ran.
+
+Final working-tree and staged whitespace checks passed. The HEAD-to-working-tree
+lockfile comparison was empty. Exact tracked/untracked inspection showed only the
+six approved files; the staged file list was empty. S12's pending decision identity
+was replaced with `48e316c — test(scenarios): prove Twin S12 clone-run-discard behavior`
+without changing its lesson, and the approved first-person S6 lesson remains
+`pending commit`. S6's current catalog status was updated only after verification;
+historical definitions, predictions and S12's reporting condition remain intact.
+
+### Corrected stdout framing verification — 2026-09-27
+
+The final audit identified that sorting all LF-separated tokens could accept a
+misplaced blank line in place of the terminal LF. The corrected pure parser first
+requires a terminal LF, removes exactly one final LF, splits the remaining body,
+and requires exactly three nonempty lines before comparing their exact contents
+with order differences permitted. No trimming, blank-line filtering or whitespace
+normalization is used. Missing/additional terminal LF, blank lines, duplicate,
+missing or extra lines, spaces, CRLF/stray CR and partial/prefixed/suffixed matches
+reject. Stderr must still be exactly empty.
+
+Before Vitest, changed imports and parser call sites were inspected: the 24 new
+pure cases call only the parser and assertions, with no path to native spawn,
+root allocation or cleanup. They cover all six accepted permutations and 18
+malformed inputs, including the exact previously accepted blank-middle-line and
+unterminated-final-line example. The original 67 cases remain unchanged.
+
+The dedicated `pnpm run test:scenarios:twin-s6` verification passed all three
+compilation stages and **1 file, 91 tests, 13.86 seconds** in the approved execution
+environment. Trusted-Git checks were unchanged; the resolved executable remained
+`/usr/bin/git`. This corrected run recorded **77 real setup launches, 5 real S6
+actions and 3 synthetic action forwards with no OS child**. The additional parser
+cases launched no process, allocated no root and invoked no cleanup. Allocation
+accounting remained **11 support roots, 11 original roots, 11 Twin allocations
+and 10 returned sessions**; all **33 roots were removed**, with empty before/after
+temporary-root sets, final scratch inventories and support registries. Copy failure
+still accounts for the allocation without a returned session. These are counts
+for this corrected run only; the two historical 67-test runs above are preserved.
+
+This correction changes only the S6 helper, S6 tests and this appended log entry.
+Working-tree/staged whitespace checks passed, the staged file list was empty,
+and the HEAD-to-working-tree lockfile comparison was empty. Scope inspection
+showed exactly the same four approved tracked modifications and two approved new
+files. Package scripts, dependency declarations, catalog and decisions were not
+changed by this correction. Destructive routing, exact Twin cwd, single-action
+allowance, complete filesystem-effect/original endpoint checks and independent
+cleanup authorities remain unchanged. No S12 or broader scenario suite ran.
+
+Recovery, receipts/reporting, retained capture, scoring, OS sandboxing, full
+historical S6 completion and Phase 2/3 completion remain unestablished or deferred.
+Concurrent same-user mutation and arbitrary descendants remain outside this proof.
+Nothing was staged, unstaged, committed or pushed.
+
+### BOM and byte-empty stderr correction verification — 2026-09-27
+
+Both successful-result UTF-8 decoders now use `fatal: true, ignoreBOM: true`:
+a leading UTF-8 BOM remains U+FEFF and fails the exact stdout line comparison.
+No trimming, normalization or BOM removal occurs. Stderr must have both zero
+bytes and an empty decoded string; stream completeness, truncation and error
+checks remain unchanged. Strict LF framing and permutation-only line comparison
+are unchanged.
+
+Four new pure synthetic RunResult cases exercise `assertSuccessfulResult` through
+its normal decoding path: exact valid stdout with zero-byte stderr passes;
+EF BB BF-prefixed stdout fails the exact comparison; BOM-only stderr fails the
+byte-length assertion; malformed UTF-8 fails fatally with TypeError. Before
+Vitest, the type-only import and assertion call path were inspected. These cases
+construct only synthetic records and byte arrays; they launch no process,
+allocate no roots, create no fixture/session, and invoke no cleanup or global
+instrumentation.
+
+The approved `pnpm run test:scenarios:twin-s6` verification passed all three
+compilation stages and **1 file, 95 tests, 15.01 seconds**. The historical 67-test
+and 91-test records above remain unchanged. The corrected run retained **77 real
+setup launches, 5 real S6 actions and 3 synthetic action forwards without OS
+children**, using trusted `/usr/bin/git` with unchanged trust checks. Accounting
+remained **11 support roots, 11 original roots, 11 Twin allocations and 10 returned
+sessions**; all **33 roots were removed**, and before/after temporary-root sets,
+final scratch inventories and support registries were empty.
+
+Only the S6 helper, S6 tests and this appended verification entry changed in this
+correction. Working-tree/staged whitespace checks passed; the staged file list
+and HEAD-to-working-tree lockfile comparison were empty. Overall scope remains
+the four approved tracked modifications and two approved new files. Package,
+catalog, decisions, dependencies, production source and excluded infrastructure
+were not modified by this correction. Trusted routing, the single-action guard,
+Twin-only cwd, filesystem-effect proof, original endpoint checks and independent
+cleanup authorities remain unchanged. No S12 or broader suite ran.
+
+Recovery, receipts/reporting, retained capture, scoring, OS sandboxing, full S6
+completion and Phase 2/3 completion remain unestablished or deferred. Concurrent
+same-user mutation and arbitrary descendants remain outside the proof. Nothing
+was staged, unstaged, committed or pushed.
+
+### Final 2.5R-2 verification
+
+Supplied final verification results, recorded separately from all earlier 67-,
+91- and 95-test focused runs: the dedicated `test:scenarios:twin-s6` script
+completed successfully. Core/scenario builds and scenario test compilation
+passed as prerequisites. Focused Vitest passed **1 file, 95 tests**, with a
+duration of **13.82 seconds**.
+
+Established final-run accounting remained:
+
+- 77 approved fixture-setup Git launches;
+- 5 real `git clean -fdx` actions through Twin;
+- 3 synthetic action forwards with no OS children;
+- 11 support roots;
+- 11 original scenario roots;
+- 11 Twin allocations;
+- 10 returned sessions;
+- all 33 roots removed;
+- final scratch inventories and support registries empty.
+
+Strict output validation required exact LF framing, exact removal lines,
+BOM-preserving fatal UTF-8 decoding and byte-empty stderr.
+
+The supplied `git diff --check` and `git diff --cached --check` results passed.
+`pnpm-lock.yaml` remained unchanged. Before this documentation update,
+`git diff --name-only` and the untracked-file check were empty. All six approved
+2.5R-2 files were staged before this documentation update; this addition remains
+unstaged.
+
+No S12, broader scenario suite, AgentTX, CLI, capture projection, scoring or
+arbitrary agent ran. The result proves destructive isolation inside Twin's
+disposable copy and original endpoint preservation. It does not establish
+recovery, reporting, receipt generation, sandboxing, full S6 completion,
+Phase 2 completion or Phase 3 completion. Every earlier verification and
+correction entry is preserved.

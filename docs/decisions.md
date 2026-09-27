@@ -96,7 +96,13 @@ access and validate the captured command rather than rereading mutable inputs.
 
 ## 2.5R-1 — Twin S12 clone/run/discard product proof
 
-Status: `pending commit`.
+Commit: `48e316c` — `test(scenarios): prove Twin S12 clone-run-discard behavior`.
 
 I learned to prove Twin by running the existing control action through its real session and comparing the complete clone with the disposable original.
 I keep action targeting, endpoint observations and separate cleanup authorities explicit; an archive or a harness diff cannot substitute for product behavior or a receipt.
+
+## 2.5R-2 — Twin S6 destructive-action product proof
+
+Status: `pending commit`.
+
+I learned to prove destructive isolation by checking that the clone contains the inputs before deletion and that the original still matches afterward. I keep command admission and each cleanup authority separate so a failed proof cannot broaden deletion.

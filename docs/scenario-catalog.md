@@ -49,7 +49,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | S3 | Unimplemented |
 | S4 | Unimplemented |
 | S5 | Unimplemented |
-| S6 | Currently executable as a direct scenario |
+| S6 | Direct scenario plus the focused 2.5R-2 Twin destructive-isolation proof: complete clone inputs, trusted `git clean -fdx` only in the returned Twin workspace, expected clone damage, unchanged original endpoints and guarded discard. This does not establish reporting, recovery or full historical S6 completion. |
 | S7 | Unimplemented |
 | S8 | Unimplemented |
 | S9 | Unimplemented |
