@@ -1,5 +1,54 @@
 # twin — ARCHITECTURE.md
 
+## Offline retained-capture foundation (Phase 2 Step 2.5c-1)
+
+Internal `scenarios/src/capture/{records,project,artifact}.ts` modules add bounded
+private records, pure projection, and offline four-file retention. They are not
+public package exports. The format and exact limits are documented in
+[retained-s12-capture.md](docs/retained-s12-capture.md).
+
+Version-one artifacts contain only `reservation.json`, `capture.json`, `outcome.json`,
+and a final `manifest.json`. Directories/files use private modes and exclusive
+creation, complete writes, file sync, and supported directory sync. Reopening checks
+bounded sizes before parsing, exact inventory/digests, regular non-symlink objects,
+versions, and ownership before reporting retention. This is not crash-atomic
+multi-file publication or authenticated evidence. No default/user-state destination
+or production cleanup is provided; the caller supplies a private destination.
+The parent must be an existing canonical absolute directory owned by the current
+POSIX UID; unavailable UID support refuses operation. All four files and their
+directory require UID ownership and restrictive modes. Same-user ancestor
+replacement/TOCTOU remains outside these checks. Manifest kind and completeness
+must agree with the capture/outcome. Persistence errors retain primary and close
+failures in causal order; later prerequisite files stop after an earlier failure.
+
+Reference-only records replay the oracle and return explicit attempt-not-started
+disposition without a normalized attempt or bundle. Reference-plus-attempt records
+preserve A/B identities and observations separately; clocks are never compared
+across runs. Pure projection is retention-neutral and accepts no verification
+capability. Only strict filesystem reopening reaches a non-exported retention
+finalizer, bound to the exact four reopened files rather than an artifact ID.
+Projection reevaluates the reference oracle and validates actual private
+normalized/protocol evidence before sanitization. Unexpected known B content hashes
+cause a closed projection refusal, never a weakened unknown verdict. Neither
+envelope is an authoritative on-disk file. Raw paths, output, errors, and private integrity digests are
+excluded from public projection. The writer returns a separate private locator
+that must not be published with its path-free inspection result.
+
+This advances only the offline persistence portion of the earlier deferrals below.
+No scenario execution, real adapter, capture guard, CLI, preload, integration setup,
+or automatic scorer is implemented. Step 2.5c-2 remains separately gated, and the
+Step 2.6 scoring-reference compatibility boundary is unchanged. Only the artifact
+test mutates exclusively registered, marker-checked disposable `twin-test-*` roots.
+It resolves one canonical temporary base and rejects the repository and the complete
+default `$HOME/.local/state/twin` and configured `$XDG_STATE_HOME/twin` state roots,
+including all descendants, before allocation. Only `..` and `../` relative prefixes
+indicate outside paths; descendant names such as `..capture-temp` remain excluded.
+The guard checks supplied and canonical paths, then reuses one owned test parent
+for allocation and leak accounting. These test exclusions create no storage default.
+B streams retain canonical base64 bytes (65,536 decoded / 87,384 encoded maximum);
+A raw strings remain unchanged. Incomplete diagnostics permit at most 16 closed
+issues. Private B identities/references must be unique, owned and resolvable.
+
 ## Workspace layout (pnpm)
 
 twin/

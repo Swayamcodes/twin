@@ -15,6 +15,28 @@ rolled back, and a directory without a Git repository could not be run. These
 findings narrowed Twin's intended differentiator to ignored/non-Git coverage
 and an accurate account of what was observed and what was outside the boundary.
 
+The project boundary in SPEC and ARCHITECTURE is clone-and-run with an evidence-based
+receipt, not an OS sandbox or a claim to recover every kind of damage. A filesystem
+snapshot can reduce recovery risk while absolute/outside-project writes remain
+outside that protection. The scope documentation is anchored by `50fad88`
+(`docs: define twin scope and architecture`) and its clarification in `76dc74d`
+(`docs: normalize line endings and clarify scope`); these commits record the
+boundary, not the dates of the earlier research experiments.
+
+## Step 2.1 scaffold and Step 2.2 runner checkpoint anchors
+
+The first Git checkpoint is `4d09f95` (`scaffold: pnpm workspace, strict tsconfig,
+AGENTS.md`). The architecture separates core, CLI, and scenarios, with core depending
+on neither consumer. No separate scaffold verification count is recorded here.
+
+`b6f2232` (`feat(scenarios): add guarded S12 and S6 fixture runner`) is the initial
+guarded runner checkpoint. The manual chronology below distinguishes the S12 evidence
+available before that commit from the S6 evidence collected afterward. The automated
+regression hardening and its final 38-test verification belong to `93a90e5`
+(`test(scenarios): harden destructive runner regression coverage`), not the initial
+runner checkpoint; the later prerequisite/trusted-Git controls are described in
+Step 2.3 below.
+
 ## Manual scenario verification and checkpoint
 
 - S12, the harmless new-file control, passed manual verification. The
@@ -101,6 +123,11 @@ race-proof containment or arbitrary future process-launch behavior, and they
 do not make Twin an OS sandbox.
 
 ## Step 2.4: versioned oracle and scoring contract
+
+Chronology note: the 71-test implementation run described later in this section
+preceded the 84- and 101-test correction runs. The separately labeled final full
+verification reached 104 tests. These are successive runs, not competing totals.
+The committed checkpoint is `0c51b04` (`feat(scenarios): add versioned oracle and scoring contracts`).
 
 Step 2.4 added a pure S12/S6 oracle and a separate dimension-specific
 `ToolScore` schema. The oracle validates the existing raw `ScenarioRunResult`
@@ -572,3 +599,245 @@ not rerun during this documentation-only update.
 Protocol validation still establishes supplied-evidence consistency, not capture
 authenticity, preservation proof, or tool safety. All earlier verification counts
 and correction entries above remain historical records.
+
+### Step 2.5c-1 — offline retained-capture foundation
+
+Implemented only the approved offline foundation in the three internal capture
+modules, three foundation tests, retained-capture documentation, architecture,
+this log, and the two permitted package scripts. No settled public contract,
+package export map, dependency, runner, fixture, guard, action, core, or CLI changed.
+Earlier verification and correction records above are preserved.
+
+Private format/normalizer version 1 uses strict reservation, capture, outcome,
+manifest, complete reference-only/reference-plus-attempt, and incomplete-inspection
+schemas. Raw references retain empty errors/output, nullable fields, every raw union,
+and reversed wall-clock values within documented resource bounds. Reverse whole-object
+TypeScript assignment remains blocked by readonly production arrays; forward and
+reverse union/scalar assertions plus runtime edge cases protect compatibility.
+
+Exact JSON byte limits are 16,384 for reservation, 2,097,152 for capture, 32,768 for
+outcome, and 4,096 for manifest. Output captures allow 65,536 UTF-8 bytes each;
+errors/private path-like strings allow 4,096 bytes. Events/command-related arrays
+allow 64 entries, observation arrays 128, and fingerprints/setup paths 7. Identifiers
+and structural traversal are also bounded; the complete table and semantics are in
+`docs/retained-s12-capture.md`. Metadata rejects oversized files before content
+allocation/JSON parsing, and serialization limits apply before artifact allocation.
+
+The filesystem layer exclusively allocates one random private directory per write,
+uses 0700/0600 modes, exclusive file creation, complete write loops, file sync, and
+supported directory sync. Manifest publication is last. Strict reopening verifies
+the exact four-file inventory, regular non-symlink objects, ownership, sizes,
+digests, modes, and versions before retention. No crash-atomic publication or capture
+authenticity is claimed. No production cleanup or default storage destination exists.
+
+Pure projection reevaluates reference A and derives attempt B's envelopes only
+from B's retained records, without generating observations/IDs/timestamps or comparing
+cross-run clocks. Reference-only artifacts return explicit attempt-not-started
+disposition and no normalized attempt/bundle. Unexpected content hashes become
+private-only unknowns; raw output, private paths/errors, fingerprint entries, and
+private integrity digests stay private. The writer's private locator is separate
+from the path-free inspection result. Existing validators remain authoritative for
+normalized consistency and protocol validity/readiness, not tool safety.
+
+Verification performed for this checkpoint:
+
+- Statically inspected all production capture imports and the three new tests
+  before each focused run. No process, runner, fixture execution, adapter, CLI,
+  spawn guard, or command-launching import exists.
+- Production TypeScript no-emit, production compilation, and test TypeScript
+  compilation passed, including the final expanded tests.
+- Initial focused foundation run: **3 files, 136 tests passed**.
+- Review added reference-plus-attempt filesystem replay, started-action projection,
+  intrinsic protocol-failure preservation, and reversed-reference-clock projection
+  cases. Expanded focused foundation run: **3 files, 140 tests passed**.
+- A final pure case added a fully valid synthetic reference paired with an
+  independently valid blocked attempt and verified score readiness. Test TypeScript
+  compilation passed again; imports were rechecked before the final focused run:
+  **3 files, 141 tests passed**. No scenario command represented in that synthetic
+  reference was executed.
+- Only `capture-artifact.test.ts` mutated files, within exclusively allocated and
+  registered `twin-test-capture-*` roots. Marker/device/inode checks guarded cleanup;
+  exact before/after temporary-root sets matched in every filesystem case. Body,
+  persistence, cleanup, and leak-accounting failures are aggregated.
+- `git diff --check`, `git diff --cached --check`, and the lockfile diff check passed.
+  At the implementation checkpoint, the working changes were limited to the ten
+  approved files and remained unstaged; the later documentation expansion is
+  recorded separately below.
+
+Added only `build:scenarios` and `test:scenarios:capture-foundation`; the latter
+names exactly the three new test files. The existing `test:scenarios` runner barrier
+is unchanged. It was not run, nor were runner tests, real S12/S6 actions, compiled
+CLI, adapters, capture guards, retained capture in user-state storage, or child
+actions. No dependency installation, staging, unstaging, commit, push, or destructive
+cleanup outside registered test roots occurred. Step 2.5c-2 remains separately gated;
+automatic scoring remains deferred pending the Step 2.6 score-support contract.
+
+### Documentation-process expansion after Step 2.5c-1 implementation
+
+The user subsequently authorized exactly two additional files: a new
+`docs/decisions.md` and a documentation rule in `AGENTS.md`. This log was already
+one of the ten implementation-slice files. The combined pending slice therefore
+contains **12 files: the original ten plus two documentation-process additions**,
+not twelve implementation files. Step 2.5c-1 remains pending commit.
+
+The story audit read this full log, Git checkpoint history, SPEC, ARCHITECTURE,
+and the current private record/projection/artifact implementation. It added the
+scaffold/initial-runner anchors and clarified the ordering of Step 2.4 verification
+runs. The manual S12/S6 evidence, accidental real-repository cleanup and reconstruction
+from the active Codex session rather than Twin, audit/correction cycles, and all
+historical verification counts remain intact. The committed normalized-evidence
+checkpoint is `8e88677` (`feat(scenarios): add normalized tool evidence contract`);
+the attempt-protocol checkpoint is `5d33be6`
+(`feat(scenarios): validate tool attempt protocols`). Their final recorded full
+verification totals remain 235 and 408 tests respectively.
+
+This documentation-only pass does not rerun or extend the foundation's recorded
+**3 files / 141 tests**, three TypeScript checks, diff checks, or unchanged-lockfile
+result. No implementation, test, contract, manifest, or other documentation is
+changed in this pass. No tests, TypeScript, real S12/S6, adapter, CLI, child action,
+retained user-state artifact, full suite, staging, unstaging, commit, or push is
+performed. Missing historical transcripts or experiment dates are not reconstructed
+from assumptions; commit dates identify commits, not the time of a manual experiment.
+
+### Step 2.5c-1 audit corrections — unstaged over the staged checkpoint
+
+The subsequent audit identified a forgeable verification parameter, validation after
+hash redaction, insufficient private ownership/ref checks, persistence-close error
+loss, and destination/test-parent gaps. This correction supersedes the initial
+foundation's verified-parameter and unexpected-hash-to-unknown behavior described
+above; those earlier implementation and verification records remain historical.
+
+Pure `projectCapture(records)` now has no retention parameter and cannot establish
+artifact retention. Only strict `inspectArtifact` reopening reaches the non-exported
+finalizer after every descriptor closes successfully. Verification binds exact
+reservation/capture/outcome/manifest bytes, identities, sizes and digests, including
+manifest rereading. Reference-only reopening returns retained reference evidence and
+attempt-not-started, without an attempt bundle. Copying an artifact ID or previously
+returned inspection cannot verify modified records.
+
+Both existing validators see actual private B states/hashes before sanitization.
+Unexpected known B hashes now conservatively cause closed `private-content` refusal,
+without public normalized evidence or a bundle. Proven mismatches/conflicts are never
+redacted into indeterminate acceptance. Pinned fake-fixture hashes still project.
+Private B fact/capture/segment/protocol IDs must be unique, references must resolve,
+and run/request/scenario/artifact ownership must agree before allocation/projection.
+Raw A duplicate observations and legitimate semantic protocol failures remain evidence.
+
+Persistence aggregates primary write/read/sync and secondary close errors in causal
+order, attempts required closes, and returns bounded deduplicated closed diagnostics.
+Failed prerequisites stop later files; manifest or directory-close failures cannot
+report retention. The parent must be nonempty, absolute, canonical, existing, real,
+and current-UID-owned. Missing POSIX UID support refuses operation; directory/files
+also require UID, mode, type and identity checks. Same-user ancestor replacement and
+TOCTOU are still limitations, not an authenticity or crash-atomicity guarantee.
+
+Manifest version 1 now declares closed artifact kind and `completeness: complete`,
+checked against capture/outcome/reconstructed records. B streams use canonical
+base64 with exact decoded length: 65,536 decoded bytes and 87,384 encoded characters
+maximum. Raw A strings are unchanged. Incomplete inspection permits at most 16
+issues, each with a closed code and zero or one fixed filename. Existing file,
+array, error, identifier and traversal limits remain unchanged.
+
+The artifact test resolves one safe canonical temporary base before mutation,
+excludes repository and reserved Twin user-state capture locations, then reuses one
+owned test parent for allocation, registration, discovery and cleanup. Exact owned
+roots alone are deletion targets; marker/device/inode checks and exact before/after
+root accounting remain mandatory. Injection wraps real descriptors and closes them
+before reporting synthetic close failures; no production I/O injection capability
+or execution module was added.
+
+The ten authorized correction files contain unstaged changes; the existing twelve-file
+staged checkpoint is preserved. No package script, AGENTS instruction, settled
+contract, runner, fixture, CLI, guard, action, dependency or lockfile was changed.
+Decision-log commit dates were filled using the supplied verified dates; Step 2.5c-1
+remains `pending commit`, with earlier conceptual lessons preserved.
+
+Audit-correction verification (separate from the historical 141-test checkpoint):
+
+- Capture production/test imports were statically rechecked before focused tests.
+  No runner, fixture execution, adapter, CLI, spawn guard or command-launching import
+  exists. `node:process` is now used for required UID checks and test parent selection,
+  not execution; this supersedes the initial checkpoint's no-process-import claim.
+- Production no-emit TypeScript, production compilation and test TypeScript passed.
+  An initial test typecheck caught a synthetic raw issue using a string instead of
+  the production issue object; it was corrected before the first test run.
+- First corrected focused run: **3 files, 216 tests passed**. Added prerequisite-stop
+  and inventory-close aggregation cases: **3 files, 219 tests passed**. Strengthened
+  array-bound isolation, reran test TypeScript and the same focused files: final
+  **3 files, 219 tests passed**. All filesystem cleanup/leak assertions passed.
+- Working/staged diff whitespace checks passed; `pnpm-lock.yaml` remained unchanged.
+  The staged binary diff matched the pre-correction checkpoint exactly. Corrections
+  affect only the ten allowed files, remaining unstaged over twelve staged files.
+- No full suite, runner tests, real S12/S6, adapter, CLI, capture in user-state storage,
+  project-launched child action, destructive cleanup outside registered roots,
+  staging, unstaging, commit or push occurred. Step 2.5c-2 and automatic scoring
+  remain deferred. Artifact integrity/completeness does not establish capture
+  authenticity, preservation, recovery, usability or tool safety.
+
+### Step 2.5c-1 remaining audit corrections — destination guard and isolated tests
+
+This pass changes only the three capture test files, ARCHITECTURE, and this log.
+It preserves the staged checkpoint and all prior corrections/counts above. The
+earlier guard excluded only Twin's captures subdirectories and mistakenly treated
+every `..`-prefixed relative name as outside. The repaired guard excludes the full
+default `$HOME/.local/state/twin` and configured `$XDG_STATE_HOME/twin` roots and
+all descendants, as well as the repository. Only `..` or a `../` prefix identifies
+an outside relative path; `..capture-temp` remains a descendant. Supplied and
+canonical paths are checked before the one owned test parent is allocated.
+
+Eight isolated TMPDIR cases cover the repository root, its `..capture-temp`
+descendant, and both default/configured state roots with ordinary and double-dot
+descendants. They assert neither canonicalization nor allocation is reached for
+these forbidden supplied paths. A separate case confirms true parents/siblings
+remain outside. No test allocates in these prohibited locations.
+
+The duplicate-fact case now updates its setup reference, avoiding an unrelated
+missing-reference failure. The cycle test starts with a valid reservation, then
+introduces the cycle and checks the traversal rejection. Prohibited authoritative
+fields are added individually to a valid attempt, with exact unknown-key issue
+code/path checks. `Zm9=` declares two decoded bytes and is paired with the valid
+`Zm8=` control, so noncanonical pad bits cause rejection. The privacy assertion
+checks the actual nonempty base64 stream payload as well as decoded private text.
+The decoded-over-limit case uses an in-range declaration and an encoded payload
+within the encoded ceiling; exact-length mismatch necessarily coexists with the
+oversized decoded payload when the declaration itself is in range.
+
+Verification for this pass:
+
+- Statically inspected all three capture test imports before Vitest: no runner,
+  scenario execution, adapter, CLI, child-process or execution-harness import.
+- Production no-emit TypeScript and production compilation passed. Test TypeScript
+  initially identified an overloaded `realpath` mock signature; narrowing the
+  test seam to its actual string-path signature fixed it, and the final check passed.
+- Only the three capture files ran: **3 files, 222 tests passed**. Owned-root
+  cleanup and exact temporary-root accounting assertions passed.
+- Working/staged diff checks and the lockfile diff check passed. The staged binary
+  diff remains identical to the checkpoint at the start of this pass.
+- No production implementation, contract, script or other documentation changed.
+  No staging, unstaging, commit, push, full suite, runner tests, real S12/S6, adapter,
+  compiled CLI, project child action or user-state capture occurred. Same-user
+  TOCTOU and unauthenticated/non-crash-atomic artifact limitations remain unchanged.
+
+### Final Step 2.5c-1 verification
+
+The following supplied results record the final run of both verification scripts,
+separate from the earlier focused 222-test run above:
+
+- Capture foundation: **3 files, 222 tests passed**.
+- Scenario prerequisites: **11 files, 405 tests passed**.
+- Gated runner: **1 file, 3 tests passed**, after the prerequisite barrier.
+- Total across both scripts: **15 files, 630 tests passed**.
+- All TypeScript compilation completed successfully.
+- S12 created only its control file and removed its disposable root.
+- S6 removed only disposable untracked/ignored files and removed its root.
+- Diff checks passed and `pnpm-lock.yaml` remained unchanged.
+- All twelve Step 2.5c-1 files were staged before this documentation addition;
+  this addition remains unstaged.
+
+During this documentation update, a read-only check of canonical `/tmp` found
+no immediate entries matching `twin-test-*` or `twin-scenario-*`. `TMPDIR`, `TMP`,
+and `TEMP` were unset in this inspection environment. This records the observed
+temporary-root inventory, not a claim about other locations or earlier processes.
+No tests or scenarios were rerun, and no cleanup, staging, unstaging, commit, or
+push was performed during this update. All earlier results and correction entries
+remain historical records.

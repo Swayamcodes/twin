@@ -7,6 +7,8 @@
     "node": ">=24.2.0"
   },
   "scripts": {
+    "build:scenarios": "tsc -p packages/scenarios/tsconfig.json",
+    "test:scenarios:capture-foundation": "tsc -p packages/scenarios/tsconfig.json && tsc -p packages/scenarios/tsconfig.test.json && vitest run --config vitest.config.ts packages/scenarios/test/capture-records.test.ts packages/scenarios/test/capture-project.test.ts packages/scenarios/test/capture-artifact.test.ts",
     "test:scenarios": "tsc -p packages/scenarios/tsconfig.json && tsc -p packages/scenarios/tsconfig.test.json && vitest run --config vitest.config.ts packages/scenarios/test/definitions.test.ts packages/scenarios/test/entrypoint.test.ts packages/scenarios/test/guards.test.ts packages/scenarios/test/cleanup-failure.test.ts packages/scenarios/test/spawn-policy.test.ts packages/scenarios/test/oracle.test.ts packages/scenarios/test/contract.test.ts packages/scenarios/test/normalized-evidence.test.ts packages/scenarios/test/normalized-evidence-validation.test.ts packages/scenarios/test/attempt-protocol.test.ts packages/scenarios/test/attempt-protocol-validation.test.ts && vitest run --config vitest.config.ts packages/scenarios/test/runner.test.ts"
   },
   "devDependencies": {
