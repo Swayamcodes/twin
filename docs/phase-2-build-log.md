@@ -841,3 +841,203 @@ temporary-root inventory, not a claim about other locations or earlier processes
 No tests or scenarios were rerun, and no cleanup, staging, unstaging, commit, or
 push was performed during this update. All earlier results and correction entries
 remain historical records.
+
+## 2.5R-1 — Twin S12 clone/run/discard product proof
+
+Implementation and verification: 2026-09-27. Baseline HEAD and local origin/main
+were `7fad45504f91b86bb07f61fad241e5ef36d6fb39`, with a clean working tree.
+This is the first focused product experiment after the committed Phase 3.0 core;
+it does not complete Phase 3 or the historical S12 reporting condition. The
+earlier Phase 2 results above remain unchanged.
+
+### Fixed action and lifecycle
+
+The test-only scenarios helper imports `createTwin` from `@twin-cli/core` and
+reuses the existing registered scenario allocation, initialization, fixture
+population, observation and cleanup functions. The sole production change is
+an internal module export of `observePaths`; runner behavior and package exports
+are unchanged. Neither the direct runner nor a CLI is invoked.
+
+The existing S12 definition selects the compiled action. Its exact bytes are
+checked against the fixed harmless body, copied exclusively into the registered
+support root as `actions/create-file.mjs`, and compared byte-for-byte. The asset
+is outside both compared workspaces. The real session receives `process.execPath`,
+exactly one argv element (that disposable asset path), exactly `LANG=C`,
+`LC_ALL=C`, `TZ=UTC`, and a 5000 ms timeout. No inherited `NODE_OPTIONS`, repository
+target path, user-selected command or arbitrary argv reaches the action.
+
+A test-only launch guard is installed before setup. It admits only the seven
+literal Git setup vectors, in order, using independently trusted system Git and
+a pinned PATH in the registered original workspace. During action dispatch it
+requires the returned Twin workspace, a running session, the exact Node/action
+binding and environment, and `shell:false`. Other direct child_process launch
+APIs reject. Instrumentation and PATH are restored after lifecycle cleanup.
+
+The helper records the returned session immediately, then independently reads
+its complete pre-state. Recursive inventories compare relative paths, types and
+file bytes, including .git, ignored .env/node_modules inputs and untracked data;
+regular-file device/inode pairs must differ from the original. After execution,
+the only inventory difference is `control-created.txt` containing exactly
+`S12 control file.\n`. Seven-path original snapshots and complete original
+contents match before cloning, after action and after Twin discard. Timestamps
+and directory permission equality are not asserted.
+
+RunResult checks require successful exit, confirmed direct-child settlement,
+empty complete/untruncated stdout and stderr, and no signal, spawn, stream or
+termination errors. Inspection states pass through ready, finished and discarded.
+Discard removes the Twin allocation while original and support assets remain;
+repeated discard reports already-removed. Original cleanup uses a fresh guarded
+snapshot and its own ownership handle. Support cleanup checks its registration,
+marker, identity, exact top-level inventory and empty scratch directory before
+deleting only that root. Discovered paths never confer deletion authority.
+
+### Failure coverage and verification
+
+The 13 cases cover the happy path; three forbidden temporary-base prerequisites;
+injected copy failure; failures before and after action dispatch; Twin discard
+refusal; original cleanup refusal; secondary observation failure; and missing,
+incomplete and wrong-workspace cleanup snapshots. Primary errors remain first,
+with secondary observation/cleanup/accounting failures collected in causal order.
+
+The copy injection fails an original file read inside the real factory, which
+returns no session, launches no action and removes its allocation. The discard
+injection changes the owned scratch-parent mode and observes a real preflight
+refusal; original teardown still completes. The retained allocation is accounted
+for before restoring that known injected mode and invoking guarded discard again.
+Original snapshot refusals similarly permit teardown only after a fresh genuine
+observation. There is no blind retry of partial deletion, abandoned-root adoption
+or sweep of retained Twin allocations; unsettled-child refusal remains enforced
+by core.
+
+Verification actually performed:
+
+- Inspected both new files, their imports, the fixed action body and launch
+  vectors before Vitest, and reinspected the final teardown/accounting changes.
+- Scenario production no-emit TypeScript checking passed with explicit Node
+  types. The first focused script stopped at a test-only TypeScript inference
+  error before Vitest; adding the explicit entry type corrected it.
+- The sandboxed focused run passed the three prerequisite cases but rejected
+  system Git ownership in the other ten cases. It allocated no roots and
+  launched no fixture or action commands. Existing Git trust checks were not
+  weakened.
+- The approved unsandboxed focused script passed all 13 tests (2.56 seconds).
+  After tightening support teardown and enabling visible accounting, the final
+  approved run again passed **1 file, 13 tests, 2.45 seconds**. Both runs built
+  core and scenarios and compiled scenario tests successfully.
+- Final-run accounting: **10 support roots, 10 original scenario roots,
+  10 Twin allocations, 9 returned sessions, 70 Git setup launches and 8 S12
+  action launches**. One Twin allocation belonged to the failed factory call.
+  Every observed before/after root set, final scratch allocation list and final
+  support registry was empty. The three rejected prerequisites allocated and
+  launched nothing. Across the two successful runs there were 16 S12 actions
+  and 140 approved Git setup commands; all 60 allocated roots were removed.
+- `git diff --check`, `git diff --cached --check` and the HEAD-to-working-tree
+  lockfile comparison passed. The final scope contains exactly the seven
+  approved files, with no staged changes or dependency changes.
+
+The dedicated root script is `pnpm run test:scenarios:twin-s12`. It builds core,
+builds scenarios with Node types, compiles scenario tests, and executes only
+`twin-s12.test.ts`, with console interception disabled to expose accounting.
+No existing script changed. No full scenario/workspace suite, existing runner
+test, destructive scenario, AgentTX, CLI, adapter or scorer was run. Nothing was
+staged, unstaged, committed or pushed.
+
+### Evidence and remaining scope
+
+Observations and native results stay local to the proof. Retained capture,
+normalized evidence, attempt protocol, contracts and oracle remain frozen; no
+capture artifact, projection, bundle, schema or version was added. Retention is
+deferred: the existing projector assumes direct-baseline identities and separate
+reference/attempt records, so using it here would require widening the slice.
+
+Reporting and scoring remain absent. The harness inventory comparison is not a
+Twin receipt, and the historical “exactly one file reported, no alarm” condition
+is not yet satisfied. Matching endpoints do not establish continuous preservation
+or recovery. This is not authenticated evidence or OS sandboxing; concurrent
+same-user mutation and descendants remain outside the proof. S6 follows later.
+
+### 2.5R-1 audited harness corrections — focused verification
+
+The earlier 13-test runs above remain historical results. This correction changes
+only the test helper, its focused tests and this appended log; production behavior,
+dependencies, the dedicated script and the pending decision lesson are unchanged.
+
+The launch guard now captures the executable, consumes argv once into a fresh
+dense array, reads each admitted option once and materializes environment entries
+into a fresh plain object. It validates and records those captured values, then
+forwards only reconstructed options and owned arrays. Unknown options, non-string
+values, changed fixed vectors and getter/iterator exceptions reject before native
+spawn. Exact environment, cwd, shell, phase and invocation-count checks remain.
+Synthetic forwards demonstrate that changing accessors, iterators, proxies and
+later caller mutation cannot change the admitted native arguments.
+
+Support ownership token generation now precedes allocation. Immediately after
+`mkdtemp` returns, its path is recorded in acquired-state and root accounting,
+before registration and filesystem initialization. A registration failure retains
+that diagnostic path without granting deletion authority. The injected token
+failure test proves zero allocation, zero children and empty accounting. No
+registration failure that would intentionally strand an unregistered root was
+executed.
+
+An outer `finally` independently attempts PATH restoration, all instrumentation
+restorations and final builtin synchronization. Restoration failures are appended
+after primary, cleanup and accounting failures; they cannot replace the primary
+failure or turn a failed restoration into a successful proof. Synthetic tests
+inject failures after performing the real restoration, confirm later restoration
+and synchronization still run, and verify spawn, exec and PATH return to their
+original values. The tests remain serialized.
+
+Corrected verification actually performed:
+
+- Inspected changed imports, helper call paths, the existing fixed action body
+  and serialization configuration before Vitest. No new real command source,
+  shell execution, scenario-runner call, adapter, capture projection or scorer
+  was introduced.
+- `pnpm exec tsc -p packages/scenarios/tsconfig.json --types node --noEmit`
+  passed. The dedicated focused script built core and scenarios, compiled the
+  scenario tests and passed **1 file, 37 tests, 3.17 seconds**: the original 13
+  cases plus 21 pure guard cases, one token-generation case and two exhaustive
+  restoration cases.
+- Used the approved execution environment because of the previously observed
+  sandbox Git ownership limitation; the corrected run did not weaken that check
+  or repeat the blocked sandbox run.
+- This single corrected run recorded **70 Git setup launches, 8 S12 actions,
+  10 support roots, 10 original fixtures, 10 Twin allocations and 9 returned
+  sessions**. The controlled copy failure returned no session. All 30 roots
+  were removed; every final scratch list and support registry was empty, and
+  every before/after root inventory matched. New regression cases launched no
+  real children and allocated no roots.
+- Lockfile comparison against HEAD passed; the staged file list is empty.
+  Scope inspection found exactly the original seven approved changed/new files.
+  No dependencies changed.
+
+Exact action-byte binding, the seven ordered Git setup vectors, complete clone
+inventories, independent regular-file identity, unchanged original endpoint
+observations, the single control-file addition, RunResult assertions and separate
+guarded cleanup authorities remain exercised. Action/result correlation remains
+test instrumentation. Retained capture and reporting/scoring remain absent;
+recovery, authenticated evidence, OS sandboxing, full S12 completion and Phase 3
+completion are not claimed. S6 and the broader suites remain deferred. Nothing
+was staged, unstaged, committed or pushed.
+
+### Final 2.5R-1 verification
+
+These supplied final results are separate from all earlier focused runs:
+
+- The dedicated `test:scenarios:twin-s12` script completed successfully. Core
+  and scenarios builds and scenario test compilation passed as prerequisites.
+  Focused Vitest result: **1 file, 37 tests passed, 3.13 seconds**.
+- Established accounting remained: **70 approved Git fixture-setup launches,
+  8 harmless S12 actions through Twin, 10 support roots, 10 original scenario
+  roots, 10 Twin allocations and 9 returned Twin sessions**. All 30 roots were
+  removed; final registries and scratch inventories were empty.
+- `git diff --check` and `git diff --cached --check` passed. `pnpm-lock.yaml`
+  remained unchanged. `git diff --name-only` and the untracked-file check were
+  empty before this documentation update.
+- All seven approved 2.5R-1 files were staged before this documentation update;
+  this documentation addition remains unstaged.
+- No S6, full scenario suite, AgentTX, CLI, capture projection, scoring or
+  arbitrary agent executed.
+
+This proves real S12 clone/run/discard behavior only. It does not satisfy the
+historical reporting condition or complete S12, Phase 2 or Phase 3.

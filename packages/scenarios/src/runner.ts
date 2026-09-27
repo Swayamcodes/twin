@@ -13,7 +13,7 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-async function observePaths(root: OwnedScenarioRoot, paths: readonly ObservedPath[]): Promise<Snapshot> {
+export async function observePaths(root: OwnedScenarioRoot, paths: readonly ObservedPath[]): Promise<Snapshot> {
   let workspace: string | null = null;
   try {
     workspace = createdWorkspace(root);

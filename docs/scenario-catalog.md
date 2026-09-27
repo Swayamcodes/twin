@@ -55,7 +55,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | S9 | Unimplemented |
 | S10 | Unimplemented |
 | S11 | Unimplemented |
-| S12 | Currently executable as a direct scenario |
+| S12 | Direct scenario plus the focused 2.5R-1 Twin clone/run/discard proof, including complete clone inputs and original endpoint checks. The historical “exactly one file reported, no alarm” condition is not yet satisfied; reporting/scoring remain absent. |
 | S13 | Unimplemented |
 
 S6 and S12 execution support does not establish completed Twin/AgentTX/git adapters or five-field benchmark results. S6 performs deletion; it does **not** cover S13's read-to-perform-work action or demonstrate ignored-file visibility inside a tool-created workspace. The current S12 direct action/oracle does not establish its entire historical “fixed” condition, which also requires exactly one file reported and no alarm.

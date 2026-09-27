@@ -13,7 +13,8 @@
     "build:core": "tsc -p packages/core/tsconfig.json --types node",
     "typecheck:core": "tsc -p packages/core/tsconfig.json --types node --noEmit",
     "typecheck:core:tests": "tsc -p packages/core/tsconfig.test.json",
-    "test:core": "pnpm run typecheck:core:tests && vitest run --config packages/core/vitest.config.ts packages/core/test/copy.test.ts packages/core/test/run.test.ts packages/core/test/discard.test.ts packages/core/test/twin.test.ts"
+    "test:core": "pnpm run typecheck:core:tests && vitest run --config packages/core/vitest.config.ts packages/core/test/copy.test.ts packages/core/test/run.test.ts packages/core/test/discard.test.ts packages/core/test/twin.test.ts",
+    "test:scenarios:twin-s12": "tsc -p packages/core/tsconfig.json --types node && tsc -p packages/scenarios/tsconfig.json --types node && tsc -p packages/scenarios/tsconfig.test.json && vitest run --config vitest.config.ts --disableConsoleIntercept packages/scenarios/test/twin-s12.test.ts"
   },
   "devDependencies": {
     "@types/node": "~26.6.2",

@@ -81,15 +81,22 @@ I learned that evidence infrastructure should follow real product behavior inste
 
 ## Early Phase 3.0 — minimal Twin core
 
-Status: `pending commit`.
+Commit: `7fad455` — `feat(core): add minimal Twin clone-run-discard core`.
 
 I learned to make a complete independent copy the prerequisite for a runnable session, while keeping cleanup authority outside the command workspace. Preserving relative link objects supports dependency trees, but lexical containment and direct-child settlement still do not turn the copy into an OS sandbox.
 
-Phase 3.0 audit correction (still `pending commit`): I learned that a narrow Git
+Phase 3.0 audit correction (`7fad455` — `feat(core): add minimal Twin clone-run-discard core`): I learned that a narrow Git
 policy must guard the metadata names and bare-directory inventory before trusting
 its config checks. I also separate result delivery from resource disposal: an
 unconfirmed child exit still needs a listener after its bounded result returns.
 
-Phase 3.0 input-boundary correction (still `pending commit`): I learned that reading
+Phase 3.0 input-boundary correction (`7fad455` — `feat(core): add minimal Twin clone-run-discard core`): I learned that reading
 options can itself execute caller code. I acquire lifecycle ownership before input
 access and validate the captured command rather than rereading mutable inputs.
+
+## 2.5R-1 — Twin S12 clone/run/discard product proof
+
+Status: `pending commit`.
+
+I learned to prove Twin by running the existing control action through its real session and comparing the complete clone with the disposable original.
+I keep action targeting, endpoint observations and separate cleanup authorities explicit; an archive or a harness diff cannot substitute for product behavior or a receipt.
