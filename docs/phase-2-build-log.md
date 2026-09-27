@@ -309,3 +309,266 @@ the earlier focused two-file implementation and correction runs preserved above.
 This verification does not establish adapters, automatic scoring, oracle
 resolution, private artifact persistence, public verification, or preservation
 proof.
+
+## Step 2.5b: tool-attempt protocol and supplied oracle linkage
+
+Added a separate strict version-1 attempt request, protocol-evidence envelope,
+scoped evidence references, derived result, and sanitized validation response.
+`validateToolAttemptBundle(input: unknown)` validates supplied records without
+filesystem, process, clock, randomness, or external-registry access. It is
+nonthrowing, deterministic, and non-mutating. Direct Zod parsing retains normal
+throwing behavior. Malformed nested normalized or oracle objects return fixed
+input issues and no protocol result. Public diagnostics deliberately identify
+only approved envelope fields, never rejected values, unknown keys, nested raw
+oracle text, or exception messages.
+
+Attempt validity reduces only intrinsic attempt checks, with failure taking
+precedence over unknown while retaining all independently decidable checks.
+Reference resolution, reference eligibility, and optional same-execution oracle
+attachment never reduce attempt validity. Wrong or unresolved reference
+attachments make scoring not ready without rewriting the historical attempt.
+The standalone normalized validator remains unchanged; reference-link-only
+diagnostics are routed to reference resolution in this combined API. Intrinsic
+source-binding contradictions still fail bundle relationships. A matching
+same-execution invalid accident verdict cannot invalidate a properly blocked
+attempt or prevent readiness by itself. Unsupported oracle versions are malformed
+input under the existing version-1 contract.
+
+The protocol requires independently pinned original fixture bytes, lengths,
+classifications, and repository conditions; request delivery through the evaluated
+boundary; independent intended-action coverage; original and execution-workspace
+observations; and sufficient explicit ordering. Wrapper launch and action launch
+remain distinct. Policy block, pre-delivery launch failure, rejection, and inner
+launch failure are not conflated. Missing ignored inputs in a tool-prepared clone
+remain observed tool behavior and do not pre-award usability. Execution-workspace
+states live only in the new envelope. Endpoint equality supplies no preservation
+or recovery proof. Workspace disappearance does not establish complete effects.
+Cleanup after evidence collection and later artifact deletion remain independent
+dispositions; premature cleanup can fail required observation ordering.
+
+The existing OracleResult, normalized v1, ToolScore, global EvidenceRefSchema,
+runner, fixture, CLI, spawn policy, package export map, dependencies, and lockfile
+were not changed. Attempt references remain scoped to the new protocol contract.
+Step 2.6 must introduce a versioned score-support bundle or score-schema revision
+capable of citing normalized evidence, requests, tool boundaries, original and
+execution-workspace states, and reference accidents. Automatic scoring must not
+begin before that reference path exists. Protocol readiness is not a claim that
+the existing ToolScore schema can express all support or decide every dimension.
+
+The first planned retained offline capture is direct-baseline S12, with independent
+delivery evidence through that adapter boundary. S12 is not a plain-Git attempt.
+Plain-git S6 follows separately; AgentTX and future Twin wrapper adapters remain
+deferred. No adapter or capture producer was implemented.
+
+Verification performed in this implementation turn:
+
+- Statically inspected both new tests before execution and after additions.
+  Imports are Vitest, public pure contracts, and `node:crypto` solely for hashing
+  synthetic fixture literals. No runner, fixture producer, child-process launcher,
+  spawn guard, execution harness, adapter, or filesystem module is imported.
+- All inputs are hand-authored synthetic evidence and frozen before validation.
+  Initial coverage exercised the revised matrix's named cases: reference-only failures,
+  malformed oracles, source-binding contradictions, S12/S6 blocked and started
+  attempts, missing coverage, equal batches, workspace identity, cleanup,
+  unavailable artifacts, immutable deterministic results, sanitized diagnostics,
+  and compatibility exclusions from the settled reference/score/oracle schemas.
+- Production no-emit TypeScript checking passed.
+- Production TypeScript compilation passed.
+- Test TypeScript compilation passed.
+- The final explicitly selected synthetic Vitest run passed **2 files and 86 tests**.
+  Earlier focused runs passed 78, 83, and 85 tests before additional consistency cases.
+- Production review added coverage for unknown block/preparation evidence,
+  contradictory same-workspace states, observed in-place Git damage, passing
+  evidence references, missing setup combined with known wrong fixture bytes,
+  tool-claimed milestones that cannot replace independent coverage, and rejection
+  of self-justifying or cross-check result evidence references.
+- Unstaged and staged diff whitespace checks passed. The lockfile comparison
+  against HEAD was empty. The final source slice is exactly the approved eight
+  files, with no staged changes.
+
+Only the two new synthetic test files ran. No full prerequisite suite, package
+test script, runner test, S12/S6 action, runScenario, compiled CLI, real adapter,
+AgentTX, Twin, or scenario child command ran. No dependencies were installed and
+no destructive command, staging, unstaging, commit, or push occurred. Private
+persistence, authentication, redaction implementation, automatic scoring, and
+preservation proof remain deferred.
+
+## Step 2.5b staged-source audit corrections
+
+The independent audit returned REQUIRES FIXES FIRST. The preceding 86-test result
+is preserved as historical verification, not proof that the original matrix was
+adequately isolated or the protocol complete. In particular, the launch-failure
+and incompatible observer-segment negative cases had unrelated failure causes.
+The earlier "no staged changes" statement describes the original implementation
+turn. The user subsequently staged the eight-file checkpoint; this correction
+turn preserves that index and applies only unstaged changes within the approved
+scope. No settled normalized, oracle, global-reference, score, or runner contract
+is changed.
+
+Corrections now validate noncreation relationship and responsibility before using
+it as an alternative to workspace observations. Same-workspace/noncreation is
+contradictory; unknown relationship or responsibility remains unknown. Required
+noncreation evidence is ordered strictly before removed/failed cleanup, just like
+other final observations. Later cleanup failure remains independent of behavior.
+
+Simultaneous independent state reconciliation compares every applicable known
+state, hash, size, and Git classification within the same run/request/scenario,
+workspace, semantic path, stage, and matching observation point. Unknown reasons
+are not values. Independent normalized workspace-input presence is reconciled with
+the bound execution workspace at matching pre-action points; present versus absent
+and missing versus file are contradictions. Existing independent inputs cannot
+coexist with noncreation. Unknown presence remains unknown, tool claims do not
+establish independent state, and no usability outcome is inferred.
+
+Direct offering-to-settlement and offering-to-action comparisons expose known
+endpoint reversals even with unknown receipt coordinates. Permitted simultaneous
+boundary batches remain valid. Tool and adapter identities now compare names and
+known versions semantically, keeping asymmetric or differently reasoned unknown
+versions indeterminate without hiding known name mismatches.
+
+At this checkpoint the result schema conditionally rejected disposition/scoped-reference
+ownership contradictions with an identities or bundleRelationships failure and an
+invalid/not-ready result. The subsequent correction below tightens the required
+ownership-specific diagnosis. Invalid results can retain offending input
+identities. reportingMetadata now reports reporting-specific normalized inventory,
+capture, interpretation, ownership, channel, and segment inconsistencies while
+preserving honest partial/unavailable reporting. Duplicate reporting identities
+are classified independently of array order.
+
+The two negative cases now preserve coherent normalized evidence and assert the
+exact intended failure checks and reasons. Added frozen synthetic cases isolate
+noncreation relationships, sizes, classifications, workspace-input presence,
+cleanup timing, transitive ordering, equal boundaries, asymmetric unknown versions,
+result ownership, and reporting metadata. The original verification counts above
+are unchanged.
+
+Correction verification performed in this turn:
+
+- Re-inspected both Step 2.5b test files before Vitest. Imports remain Vitest,
+  public pure contracts, and `node:crypto` for synthetic literal hashes only.
+  No runner, fixture producer, child_process, spawn guard, harness, adapter, CLI
+  entry point, filesystem module, or command launcher is imported or invoked.
+- Production no-emit TypeScript checking and production compilation passed.
+- The first test compilation identified an indexed-assignment typing error in
+  a new ownership regression. Explicit field narrowing corrected the test;
+  test compilation then passed. Final production and test checks all passed.
+- The first focused correction run passed **2 files and 133 tests**. Review then
+  added a duplicate reporting-segment order regression and strengthened the
+  equal-batch cases to include offering and receipt alongside action milestones.
+- Final focused Vitest verification passed **2 files and 134 tests**, including
+  the repaired isolated negative cases and all added audit regressions. No full
+  suite or runner process was executed.
+- `git diff --check` and `git diff --cached --check` passed.
+- `git diff --exit-code -- pnpm-lock.yaml` passed with no differences.
+- Comparing the complete staged binary diff before and after corrections showed
+  the staged checkpoint unchanged. Status retains the original eight staged files;
+  only architecture, this log, the two protocol source files, and the validation
+  test have additional unstaged corrections.
+
+No staging, unstaging, commit, push, dependency installation, destructive command,
+scenario action, adapter, compiled CLI, scenario child command, or verification
+outside the permitted TypeScript and two-file synthetic checks occurred. These
+tests validate supplied evidence consistency, not capture authenticity, continuous
+preservation, actual adapter behavior, or scoring support beyond the existing
+documented Step 2.6 compatibility boundary.
+
+### Step 2.5b remaining ordering and ownership audit corrections
+
+The ordering validator now uses a fixed semantic graph and compares every
+applicable endpoint pair in its transitive closure. Unknown intermediate
+coordinates cannot conceal binding/action, action/post-state, settlement/cleanup,
+or baseline/delivery endpoint reversals. Strictness propagates along each path;
+equal batches establish only non-strict relationships. Tool-prepared binding
+follows receipt, while a direct workspace may predate receipt. No positions or
+chronology are inferred from array order. The noncreation branch includes the
+direct settlement/cleanup comparison as well as settlement/noncreation/cleanup.
+
+Retained disposition or scoped-reference ownership contradictions now require
+identities to fail with identity-mismatch and the result to be invalid/not-ready.
+An unrelated bundleRelationships failure is insufficient. The validator diagnoses
+normalized ownership conflicts and observer ownership even when a segment cannot
+resolve because its channel is incompatible.
+
+Frozen regressions isolate unknown intermediate positions, transitive endpoint
+reversals, equal strict/non-strict batches, opposing timestamp/sequence directions,
+and ownership-specific result refinement. The noncreation/cleanup unknown case
+uses complementary coordinates: sequence-only noncreation and timestamp-only
+cleanup, with all other checks passing. Supplying either missing coordinate makes
+that case valid. An equal-batch noncreation/cleanup case remains indeterminate.
+
+Focused verification for these remaining corrections:
+
+- Statically rechecked both Step 2.5b tests before Vitest: only Vitest, public
+  contracts, and node:crypto imports; no execution-capable imports or launchers.
+- The initial production no-emit check caught a graph-map initialization typing
+  error; an explicitly typed record fixed it. Production no-emit, production
+  compilation, and test TypeScript compilation then all passed.
+- The two permitted synthetic test files passed: **2 files and 157 tests**.
+  Earlier verification counts above remain historical records.
+- Both unstaged and staged diff whitespace checks passed; the lockfile diff was
+  empty. Comparing the staged binary diff with the beginning of this correction
+  turn confirmed the staged checkpoint unchanged. Git status retains eight
+  staged files with unstaged corrections confined to the five approved files.
+
+These corrections remain limited to the five approved files and do not change
+the settled normalized, oracle, score, or global evidence-reference contracts.
+No staging, unstaging, commit, push, scenario, adapter, runner/full-suite test,
+compiled CLI, scenario child command, dependency installation, or destructive
+command occurred. Verification was limited to the permitted checks above.
+
+### Step 2.5b final during-stage correction
+
+WorkspaceStateObservation stage `during` now explicitly means the tool-attempt
+window, not the inner-action execution interval. Semantic graph edges enforce
+offering ≤ during ≤ settlement and, for an identified execution workspace,
+binding ≤ during. Closure carries setup/baseline precedence and strict
+during-to-destructive-cleanup precedence through settlement. No stage-derived
+edge links during to an attempted/started/blocked/completed milestone. Supplied
+coordinates may support later scoring, but the stage establishes none of action
+start, preservation, recovery, damage, or usability.
+
+Original-workspace during points remain permitted in blocked/noncreation attempts.
+Execution-workspace points require identified, coherent ownership and contradict
+independent noncreation. Independent normalized original during points also receive
+attempt-window bounds. Existing required before/after coverage remains unchanged.
+No schema refinement or settled-contract change was necessary.
+
+Added 16 frozen synthetic cases covering the requested twelve behaviors plus
+ownership and equal-batch variants. They assert exact check reasons and isolate
+unrelated checks. Static inspection of both Step 2.5b tests found no execution-capable
+imports or launchers. Production no-emit checking, production compilation, and
+test TypeScript compilation passed. Focused Vitest passed **2 files and 173 tests**.
+All earlier verification counts are preserved above.
+
+Staged and unstaged whitespace checks passed, the lockfile diff was empty, and
+the staged binary diff matched the beginning of this correction turn. Only the
+validator, validation tests, architecture, and this log changed in this turn;
+pre-existing staged and unstaged changes remain intact. No staging, unstaging,
+commit, push, scenario, adapter, runner/full-suite test, CLI, child action, or
+destructive command occurred. Verification used only the permitted checks.
+
+### Final Step 2.5b verification
+
+The following final verification results were supplied by the user. They were
+not rerun during this documentation-only update.
+
+- Production no-emit TypeScript check passed.
+- `pnpm run test:scenarios` completed successfully.
+- Prerequisite process: **11 files, 405 tests passed**.
+- Separately gated runner process: **1 file, 3 tests passed**.
+- Total: **12 files, 408 tests passed**.
+- Runner cases verified:
+  - Extra argument rejected before allocation.
+  - S12 created only the control file in its disposable workspace and removed
+    the root.
+  - S6 removed only disposable untracked and ignored files with independent
+    observations.
+- `git diff --cached --check` passed.
+- `pnpm-lock.yaml` remained unchanged.
+- Post-run `/tmp` search printed no `twin-scenario-*` or `twin-test-*` roots.
+- Git status showed exactly the eight staged Step 2.5b files.
+- No adapter or automatic scorer was executed or implemented.
+
+Protocol validation still establishes supplied-evidence consistency, not capture
+authenticity, preservation proof, or tool safety. All earlier verification counts
+and correction entries above remain historical records.

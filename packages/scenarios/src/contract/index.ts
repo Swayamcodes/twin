@@ -20,3 +20,5 @@ export { evaluateScenarioOracle } from "../oracle.js";
 
 export * from "./normalized-evidence-schema.js";
 export * from "./normalized-evidence-validation.js";
+export * from "./attempt-protocol-schema.js";
+export * from "./attempt-protocol-validation.js";

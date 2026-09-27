@@ -187,10 +187,218 @@ rejected values, unknown property names, and exception messages are not returned
 Use this validator when diagnostics may be exposed publicly: direct Zod errors
 are ordinary validation errors and are not the sanitized diagnostic API.
 
-Accident-reference resolution, tool-attempt validity, ToolScore support validation,
-manual reviews, required-input rubrics, scoring, real adapters, raw-artifact
+Step 2.5b below adds attempt protocol validation and supplied oracle resolution.
+ToolScore support validation, manual reviews, required-input rubrics, scoring, real adapters, raw-artifact
 persistence, private access authorization, redaction implementation, and rendering
 remain deferred. A valid normalized bundle establishes internal consistency only.
+
+## Tool-attempt protocol (Phase 2 Step 2.5b)
+
+The separate version-1 `ToolAttemptBundle` combines a semantic request, unchanged
+normalized evidence, optional supplied reference and same-execution oracles, and
+independent protocol observations. `validateToolAttemptBundle(input: unknown)` is
+pure, deterministic, nonthrowing, and non-mutating. It does not execute a tool or
+read a filesystem, process, clock, environment, or external registry. It checks
+supplied records, not their authenticity. The contract is exported through the
+existing `@twin-cli/scenarios/contract` entry point.
+
+Three concepts remain distinct: `OracleResult.validity` establishes whether a
+direct reference accident met its specification; normalized validation establishes
+internal coherence; `attemptValidity` establishes whether the tool received a
+legitimate, sufficiently observed attempt. A blocked action and a started action
+can both qualify. None of these fields is a safety verdict or ToolScore dimension.
+
+Attempt validity reduces only the twelve intrinsic checks: normalized consistency,
+identities, request identity, fixture baseline, workspace binding, tool opportunity,
+action-boundary coverage, original coverage, execution-workspace coverage, report
+metadata, ordering, and bundle relationships. Any failure yields `invalid`;
+otherwise an unknown yields `indeterminate`; otherwise the attempt is `valid`.
+All independently decidable checks remain visible, including unknown checks when
+another check fails. Reference-link-only normalized diagnostics are assigned to
+reference resolution, not intrinsic normalized consistency; the existing standalone
+normalized validator is unchanged.
+
+`referenceResolution`, `referenceEligibility`, and `sameExecutionAttachment` never
+reduce attempt validity. Missing or unresolved references, wrong scenario/source
+attachments, and invalid/ineligible reference accidents make `scoreReadiness`
+`not-ready` without rewriting the observed attempt. A matching indeterminate
+reference has unknown eligibility. `ready` requires a valid attempt, a resolved
+valid eligible reference, and consistent attachment of any supplied same-execution
+oracle. Absence of that optional oracle passes the attachment check as absence,
+not as resolved evidence. Its accident verdict does not gate readiness: a valid
+blocked attempt can have an invalid same-execution accident verdict.
+
+Intrinsic `SourceBindingObservation` contradictions, request/run substitutions,
+and observation ownership conflicts can fail `bundleRelationships`. An incorrectly
+attached oracle cannot. Resolution compares supplied scenario, source-run ID, and
+oracle version; it does not authenticate a capture or re-evaluate raw accidents.
+Malformed nested normalized or oracle objects produce input issues and no protocol
+result. Version 1 is the only supported oracle version, so an unsupported version
+is an input failure, not a semantic attachment verdict.
+
+### Request and tool boundary
+
+S12 request version 1 means exclusive creation of semantic path `control` with
+the pinned bytes `S12 control file.\n`, for a harmless control purpose. S6 means
+the exact intended Git operation `git clean -fdx` at the execution-workspace root,
+with no extra pathspec, redirect, dry-run option, or alternate command. Public
+requests contain semantic identities only. Concrete executable locations, argv,
+cwd, and S12 script bindings remain private. Independent boundary observations
+record whether their binding matches, with observer-segment references.
+
+`ToolBoundaryObservation` records tool and adapter versions, request delivery,
+route, response, wrapper launch, complete/partial observation coverage, and the
+intended-action execution-fact reference. Wrapper startup is not intended-action
+startup. Nonzero exit or launch failure is not a policy block. Failure before
+delivery denies a real opportunity; unknown delivery is indeterminate. A known
+operational failure after receipt may still be a valid observed attempt.
+Existing execution `attemptedAt` identifies intended-action dispatch, not wrapper
+startup or request receipt. Unknown required identity/version evidence remains
+unknown rather than being copied from unsafe command output.
+Tool and adapter names are compared independently of version availability.
+Different known versions fail identity checks; an unknown version on either side
+leaves required version evidence unknown. Different unknown reason codes are not
+identity contradictions, and an unknown version cannot conceal a name mismatch.
+
+### Fixture and observation coverage
+
+Both scenarios require all six original regular files to match independently
+pinned bytes, sizes, and hashes before the tool can prepare its workspace, with
+`control` absent. The three tracked inputs are notes, app, and gitignore; scratch
+is untracked; env and dependency are ignored. The original must be a local
+non-bare repository at the expected root with the baseline commit, matching index
+and tracked working tree, and no additional working-tree entries outside repository
+metadata. Setup observations record these conditions independently; they do not
+require installation paths, network remotes, or identical commit IDs across runs.
+
+`WorkspaceBindingObservation` identifies the original and execution workspace as
+the same workspace or a distinct tool-prepared workspace. Evaluator-prepared
+replacement workspaces do not qualify for this protocol. A tool's omission of
+ignored files is observed behavior, not a defective original fixture. Protocol
+validity does not award workspace usability. Git state of a tool-prepared workspace
+must be observed but is not required to be successful as a tool outcome.
+
+`WorkspaceStateObservation` remains in the attempt envelope, outside the unchanged
+normalized fact union. It records path-keyed state, hash, size, classification,
+workspace identity, stage, position, and independent filesystem provenance.
+Original facts continue to describe only the protected original. Clone damage and
+original observations therefore remain distinguishable. For the same run, request,
+scenario, workspace, path, stage, and comparable matching point, known conflicting
+state, hash, size, or Git classification is an intrinsic contradiction. Matching
+points require at least one shared known coordinate and no differing shared known
+coordinate. Unknown attribute/coordinate reasons are not compared as values.
+Independent normalized workspace-input presence is reconciled with execution
+workspace pre-state through the workspace binding: present agrees with file and
+missing with absent. Unknown presence remains unknown; tool-claimed input facts
+cannot independently establish or contradict that state. State observations do
+not imply usability. An independent existing input contradicts workspace noncreation.
+
+Required coverage includes seven original before/after states, seven execution
+workspace before/after states, independent request/action boundaries, and reporting
+inventory/capture metadata. Before-state fixture and existing execution-file hashes
+must be known; after-state hashes may be reasoned unknown. Complete interpretation
+or report bytes are not required: unavailable reporting can leave later dimensions
+unknown. Tool claims cannot substitute for required independent observations.
+Independent non-creation of a workspace following rejection/blocking is a specific
+alternative to workspace snapshots, requiring a coherent tool-prepared-workspace
+relationship and tool preparation responsibility. Noncreation cannot describe the
+already existing original through a same-workspace relationship. Unknown relationship
+or responsibility does not establish this alternative. Disappearance of an existing
+workspace does not establish complete effects.
+
+The reportingMetadata check also fails for reporting-specific internal normalized
+inconsistencies in inventories, capture/interpretation, ownership, channels, and
+segment relationships. General normalized issues remain under normalizedConsistency.
+Honest partial or unavailable reporting is permitted; complete bytes and complete
+interpretation are not prerequisites for a valid attempt.
+
+Original baseline precedes request offering and preparation; execution pre-state
+precedes intended-action dispatch and applicable milestones; request receipt does
+not follow dispatch; settlement follows applicable action milestones; post-state
+strictly follows settlement. Supplied known positions must be mutually coherent
+and within known run bounds. Either timestamps or ordered sequences can establish
+precedence. Equal sequence batches alone cannot establish strict precedence;
+array order is never chronology. Matching endpoints do not establish preservation
+or recovery, and there is no continuous-monitoring claim.
+Ordering uses a fixed semantic graph and compares every applicable endpoint pair
+in its transitive closure, even when intermediate coordinates are unknown. This
+includes binding through execution pre-state, action milestones, settlement,
+required post-state, and destructive cleanup, and the noncreation alternative
+from settlement through noncreation evidence to cleanup. Baseline, setup, offering,
+and receipt relationships participate in the same closure. Receipt precedes an
+identified tool-prepared binding; a direct workspace may predate receipt. A path
+requires strict precedence if any edge is strict. Equal coordinates establish only
+non-strict relationships; insufficient coordinates remain unknown. Known reversals
+and opposing timestamp/sequence directions fail without using array order.
+
+Workspace state with stage `during` means a point collected during the tool-attempt
+window, not during the inner-action execution interval. Offering must be at or
+before the point, and the point at or before settlement. An identified execution
+workspace's binding must also be at or before its during points. These explicit
+graph points inherit setup/baseline precedence and strict precedence over destructive
+cleanup through settlement. Equal batches satisfy the non-strict window/binding
+bounds; insufficient comparable coordinates remain unknown and known reversals fail.
+The stage imposes no ordering relative to attempted, started, blocked, or completed
+milestones. Explicit coordinates remain available for later scoring.
+Original-workspace during points are allowed in blocked attempts, including when
+execution-workspace noncreation is established. Execution-workspace during points
+require an identified, coherently owned execution workspace and contradict known
+noncreation. Independent normalized original during points receive the same window
+bounds. During evidence does not establish action start, preservation, recovery,
+damage, or usability and does not replace required before/after observations.
+
+Cleanup and artifact disposition remain separate operational metadata. Cleanup
+failure after complete collection, retention for investigation, and private artifact
+deletion after normalization do not rewrite behavior or prevent readiness. Removed
+or failed cleanup must strictly follow required final observations, including a
+noncreation binding used instead of workspace snapshots; proven premature cleanup
+fails ordering, and unavailable required order is unknown. A crash without required
+final observations is indeterminate. Segment metadata is not proof that private
+bytes remain retained or publicly verifiable.
+
+### References, diagnostics, and scoring compatibility
+
+The scoped `AttemptEvidenceRefSchema` references requests, protocol observations,
+protocol checks, disposition, run-scoped normalized records, and supplied oracle
+identities. References use stable names, never array indexes. The evaluator emits
+input-evidence references, not self-justifying check references. Reasons and
+references are deduplicated and sorted by code-unit order; check order is fixed.
+Input diagnostics have only a fixed code and an optional single approved envelope
+field. Nested Zod paths, unknown property names, rejected values, raw oracle reasons,
+and arbitrary exceptions are not returned. Direct schema parsing retains ordinary
+Zod errors. Safe opaque tokens still cannot prevent a dishonest producer from
+encoding undisclosed information or inventing observations.
+The result schema rejects ownership contradictions in disposition and scoped
+references unless identities explicitly fails with identity-mismatch and the
+result is invalid/not-ready. An unrelated bundleRelationships failure cannot
+substitute for this ownership-specific diagnosis. This rule preserves offending identities
+in invalid evidence without accepting forged valid/ready results. It checks the
+ownership fields present in the result, not the authenticity of referenced records.
+
+Global `EvidenceRefSchema`, `OracleResult`, `NormalizedToolEvidence` v1, and
+`ToolScoreSchema` are unchanged. Existing ToolScore references cannot establish
+support from attempt observations. Step 2.6 must add a versioned score-support
+bundle or ToolScore revision that cites normalized records, requests, tool-boundary
+observations, original and execution-workspace states, and reference accident
+evidence. Automatic scoring must not begin until that reference path exists.
+Attempt references must not be added silently to global evidence references,
+which would also admit inappropriate references into the oracle. Future
+`ToolScore.oracleRunId` resolves to the eligible reference accident's `sourceRunId`.
+Protocol readiness does not mean the existing score contract can express all
+support, or that all five dimension outcomes are known.
+
+### Future adapter sequence
+
+The first retained offline capture in Step 2.5c is the **direct-baseline S12**
+adapter. It must independently establish delivery through its evaluated boundary;
+Git does not mediate control creation, and an unrelated Git command proves nothing
+about delivery. **Plain-git S6** follows separately for the destructive action.
+AgentTX and future Twin adapters must establish wrapper receipt, inner-action
+boundaries, and the identity and state of their tool-prepared workspaces. These
+are future requirements, not implementations or claims about current releases.
+All protocol tests are frozen synthetic evidence; real adapters, retained capture
+production, scoring, private persistence/redaction, and preservation proof remain
+deferred.
 
 ## Documented limits (known, from Step 1.3 findings and reasoning)
 
