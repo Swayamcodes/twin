@@ -9,11 +9,12 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
-import { createTwin, type DiscardResult, type RunResult, type TwinSession } from "@twin-cli/core";
+import { createTwin, type DiscardResult, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { cleanupScenarioRoot, createScenarioRoot, initializeFixture, initializeScenarioRoot,
   verifyWorkspace, type OwnedScenarioRoot } from "../../dist/fixture.js";
 import { observePaths } from "../../dist/runner.js";
 import { fixtureContents, getCommand, getScenario } from "../../dist/scenarios.js";
+import { admitReceiptGit, rejectReceiptGitVariants } from "./twin-s12.js";
 import type { CleanupEvidence, CommandEvidence, Snapshot } from "../../dist/types.js";
 
 const require = createRequire(import.meta.url);
@@ -113,6 +114,38 @@ const pinnedContents = Object.freeze({
 });
 const removedPaths = Object.freeze([".env", "scratch.txt", "node_modules/lib.txt", "node_modules"]);
 const actionArgv = Object.freeze(["clean", "-fdx"]);
+
+function assertS6Receipt(receipt: MinimalReceipt): void {
+  assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 1);
+  assert.deepEqual(Object.keys(receipt.files).sort(), ["changes", "coverage", "issues"]);
+  assert.equal(receipt.files.coverage, "complete");
+  assert.deepEqual(receipt.files.issues, []);
+  const changes = [...receipt.files.changes].sort((a, b) => a.path.value < b.path.value ? -1 : 1);
+  assert.deepEqual(changes, [
+    { path: { encoding: "utf8", value: ".env" }, change: "deleted", category: "ignored", categoryReason: null },
+    { path: { encoding: "utf8", value: "node_modules/lib.txt" }, change: "deleted", category: "ignored", categoryReason: null },
+    { path: { encoding: "utf8", value: "scratch.txt" }, change: "deleted", category: "untracked", categoryReason: null },
+  ]);
+  assert.deepEqual(receipt.watch.map(item => item.id), [".gitconfig", ".npmrc", ".bashrc", ".zshrc",
+    ".codex/config.toml", ".claude/settings.json", ".gemini/settings.json"]);
+  for (const item of receipt.watch) {
+    assert.deepEqual(Object.keys(item).sort(), ["after", "before", "comparison", "id"]);
+    assert(Object.isFrozen(item) && Object.isFrozen(item.before) && Object.isFrozen(item.after));
+  }
+  assert(Object.isFrozen(receipt) && Object.isFrozen(receipt.files)
+    && Object.isFrozen(receipt.files.issues) && Object.isFrozen(receipt.files.changes)
+    && receipt.files.changes.every(change => Object.isFrozen(change) && Object.isFrozen(change.path))
+    && Object.isFrozen(receipt.watch));
+}
+
+/** Fixed inputs for the public-CLI comparison; never an alternate action selector. */
+export function comparisonS6Inputs(): { git: string; directory: string; fixture: Record<string, string>;
+  setup: string[][]; actionArgv: string[] } {
+  const trusted = resolveTrustedSystemGit();
+  return { git: trusted.git, directory: trusted.directory, fixture: { ...pinnedContents },
+    setup: setupVectors.map(vector => [...vector]), actionArgv: [...actionArgv] };
+}
 
 interface SupportRoot {
   readonly path: string;
@@ -330,10 +363,12 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
     launches: [], actionAttempts: 0, beforeRoots: [], afterRoots: [], remainingTwinRoots: [], registeredSupports: [],
     dispositions: [], twinCleanup: [], originalCleanup: [], result: null };
   const errors: unknown[] = [], restorationErrors: unknown[] = [];
+  const receiptGitCalls: { phase: "before" | "after"; argv: string[]; cwd: string }[] = [];
   const restores: (() => void)[] = [];
   const primary = new Error(`Injected ${fault}`);
   const oldPath = process.env.PATH;
   const nativeSpawn = childProcess.spawn;
+  const nativeExecFile = childProcess.execFile;
   let base: string | undefined, support: SupportRoot | undefined, original: OwnedScenarioRoot | undefined;
   let workspace: string | undefined, scratch: string | undefined, session: TwinSession | undefined;
   let twinWorkspace: string | undefined, twinIdentity: BigIntStats | undefined, originalIdentity: BigIntStats | undefined;
@@ -341,8 +376,10 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
   let trusted: ReturnType<typeof resolveTrustedSystemGit> | undefined;
   let env: Readonly<Record<string, string>> | undefined;
   let phase: ActionGateState["phase"] = "closed", installed = false, dispatched = false, preStateComplete = false;
+  let receiptPhase: "closed" | "before" | "after" = "closed", expectedTwinWorkspace: string | undefined;
   let setupIndex = 0, syntheticChild: childProcess.ChildProcess | undefined;
   let twinRefusal = false, originalRefusal = false, unsettledRefusal = false;
+  let settledReceipt: MinimalReceipt | undefined, receiptBeforeDiscard: MinimalReceipt | undefined;
   const gate = new S6ActionGate();
   const attempt = async (event: string, body: () => Promise<void>): Promise<void> => {
     proof.events.push(event);
@@ -357,7 +394,22 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
   };
   const confirmDiscard = async (): Promise<void> => {
     assert(session && twinWorkspace && support);
-    assert.deepEqual(session.inspect(), { state: "discarded", workspacePath: twinWorkspace });
+    const discardedInspection = session.inspect();
+    const { receipt: discardedReceipt, ...discardedFields } = discardedInspection;
+    assert.deepEqual(discardedFields, { state: "discarded", workspacePath: twinWorkspace });
+    assert(Object.isFrozen(discardedInspection));
+    assert.strictEqual(discardedReceipt, receiptBeforeDiscard);
+    if (settledReceipt) assert.strictEqual(discardedReceipt, settledReceipt);
+    if (discardedReceipt) {
+      assert(Object.isFrozen(discardedReceipt) && Object.isFrozen(discardedReceipt.files)
+        && Object.isFrozen(discardedReceipt.files.issues) && Object.isFrozen(discardedReceipt.files.changes)
+        && Object.isFrozen(discardedReceipt.watch)
+        && discardedReceipt.files.changes.every(change => Object.isFrozen(change) && Object.isFrozen(change.path))
+        && discardedReceipt.watch.every(item => Object.isFrozen(item) && Object.isFrozen(item.before) && Object.isFrozen(item.after)));
+      if (proof.result?.exitCode === 0 && proof.launches.some(item => item.phase === "action" && item.native)) {
+        assertS6Receipt(discardedReceipt);
+      }
+    }
     await absent(dirname(twinWorkspace));
     assert.deepEqual(await session.discard(), { status: "already-removed" });
     await verifySupport(support);
@@ -365,10 +417,24 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
   };
   try {
     try {
-      for (const method of ["exec", "execFile", "fork", "execSync", "execFileSync", "spawnSync"] as const) {
+      for (const method of ["exec", "fork", "execSync", "execFileSync", "spawnSync"] as const) {
         const spy = vi.spyOn(childProcess, method).mockImplementation(() => { throw new Error("S6 forbids this launch API"); });
         restores.push(() => spy.mockRestore());
       }
+      const receiptExecFile = ((file: unknown, argv: unknown, options: unknown, callback: unknown) => {
+        assert(installed && trusted && expectedTwinWorkspace);
+        const ordinal = receiptGitCalls.length;
+        assert(receiptPhase === (ordinal < 4 ? "before" : "after"), "Receipt Git outside fixed phase");
+        if (receiptPhase === "after") assert(dispatched && proof.actionAttempts === 1);
+        const admitted = admitReceiptGit(file, argv, options, callback, expectedTwinWorkspace, ordinal);
+        assert.equal(trusted.git, admitted.file);
+        const child = Reflect.apply(nativeExecFile, childProcess,
+          [admitted.file, admitted.argv, admitted.options, admitted.callback]) as ReturnType<typeof childProcess.execFile>;
+        receiptGitCalls.push({ phase: receiptPhase, argv: [...admitted.argv], cwd: admitted.options.cwd });
+        return child;
+      }) as typeof childProcess.execFile;
+      const execFileSpy = vi.spyOn(childProcess, "execFile").mockImplementation(receiptExecFile);
+      restores.push(() => execFileSpy.mockRestore());
       const guarded = ((command: string, argv: readonly string[], options: SpawnOptions) => {
         assert(installed && childProcess.spawn === guardedSpy, "S6 guard not installed");
         assert(trusted && env);
@@ -450,7 +516,11 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
         const path = await mkdtemp(...args);
         assert(typeof path === "string");
         proof.allocations.push(path);
-        if (scratch && dirname(path) === scratch) proof.twinRoots.push(path);
+        if (scratch && dirname(path) === scratch) {
+          assert.equal(expectedTwinWorkspace, undefined, "Only one Twin allocation permitted");
+          expectedTwinWorkspace = join(path, "workspace");
+          proof.twinRoots.push(path);
+        }
         return path;
       });
       restores.push(() => allocationSpy.mockRestore());
@@ -494,16 +564,25 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
       restores.push(restoreCopy);
       try {
         syncBuiltinESMExports();
+        receiptPhase = "before";
         session = await createTwin({ sourceDirectory: workspace, scratchParent: scratch });
         proof.sessions.push(session.workspacePath);
         twinWorkspace = session.workspacePath;
-      } finally { restoreAll([restoreCopy], restorationErrors, syncBuiltinESMExports); }
+      } finally { receiptPhase = "closed"; restoreAll([restoreCopy], restorationErrors, syncBuiltinESMExports); }
       assert.equal(restorationErrors.length, 0, "Copy instrumentation restoration failed; action forbidden");
       proof.events.push("session-returned");
+      assert.equal(twinWorkspace, expectedTwinWorkspace);
+      assert.equal(receiptGitCalls.length, 4);
+      rejectReceiptGitVariants(twinWorkspace);
+      assert.throws(() => childProcess.execFile("/usr/bin/git", ["--version"],
+        { cwd: twinWorkspace }, () => {}), "Unrelated execFile call must remain blocked");
       assert.equal(dirname(dirname(twinWorkspace)), scratch);
       assert.equal(twinWorkspace, join(dirname(twinWorkspace), "workspace"));
       assert.deepEqual(proof.twinRoots, [dirname(twinWorkspace)]);
-      assert.deepEqual(session.inspect(), { state: "ready", workspacePath: twinWorkspace });
+      const readyInspection = session.inspect();
+      const { receipt: readyReceipt, ...readyFields } = readyInspection;
+      assert.deepEqual(readyFields, { state: "ready", workspacePath: twinWorkspace });
+      assert.equal(readyReceipt, undefined);
       twinIdentity = await fs.lstat(twinWorkspace, { bigint: true });
       twinBefore = await inventory(twinWorkspace);
       assert.deepEqual(contents(twinBefore), contents(sourceInventory));
@@ -518,16 +597,25 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
       assert(installed && childProcess.spawn === guardedSpy);
       phase = "action";
       dispatched = true;
+      receiptPhase = "after";
       try {
         proof.result = await session.run({ executable: trusted.git, argv: [...actionArgv], env, timeoutMs: 5000 });
-      } finally { phase = "closed"; dispatched = false; }
+      } finally { phase = "closed"; dispatched = false; receiptPhase = "closed"; }
       proof.events.push("action-returned");
+      settledReceipt = session.inspect().receipt;
+      assert.equal(receiptGitCalls.length, proof.result.directChildSettled ? 8 : 4);
       try { assertSuccessfulResult(proof.result); }
       catch (error: unknown) {
         if (proof.launches.some(item => item.phase === "action" && item.native)) realActionFailure = error;
         throw error;
       }
-      assert.deepEqual(session.inspect(), { state: "finished", workspacePath: twinWorkspace });
+      const finishedInspection = session.inspect();
+      const { receipt: finishedReceipt, ...finishedFields } = finishedInspection;
+      assert.deepEqual(finishedFields, { state: "finished", workspacePath: twinWorkspace });
+      assert(finishedReceipt, "Settled S6 run must have a receipt");
+      assert(Object.isFrozen(finishedInspection));
+      assertS6Receipt(finishedReceipt);
+      assert.strictEqual(finishedReceipt, settledReceipt);
     } catch (error: unknown) { errors.push(error); }
     phase = "closed"; dispatched = false;
     // Observations are independent of result assertions and of each other.
@@ -549,6 +637,7 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
       discardTwin: async () => {
         if (!session) return;
         if (fault === "twin-refusal") await fs.chmod(scratch!, 0o755);
+        receiptBeforeDiscard = session.inspect().receipt;
         const result = await session.discard();
         proof.twinCleanup.push(result);
         twinRefusal = fault === "twin-refusal" && result.status === "refused"
@@ -589,6 +678,7 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
               assert.equal(session.inspect().state, "finished");
               proof.events.push("synthetic-late-settlement");
             }
+            receiptBeforeDiscard = session.inspect().receipt;
             const result = await session.discard();
             proof.twinCleanup.push(result);
             assert.equal(result.status, "removed", JSON.stringify(result));
@@ -630,12 +720,14 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
       assert(proof.dispositions.every(item => item.state === "removed"), "Acquired roots remain; no sweep attempted");
       assert.deepEqual(proof.afterRoots, proof.beforeRoots);
       assert.deepEqual(proof.registeredSupports, []);
+      assert.equal(receiptGitCalls.length, session ? (proof.result?.directChildSettled ? 8 : 4) : 0);
     });
     active = false;
   }
   console.log(`TWIN S6 ACCOUNTING ${JSON.stringify({ fault, roots: proof.roots, allocations: proof.allocations,
     twinRoots: proof.twinRoots, sessions: proof.sessions, dispositions: proof.dispositions,
     setupLaunches: proof.launches.filter(item => item.phase === "setup" && item.native).length,
+    receiptGitLaunches: receiptGitCalls.length,
     realActions: proof.launches.filter(item => item.phase === "action" && item.native).length,
     syntheticActions: proof.launches.filter(item => item.phase === "action" && !item.native).length,
     actionAttempts: proof.actionAttempts, before: proof.beforeRoots, after: proof.afterRoots,

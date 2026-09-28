@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
-import { createTwin, type RunResult, type TwinSession } from "@twin-cli/core";
+import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { cleanupScenarioRoot, createScenarioRoot, initializeFixture, initializeScenarioRoot,
   verifyWorkspace, type OwnedScenarioRoot } from "../../dist/fixture.js";
 import { observePaths } from "../../dist/runner.js";
@@ -101,6 +101,115 @@ const setupVectors: readonly (readonly string[])[] = [
 ];
 const compiledAction = 'import { writeFile } from "node:fs/promises";\n'
   + 'await writeFile("control-created.txt", "S12 control file.\\n", { flag: "wx" });\n';
+
+const receiptQueries = Object.freeze([
+  ["rev-parse", "--show-toplevel"],
+  ["ls-files", "-z", "--full-name", "--cached", "--deduplicate", "--"],
+  ["ls-files", "-z", "--full-name", "--others", "--exclude-standard", "--"],
+  ["ls-files", "-z", "--full-name", "--others", "--ignored", "--exclude-standard", "--"],
+] as const);
+function receiptEnvironment(workspace: string): Record<string, string> {
+  return { PATH: "", HOME: "/nonexistent", LC_ALL: "C", GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0",
+    GIT_CEILING_DIRECTORIES: dirname(workspace) };
+}
+/** Pure admission for one core receipt Git call. It never launches a process. */
+export function admitReceiptGit(file: unknown, argv: unknown, inputOptions: unknown, callback: unknown,
+  workspace: string, ordinal: number): { file: string; argv: string[]; options: {
+    cwd: string; env: Record<string, string>; encoding: "buffer"; maxBuffer: number;
+    timeout: number; shell: false; windowsHide: true }; callback: (...args: unknown[]) => unknown } {
+  assert(Number.isInteger(ordinal) && ordinal >= 0 && ordinal < 8, "Only four before and four after receipt calls permitted");
+  assert.equal(file, "/usr/bin/git");
+  assert(Array.isArray(argv) && Object.getPrototypeOf(argv) === Array.prototype);
+  const expectedArgv = ["--no-optional-locks", "-c", "core.fsmonitor=false", ...receiptQueries[ordinal % 4]!];
+  assert.deepEqual(argv, expectedArgv);
+  assert(inputOptions && typeof inputOptions === "object" && Object.getPrototypeOf(inputOptions) === Object.prototype);
+  const options = inputOptions as Record<string, unknown>;
+  assert.deepEqual(Object.keys(options).sort(), ["cwd", "encoding", "env", "maxBuffer", "shell", "timeout", "windowsHide"]);
+  assert.equal(options.cwd, workspace);
+  assert(isAbsolute(workspace) && !workspace.includes("\0"));
+  assert(options.env && typeof options.env === "object" && Object.getPrototypeOf(options.env) === Object.prototype);
+  assert.deepEqual(Object.keys(options.env).sort(), Object.keys(receiptEnvironment(workspace)).sort());
+  assert.deepEqual(options.env, receiptEnvironment(workspace));
+  assert.equal(options.encoding, "buffer");
+  assert.equal(options.maxBuffer, 16 * 1024 * 1024);
+  assert.equal(options.timeout, 5000);
+  assert.equal(options.shell, false);
+  assert.equal(options.windowsHide, true);
+  assert.equal(typeof callback, "function");
+  return { file: "/usr/bin/git", argv: expectedArgv, options: { cwd: workspace,
+    env: receiptEnvironment(workspace), encoding: "buffer", maxBuffer: 16 * 1024 * 1024,
+    timeout: 5000, shell: false, windowsHide: true }, callback: callback as (...args: unknown[]) => unknown };
+}
+function receiptGitVariants(workspace: string) {
+  const argv = ["--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "--show-toplevel"];
+  const options = { cwd: workspace, env: receiptEnvironment(workspace), encoding: "buffer", maxBuffer: 16 * 1024 * 1024,
+    timeout: 5000, shell: false, windowsHide: true };
+  const callback = (): void => {};
+  return { callback, variants: [
+    ["/bin/sh", argv, options, 0],
+    ["/usr/bin/git", [...argv, "-C", "/tmp"], options, 0],
+    ["/usr/bin/git", [...argv, "--", "pathspec"], options, 0],
+    ["/usr/bin/git", ["--no-optional-locks", "-c", "core.fsmonitor=true", ...argv.slice(3)], options, 0],
+    ["/usr/bin/git", argv, { ...options, cwd: dirname(workspace) }, 0],
+    ["/usr/bin/git", argv, { ...options, env: { ...options.env, HOME: "/tmp" } }, 0],
+    ["/usr/bin/git", argv, { ...options, timeout: 0 }, 0],
+    ["/usr/bin/git", argv, { ...options, shell: true }, 0],
+    ["/usr/bin/git", argv, { ...options, encoding: "utf8" }, 0],
+    ["/usr/bin/git", argv, { ...options, maxBuffer: 1 }, 0],
+    ["/usr/bin/git", argv, { ...options, extra: true }, 0],
+    ["/usr/bin/git", argv, options, 8],
+  ] as const };
+}
+/** Negative admission controls use only inert values and never forward to native execFile. */
+export function rejectReceiptGitVariants(workspace: string): void {
+  const { callback, variants } = receiptGitVariants(workspace);
+  for (const [file, args, changed, ordinal] of variants) {
+    assert.throws(() => admitReceiptGit(file, args, changed, callback, workspace, ordinal));
+  }
+}
+function makeReceiptExecFileGuard(
+  state: () => { trustedGit: string; workspace: string; ordinal: number; phase: "closed" | "before" | "after"; actionCalls: number },
+  forward: typeof childProcess.execFile,
+  record: (admitted: ReturnType<typeof admitReceiptGit>, phase: "before" | "after") => void,
+): typeof childProcess.execFile {
+  return ((file: unknown, argv: unknown, options: unknown, callback: unknown) => {
+    const { trustedGit, workspace, ordinal, phase, actionCalls } = state();
+    assert(phase === (ordinal < 4 ? "before" : "after"), "Receipt Git outside fixed phase");
+    if (phase === "after") assert.equal(actionCalls, 1);
+    const admitted = admitReceiptGit(file, argv, options, callback, workspace, ordinal);
+    assert.equal(trustedGit, admitted.file);
+    const child = Reflect.apply(forward, childProcess,
+      [admitted.file, admitted.argv, admitted.options, admitted.callback]) as ReturnType<typeof childProcess.execFile>;
+    record(admitted, phase);
+    return child;
+  }) as typeof childProcess.execFile;
+}
+function assertS12Receipt(receipt: MinimalReceipt): void {
+  assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 1);
+  assert.deepEqual(receipt.files, { coverage: "complete", issues: [], changes: [{
+    path: { encoding: "utf8", value: "control-created.txt" }, change: "added",
+    category: "untracked", categoryReason: null,
+  }] });
+  assert.deepEqual(receipt.watch.map(item => item.id), [".gitconfig", ".npmrc", ".bashrc", ".zshrc",
+    ".codex/config.toml", ".claude/settings.json", ".gemini/settings.json"]);
+  for (const item of receipt.watch) {
+    assert.deepEqual(Object.keys(item).sort(), ["after", "before", "comparison", "id"]);
+    assert(Object.isFrozen(item) && Object.isFrozen(item.before) && Object.isFrozen(item.after));
+  }
+  assert(Object.isFrozen(receipt) && Object.isFrozen(receipt.files)
+    && Object.isFrozen(receipt.files.issues) && Object.isFrozen(receipt.files.changes)
+    && Object.isFrozen(receipt.files.changes[0]) && Object.isFrozen(receipt.files.changes[0]?.path)
+    && Object.isFrozen(receipt.watch));
+}
+
+/** Fixed inputs for the public-CLI comparison; the historical proof remains independent. */
+export function comparisonS12Inputs(): { action: Buffer; fixture: Record<string, string>;
+  setup: string[][] } {
+  return { action: Buffer.from(compiledAction), fixture: { ...fixtureContents },
+    setup: setupVectors.map(vector => [...vector]) };
+}
 
 interface SupportRoot { readonly path: string; readonly token: string; identity: BigIntStats | null }
 const supports = new Set<SupportRoot>();
@@ -238,19 +347,23 @@ async function absent(path: string): Promise<void> {
 export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
   const proof: Proof = { fault, events: [], roots: [], acquiredSupportPath: null, twinRoots: [], sessions: [], launches: [], beforeRoots: [], afterRoots: [],
     remainingTwinRoots: [], registeredSupports: [], result: null };
+  const receiptGitCalls: { phase: "before" | "after"; argv: string[]; cwd: string }[] = [];
   const errors: unknown[] = [];
   const restorationErrors: unknown[] = [];
   const primary = new Error(`Injected ${fault}`);
   let base: string | undefined, support: SupportRoot | undefined, original: OwnedScenarioRoot | undefined;
   let session: TwinSession | undefined, workspace: string | undefined, actionPath: string | undefined;
+  let settledReceipt: MinimalReceipt | undefined;
   let before: Snapshot | undefined, sourceInventory: Entry[] | undefined;
   let trusted: ReturnType<typeof resolveTrustedSystemGit> | undefined;
   let phase: "closed" | "setup" | "action" = "closed";
+  let receiptPhase: "closed" | "before" | "after" = "closed", expectedTwinWorkspace: string | undefined;
   let setupIndex = 0, actionCalls = 0;
   let scratchReady = false, twinRefusalInjected = false, originalRefusalInjected = false;
   const oldPath = process.env.PATH;
   const nodeExecutable = process.execPath;
   const originalSpawn = childProcess.spawn;
+  const nativeExecFile = childProcess.execFile;
   const restores: (() => void)[] = [];
   const attempt = async (event: string, body: () => Promise<void>): Promise<void> => {
     proof.events.push(event);
@@ -259,10 +372,19 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
   try {
     try {
       // Guard all direct child_process entry points for this serial test's lifetime.
-      for (const method of ["exec", "execFile", "fork", "execSync", "execFileSync", "spawnSync"] as const) {
+      for (const method of ["exec", "fork", "execSync", "execFileSync", "spawnSync"] as const) {
         const spy = vi.spyOn(childProcess, method).mockImplementation(() => { throw new Error("S12 proof forbids this launch API"); });
         restores.push(() => spy.mockRestore());
       }
+      const receiptExecFile = makeReceiptExecFileGuard(() => {
+        assert(trusted && expectedTwinWorkspace);
+        return { trustedGit: trusted.git, workspace: expectedTwinWorkspace, ordinal: receiptGitCalls.length,
+          phase: receiptPhase, actionCalls };
+      }, nativeExecFile, (admitted, currentPhase) => {
+        receiptGitCalls.push({ phase: currentPhase, argv: [...admitted.argv], cwd: admitted.options.cwd });
+      });
+      const execFileSpy = vi.spyOn(childProcess, "execFile").mockImplementation(receiptExecFile);
+      restores.push(() => execFileSpy.mockRestore());
       const guarded = ((command: string, argv: readonly string[], options: SpawnOptions) => {
         let admitted: AdmittedSpawn;
         if (phase === "setup") {
@@ -356,17 +478,61 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
         if (!copyRestored) { copySpy?.mockRestore(); copyRestored = true; }
       };
       restores.push(restoreCopy);
+      const allocate = fs.mkdtemp;
+      const allocationSpy = vi.spyOn(fs, "mkdtemp").mockImplementation(async (...args: Parameters<typeof fs.mkdtemp>) => {
+        const path = await allocate(...args);
+        if (args[0] === join(scratch, "twin-core-")) {
+          assert.equal(expectedTwinWorkspace, undefined, "Only one Twin allocation permitted");
+          expectedTwinWorkspace = join(path, "workspace");
+        }
+        return path;
+      });
+      restores.push(() => allocationSpy.mockRestore());
       try {
         syncBuiltinESMExports();
+        receiptPhase = "before";
         session = await createTwin({ sourceDirectory: workspace, scratchParent: scratch });
         proof.sessions.push(session.workspacePath); // First operation after return.
         proof.twinRoots.push(dirname(session.workspacePath));
-      } finally { restoreAll([restoreCopy], restorationErrors, syncBuiltinESMExports); }
+      } finally { receiptPhase = "closed"; restoreAll([restoreCopy], restorationErrors, syncBuiltinESMExports); }
       proof.events.push("session-returned");
+      assert.equal(session.workspacePath, expectedTwinWorkspace);
+      assert.equal(receiptGitCalls.length, 4);
+      rejectReceiptGitVariants(session.workspacePath);
+      const { callback: rejectedCallback, variants: rejectedVariants } = receiptGitVariants(session.workspacePath);
+      let rejectedForwards = 0;
+      const forwardingStub = ((_file: unknown, _argv: unknown, _options: unknown, _callback: unknown) => {
+        rejectedForwards++;
+        throw new Error("Rejected receipt Git call reached forwarding");
+      }) as unknown as typeof childProcess.execFile;
+      try {
+        for (const [file, argv, options, ordinal] of rejectedVariants) {
+          execFileSpy.mockImplementation(makeReceiptExecFileGuard(
+            () => ({ trustedGit: trusted!.git, workspace: session!.workspacePath, ordinal,
+              phase: ordinal < 4 ? "before" : "after", actionCalls: 1 }),
+            forwardingStub, () => { throw new Error("Rejected receipt Git call was recorded"); },
+          ));
+          assert.throws(() => Reflect.apply(childProcess.execFile, childProcess,
+            [file, argv, options, rejectedCallback]));
+          assert.equal(rejectedForwards, 0, "Rejected receipt Git call forwarded");
+        }
+        execFileSpy.mockImplementation(makeReceiptExecFileGuard(
+          () => ({ trustedGit: trusted!.git, workspace: session!.workspacePath,
+            ordinal: receiptGitCalls.length, phase: receiptPhase, actionCalls }),
+          forwardingStub, () => { throw new Error("Closed receipt Git call was recorded"); },
+        ));
+        assert.throws(() => childProcess.execFile("/usr/bin/git", ["--version"],
+          { cwd: session!.workspacePath }, () => {}), "Unrelated execFile call must remain blocked");
+        assert.equal(rejectedForwards, 0, "Closed receipt Git call forwarded");
+      } finally { execFileSpy.mockImplementation(receiptExecFile); }
+      assert.equal(receiptGitCalls.length, 4);
       const twinRoot = dirname(session.workspacePath);
       assert.equal(dirname(twinRoot), scratch);
       assert.equal(session.workspacePath, join(twinRoot, "workspace"));
-      assert.deepEqual(session.inspect(), { state: "ready", workspacePath: session.workspacePath });
+      const readyInspection = session.inspect();
+      const { receipt: readyReceipt, ...readyFields } = readyInspection;
+      assert.deepEqual(readyFields, { state: "ready", workspacePath: session.workspacePath });
+      assert.equal(readyReceipt, undefined);
       const twinBefore = await inventory(session.workspacePath);
       assert.deepEqual(contents(twinBefore), contents(sourceInventory));
       for (const entry of twinBefore) if (entry.kind === "file") {
@@ -378,16 +544,24 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
       proof.events.push("twin-pre-state");
       if (fault === "before-run") throw primary;
       phase = "action";
+      receiptPhase = "after";
       try {
         proof.result = await session.run({ executable: nodeExecutable, argv: [actionPath], env: actionEnv, timeoutMs: 5000 });
-      } finally { phase = "closed"; }
+      } finally { phase = "closed"; receiptPhase = "closed"; }
       proof.events.push("action-returned");
+      assert.equal(receiptGitCalls.length, 8);
       assert.equal(actionCalls, 1);
       assert.deepEqual(proof.result, { schemaVersion: 1, outcome: "exited", started: true, directChildSettled: true,
         exitCode: 0, signal: null, spawnError: null, terminationError: null,
         stdout: { bytes: new Uint8Array(), complete: true, truncated: false, error: null },
         stderr: { bytes: new Uint8Array(), complete: true, truncated: false, error: null } });
-      assert.deepEqual(session.inspect(), { state: "finished", workspacePath: session.workspacePath });
+      const finishedInspection = session.inspect();
+      const { receipt: finishedReceipt, ...finishedFields } = finishedInspection;
+      assert.deepEqual(finishedFields, { state: "finished", workspacePath: session.workspacePath });
+      assert(finishedReceipt, "Settled S12 run must have a receipt");
+      assert(Object.isFrozen(finishedInspection));
+      settledReceipt = finishedReceipt;
+      assertS12Receipt(finishedReceipt);
       const twinAfter = await inventory(session.workspacePath);
       assert.deepEqual(contents(twinAfter), contents([...twinBefore, { path: "control-created.txt", kind: "file",
         bytes: Buffer.from("S12 control file.\n").toString("base64"), dev: 0n, ino: 0n }]));
@@ -416,7 +590,13 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
       twinRefusalInjected = fault === "twin-cleanup" && result.status === "refused"
         && result.reason === `Directory authority mismatch: ${join(support!.path, "scratch")}`;
       assert.equal(result.status, "removed", JSON.stringify(result));
-      assert.deepEqual(session!.inspect(), { state: "discarded", workspacePath: session!.workspacePath });
+      const discardedInspection = session!.inspect();
+      const { receipt: discardedReceipt, ...discardedFields } = discardedInspection;
+      assert.deepEqual(discardedFields, { state: "discarded", workspacePath: session!.workspacePath });
+      assert(Object.isFrozen(discardedInspection));
+      assert.strictEqual(discardedReceipt, settledReceipt);
+      if (settledReceipt) assertS12Receipt(settledReceipt);
+      else assert.equal(discardedReceipt, undefined);
       await absent(dirname(session!.workspacePath));
       assert.deepEqual(await session!.discard(), { status: "already-removed" });
       await verifySupport(support!);
@@ -469,6 +649,7 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
       proof.registeredSupports = [...supports].map(root => root.path);
       assert.deepEqual(proof.afterRoots, proof.beforeRoots);
       assert.deepEqual(proof.registeredSupports, []);
+      assert.equal(receiptGitCalls.length, session ? (proof.result ? 8 : 4) : 0);
     });
   } catch (error: unknown) { errors.push(error); }
   finally {
@@ -480,7 +661,7 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
   }
   console.log(`TWIN S12 ACCOUNTING ${JSON.stringify({ fault, acquiredSupportPath: proof.acquiredSupportPath, roots: proof.roots, twinRoots: proof.twinRoots,
     sessions: proof.sessions, setupLaunches: proof.launches.filter(item => item.phase === "setup").length,
-    actionLaunches: proof.launches.filter(item => item.phase === "action").length,
+    actionLaunches: proof.launches.filter(item => item.phase === "action").length, receiptGitLaunches: receiptGitCalls.length,
     before: proof.beforeRoots, after: proof.afterRoots, remainingTwinRoots: proof.remainingTwinRoots,
     registeredSupports: proof.registeredSupports })}`);
   return completeProof(proof, errors);

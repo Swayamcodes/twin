@@ -48,6 +48,11 @@ try {
 }
 `;
 const actionBytes = Buffer.from(moduleSource, "utf8");
+
+/** Fixed non-Git inputs for the public-CLI comparison. */
+export function comparisonS9Inputs(): { action: Buffer; project: Record<string, string> } {
+  return { action: Buffer.from(actionBytes), project: { ...projectFiles } };
+}
 type Disposition = "removed" | "retained" | "unknown";
 interface Acquired { path: string; kind: "support" | "original" | "home" | "twin"; status: Disposition }
 interface Registration {
