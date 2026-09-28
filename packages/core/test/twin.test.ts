@@ -16,6 +16,11 @@ describe("session", () => {
     expect(await readFile(join(session.workspacePath, "file"), "utf8")).toBe("original");
     expect((await session.run(nodeOptions("edit"))).exitCode).toBe(0);
     expect(session.inspect().state).toBe("finished");
+    expect(session.inspect().receipt?.files.coverage).toBe("complete");
+    expect(session.inspect().receipt?.files.changes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: { encoding: "utf8", value: "file" }, change: "modified" }),
+    ]));
+    expect(Object.isFrozen(session.inspect().receipt)).toBe(true);
     expect(await readFile(join(session.workspacePath, "file"), "utf8")).toBe("changed");
     await expect(session.run(nodeOptions("echo"))).rejects.toThrow("Cannot run");
     expect(await fingerprint(f.source)).toBe(before);
