@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  cleanupScenarioRoot, createdWorkspace, createScenarioRoot, errorMessage,
+  attestOwnedScenarioRoot, cleanupScenarioRoot, createdWorkspace, createScenarioRoot, errorMessage,
   executeCommand, initializeFixture, initializeScenarioRoot, verifyWorkspace,
 } from "./fixture.js";
-import type { OwnedScenarioRoot } from "./fixture.js";
+import type { OwnedScenarioRoot, RegisteredScenarioRootAttestation } from "./fixture.js";
 import { fixtureContents, getScenario } from "./scenarios.js";
 import type { CommandEvidence, ObservedPath, PathObservation, RunIssue, ScenarioId, ScenarioRunResult, Snapshot } from "./types.js";
 
@@ -74,6 +74,17 @@ function verifyInitialContents(snapshot: Snapshot): void {
 }
 
 export async function runScenario(id: ScenarioId): Promise<ScenarioRunResult> {
+  return runScenarioInternal(id);
+}
+
+/** Internal S12 hook: one verified identity before any fixture command can start. */
+export async function runScenarioWithRegisteredRootObserver(id: ScenarioId,
+  observer: (attestation: RegisteredScenarioRootAttestation) => void): Promise<ScenarioRunResult> {
+  return runScenarioInternal(id, observer);
+}
+
+async function runScenarioInternal(id: ScenarioId,
+  observer?: (attestation: RegisteredScenarioRootAttestation) => void): Promise<ScenarioRunResult> {
   const scenario = getScenario(id);
   const setupCommands: CommandEvidence[] = [];
   const issues: RunIssue[] = [];
@@ -86,6 +97,10 @@ export async function runScenario(id: ScenarioId): Promise<ScenarioRunResult> {
   // No filesystem operation after allocation escapes the lifecycle boundary.
   try {
     await initializeScenarioRoot(root);
+    if (observer) {
+      const delivered: unknown = observer(await attestOwnedScenarioRoot(root));
+      if (delivered !== undefined) throw new Error("Registered-root observer must be synchronous");
+    }
     await initializeFixture(root, setupCommands);
     phase = "before";
     before = await observePaths(root, scenario.observedPaths);

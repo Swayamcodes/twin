@@ -1795,3 +1795,212 @@ before the action opens the file. This proof establishes an observed
 outside-project mutation through a disposable fake home. It does not establish
 recovery, reporting, scoring, continuous preservation, OS sandboxing, full S9
 completion, Phase 2 completion or Phase 3 completion.
+
+## 2.6R-1 — first retained Twin S12 score
+
+The scenarios-owned producer now performs one fixed direct S12 reference and a
+separate fixed Twin S12 attempt. It retains the eligible reference in the
+existing reference-only format and the valid, ready Twin attempt in a distinct
+private four-file artifact. The attempt's pre-publication disposition is
+truthfully `unknown`; only strict reopening allows the public result to say
+`retained`. The compiled core and S12 adapter fingerprints use fixed ordered
+module labels and length-delimited SHA-256 over exact JavaScript bytes. The
+score-support bridge cites reopened attempt facts and observations without
+changing the settled evidence, protocol, oracle or ToolScore contracts.
+
+Focused verification on 2026-09-28: production scenarios no-emit TypeScript,
+the scenarios production build and scenario test TypeScript compilation passed.
+Static inspection preceded the focused Vitest run. The sandbox run compiled
+but the known trusted-system-Git restriction made the two real paths return
+incomplete at preflight. The same focused command passed in the approved host
+environment: **3 files, 12 tests passed**. The direct producer call and the
+dedicated JSON entry each emitted a complete five-dimension result with
+`not-blocked`, `usable`, and three `unknown` outcomes. The entry emitted one
+strict newline-terminated JSON line. Tests reopened both artifacts, rejected
+cross-artifact/request/scenario substitutions and check-only support, and
+observed reopening reject altered mode, size/digest, link count, missing file,
+symlink and extra file conditions. A separate read-only parent rejected
+reference retention after a real direct action and produced a sanitized
+incomplete result with no artifact.
+
+The two successful real paths each completed one direct S12 action, one Twin
+S12 action, seven fixed direct Git setup vectors and seven fixed Twin fixture
+Git setup vectors. Including the failed-retention path's one direct execution,
+the guarded workload was **35 Git setup children, 3 direct Node actions and
+2 Twin Node actions**; the entry test also started **1 entry Node process**.
+The successful paths accounted for **2 direct
+fixture roots, 2 Twin original roots, 2 Twin support roots, 2 Twin allocations,
+2 returned sessions and 4 retained artifacts**. All six disposable fixture
+roots and both sessions were removed before complete output. The tests then
+removed the four known, identity-checked artifacts from their caller-owned
+test parents. The failed-retention path removed its separate direct fixture
+root. No unknown or retained disposable fixture root was observed on these
+paths.
+
+The result does not establish continuous preservation, recovery, reporting or
+boundary-description accuracy. Private digests and strict reopening do not
+authenticate the observer or make multi-file publication crash-atomic. The
+focused test count is below the 24–32 design target; the tests concentrate on
+the new bridge, artifact reopening and two real complete paths. Markdown,
+S6, other scenarios, plain Git, AgentTX, CLI integration, totals, receipts and
+Phase 2 completion remain outside this slice.
+
+### 2.6R-1 audit corrections — runtime evidence and authority
+
+The first scoring implementation passed its focused happy paths, but a read-only
+audit identified retrospective boundary positions, an enumerable private
+reopening value, incomplete command binding, broad temporary-directory
+accounting and insufficient test deletion authority. The correction records a
+frozen S12 request and a private monotonic offer/receipt/binding/action/start/
+settlement/poststate/cleanup event sequence as events occur. Missing or repeated
+required events refuse bundle assembly. The settled attempt validator remains
+unchanged and still derives validity and readiness from the retained bundle.
+
+The Twin opener now returns a frozen, empty handle whose private records remain
+in module-local WeakMap storage. Copied, spread or deserialized handles have no
+projection authority. Its narrow projection contains the parsed attempt bundle,
+freshly derived protocol and bounded process facts, with no private command
+paths or raw streams. Identity and attempt records separately bind the action
+and execution-workspace paths; strict reopening compares those bindings along
+with the exact command, environment, digest, result and dispositions.
+
+The direct guard now captures the first Git launch's canonical fixture workspace
+and identity, requires that exact cwd for the remaining setup vectors and direct
+action, and checks the pinned compiled action through a no-follow descriptor
+immediately before forwarding. The producer maintains a per-allocation ledger
+for direct fixture, Twin original, support root and Twin session. Complete
+output requires all four removed dispositions. An allocation without safely
+captured cleanup authority becomes unknown and forces incomplete output; no
+unknown root is swept or retried after partial deletion.
+
+The earlier phrase “identity-checked artifacts” described the test teardown
+too strongly. The corrected tests authorize teardown through a separately
+registered, canonical, current-UID artifact parent with a private marker and
+no-follow child checks. Manifest artifact IDs are checked as expected data,
+not used as deletion authority. Substituted child and parent symlinks were
+rejected while an external disposable sentinel remained untouched.
+
+Verification on 2026-09-28: production scenarios no-emit TypeScript, the
+scenarios production build, scenario test TypeScript compilation and static
+test-import inspection passed. The approved-host focused command passed
+**3 files / 18 tests**. Its two real complete paths retained and reopened
+two distinct artifacts each and still emitted `not-blocked`, `usable` and
+three `unknown` dimensions. The failed-reference-retention path remained
+sanitized and incomplete. Synthetic controls launched no child and covered
+event omission/duplication, direct cwd and copied-action admission, fingerprint
+unavailability/change, allocation finalization, private-handle copying,
+command-binding tampering, and parent-authorized teardown refusal.
+
+The fixed real workload remains **35 Git setup children, 3 direct S12 Node
+actions, 2 Twin S12 Node actions and 1 entry Node process**: two complete paths
+each used seven direct and seven Twin Git setup vectors plus one action of each
+kind; failed reference retention used seven Git vectors and one direct action.
+The complete paths used **2 direct fixture roots, 2 Twin originals, 2 support
+roots, 2 Twin allocations and 2 returned sessions**, all removed before complete
+output. The failed-retention direct fixture was also removed. **4 artifacts**
+were retained by the complete paths and later removed by the test parent
+authorities. The focused tests additionally allocated and removed **7 owned
+test roots** for parents, copied-action/fingerprint controls and the external
+substitution sentinel. No process count is inferred from historical predictions.
+
+These corrections still establish local integrity, not capture authentication,
+continuous preservation, reporting, boundary-description accuracy, crash-atomic
+publication, Markdown, S6 scoring or Phase 2 completion.
+
+### 2.6R-1 registered-root admission scope decision
+
+The final read-only audit found that checking a plausible first cwd was not
+equivalent to checking the runner's newly registered fixture. The approved
+scope exception adds a narrow runner callback and, only to derive its verified
+identity from the opaque `OwnedScenarioRoot`, one fixture attestation function.
+The callback runs after root initialization and before fixture commands; the
+runner retains cleanup authority if the observer refuses it. The S12 guard
+starts unarmed and requires the attested canonical cwd, root/workspace identity
+and marker identity before forwarding every direct command.
+
+Focused test teardown now validates every artifact file through a no-follow
+descriptor before reading, records child identities at preflight, and checks
+them again before unlink or directory removal. Artifact IDs remain expected
+data, not deletion authority. This is a local identity check with a documented
+same-user check-to-use race; it is not an OS sandbox.
+
+Coordinated rewriting of identity, attempt and manifest records with recomputed
+digests remains outside this unauthenticated format's guarantee. Local reopening
+rejects partial or inconsistent changes but cannot establish who wrote a fully
+consistent capture. Public scoring does not use private path strings as
+authenticated decisive evidence. External authentication remains deferred.
+
+Focused verification after this correction on 2026-09-28: static import and
+execution-path inspection preceded production scenarios no-emit TypeScript,
+the scenarios production build, scenario test TypeScript compilation, and the
+dedicated focused S12-score command. All passed; the focused run reported
+**3 files / 19 tests**. Its real API and entry paths each produced a complete
+five-dimension JSON result, and the entry test checked the single newline-
+terminated JSON line. The added runner observer-refusal path removed its
+registered root with no setup or action command recorded. Added controls
+rejected missing/duplicate direct attestation, sibling/descendant cwd,
+manifest symlink and regular-child replacement during test teardown; the
+external sentinel remained unchanged. A partial private-record rewrite failed
+reopening, while a fully coherent rewrite reopened only as a demonstration of
+the unauthenticated boundary, not trusted provenance.
+
+The fixed process paths exercised by the passing tests still account for
+**35 Git setup children, 3 direct S12 Node actions, 2 Twin S12 Node actions,
+and 1 entry Node process**; the new observer-refusal path launched none.
+Successful paths used 2 direct fixtures, 2 Twin originals, 2 support roots,
+2 sessions and 4 retained artifacts. Failed reference retention and observer
+refusal each added one direct fixture, both removed. The same 7 separately
+test-owned roots were removed. These counts follow the fixed passing test
+paths; they were not measured by an independent process census.
+
+### Final 2.6R-1 verification
+
+This final supplied run is separate from the earlier implementation and
+correction runs. `test:scenarios:s12-score` completed successfully. Its
+production scenarios build/typechecking and scenario test compilation passed
+as prerequisites. Focused Vitest reported **3 files, 19 tests passed, 3.90
+seconds**.
+
+The successful real API and entry-process paths each produced one fresh valid
+and eligible direct S12 reference, one separate valid and ready Twin S12
+attempt, one retained and strictly reopened reference artifact, one retained
+and strictly reopened Twin-attempt artifact, and one strict newline-terminated
+complete JSON result. The final score remained, in SPEC order:
+
+- `recoveredOrPreserved: unknown`;
+- `reported: unknown`;
+- `blockedBeforeExecution: not-blocked`;
+- `workspaceUsable: usable`;
+- `boundaryAccuratelyDescribed: unknown`.
+
+Runtime chronology came from events captured at offer, receipt, registered
+workspace binding, native dispatch, observed child start, completion, poststate
+and cleanup. Before any setup launch, the direct runner supplied a frozen
+registered-root attestation conveying identity but no cleanup authority.
+Strict Twin-attempt reopening returned an opaque capability backed by private
+module state; the public score projection excluded private paths, commands
+and streams. Artifact teardown used registered parent authority,
+descriptor-backed no-follow reads and identity rechecks before deletion.
+Complete output required every disposable allocation ledger entry to be
+`removed`.
+
+The established focused workload accounting remained **35 fixed Git setup
+children, 3 direct S12 Node actions, 2 Twin S12 Node actions and 1 entry Node
+process**. The observer-refusal path launched zero children. Successful and
+failure-path disposable roots were removed. Test-parent authority later
+removed the four successful retained artifacts. These are supplied workload
+counts, not a newly instrumented process census.
+
+All 14 approved files were staged before this documentation update; this
+appended section remains unstaged. `git diff --cached --check` passed before
+the final run. `pnpm-lock.yaml` and dependency declarations remained
+unchanged. No S6, S13, S8, S9, AgentTX, CLI, Markdown renderer, full scenario
+suite or arbitrary agent ran.
+
+Strict reopening establishes local structure, digest integrity and
+cross-record consistency, not authenticated provenance. A coherent full-record
+rewrite with a recomputed manifest remains outside the unauthenticated
+format's guarantee. Publication is not crash-atomic, and same-user filesystem
+races after final identity checks remain possible. Preservation, reporting
+and boundary-description accuracy remain unknown. This result does not
+complete S12 scoring generally, S6 scoring, Phase 2 or Phase 3.

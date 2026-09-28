@@ -22,3 +22,4 @@ export * from "./normalized-evidence-schema.js";
 export * from "./normalized-evidence-validation.js";
 export * from "./attempt-protocol-schema.js";
 export * from "./attempt-protocol-validation.js";
+export * from "./s12-score-support.js";

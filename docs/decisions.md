@@ -121,6 +121,12 @@ I learned that proving non-Git support requires removing Git from fixture setup 
 
 ## 2.5R-5 — Twin S9 fake-home boundary proof
 
-Status: `pending commit`.
+Commit: `c5c7d32` — `test(scenarios): expose Twin S9 fake-home boundary`.
 
 I learned that copying a project does not isolate paths supplied outside that copy. I use a disposable fake home to demonstrate the boundary safely, observe the mutation honestly, and keep teardown separate from recovery.
+
+## 2.6R-1 — first retained Twin S12 score
+
+Status: `pending commit`.
+
+I learned that a real Twin proof becomes a benchmark result only when the actual attempt and its reference are retained and each scored outcome resolves to observations from that attempt. Unknown fields preserve the boundary between observed behavior and claims we have not yet measured.

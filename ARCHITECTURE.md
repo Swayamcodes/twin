@@ -496,3 +496,77 @@ apply, watch-list or descendant-process responsibilities above. It does not
 integrate or change the frozen scenario/evidence contracts. A clone is not an OS
 sandbox. See [minimal core](docs/phase-3-minimal-core.md) for the public lifecycle,
 exact symlink/Git boundaries, timeout limits and focused verification history.
+
+## 2.6R-1 — first retained Twin S12 score
+
+The S12-only scenario producer runs one fresh direct reference accident and one
+separate Twin attempt. A valid eligible direct reference uses the existing
+reference-only four-file capture. The Twin attempt uses a distinct private
+`twin-s12-attempt` artifact with `identity.json`, `attempt.json`, `outcome.json`,
+and a final `manifest.json`. Both must pass strict filesystem reopening before
+the scorer uses them. Their identities and fixture roots remain separate.
+
+The attempt record stores the truthful pre-publication artifact status `unknown`.
+Only strict reopening establishes `retained` in the JSON result. The narrow
+version-one score-support bridge resolves attempt-scoped facts and protocol
+observations against the reopened attempt while leaving global `EvidenceRef`,
+the oracle, normalized evidence, attempt protocol, and `ToolScore` unchanged.
+For the successful S12 run, `blockedBeforeExecution` is `not-blocked` and
+`workspaceUsable` is `usable`; recovery/preservation, reporting, and boundary
+description remain `unknown`. The result is one strict JSON line; Markdown,
+receipts, S6, other tools and further scenarios are outside this slice.
+
+The two artifact formats verify local inventory, modes, sizes and digests. They
+do not authenticate collection or provide crash-atomic multi-file publication.
+This S12 result is not a Phase 2 completion claim.
+
+### 2.6R-1 audit corrections
+
+The S12 adapter freezes the semantic request before handing it to its fixed
+Twin boundary. A private monotonic recorder captures offer, receipt, verified
+workspace binding, native action dispatch, observed child start, settled result,
+poststates and cleanup at their runtime points. Assembly of the attempt bundle
+uses those captured positions and refuses a missing or duplicate required
+event. The direct reference guard binds the first Git launch to one canonical
+registered fixture workspace and rechecks the pinned compiled action through a
+no-follow descriptor immediately before native forwarding.
+
+Twin reopening returns a frozen property-free handle backed by module-private
+storage. Copying or serializing the handle does not carry authority. A narrow
+score projection returns a parsed attempt bundle, freshly derived protocol
+result and bounded process facts without private command paths or streams. The
+private artifact binds the observed execution workspace and fixed action path
+separately from the command record and reconciles them on reopening.
+
+An internal per-allocation ledger records the direct runner fixture, Twin
+original, support root and returned Twin session. Complete output requires a
+removed disposition for each. An allocation whose authority cannot be safely
+established remains unknown and forces incomplete output. Focused test teardown
+uses its own registered artifact-parent authority, with no-follow child checks;
+artifact IDs are verification data, not deletion authority. These checks remain
+local integrity controls, without authentication or crash-atomic publication.
+
+### 2.6R-1 registered-root admission and teardown correction
+
+The direct S12 runner now supplies one frozen primitive attestation for the
+fixture it registered and initialized, before any fixture command can launch.
+The producer starts with no authorized direct cwd and arms its fixed command
+guard only from that callback. Each direct Git command and the action must use
+the attested canonical workspace and its still-matching directory and marker
+identities. The attestation conveys identity only: the runner keeps its
+`OwnedScenarioRoot` handle and uses that handle for cleanup even when the
+observer refuses delivery. No registry listing or cleanup-by-path API is
+exposed.
+
+Focused test teardown reads artifact files only after no-follow descriptor
+checks and records their identities before deletion. It rechecks those
+identities before unlink or directory removal under its registered parent.
+These checks do not eliminate a same-user swap between a final check and a
+filesystem operation.
+
+Artifact reopening establishes local structure, inventory, digest integrity
+and cross-record consistency. A coherent rewrite of all private records and
+their manifest can satisfy those checks; the format does not authenticate its
+producer or original private paths. Decisive public score support resolves to
+retained normalized facts and protocol observations, not private path strings.
+External authentication and crash-atomic publication remain deferred.

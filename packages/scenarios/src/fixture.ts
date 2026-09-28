@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rmdir, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rmdir, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, sep } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -13,6 +14,20 @@ const ownedRootBrand: unique symbol = Symbol("ownedScenarioRoot");
 export interface OwnedScenarioRoot {
   readonly [ownedRootBrand]: true;
   readonly scenarioRoot: string;
+}
+/** Read-only identity of one already registered, initialized fixture. No ownership transfers. */
+export interface RegisteredScenarioRootAttestation {
+  readonly attestationVersion: 1;
+  readonly workspacePath: string;
+  readonly type: "directory";
+  readonly dev: number;
+  readonly ino: number;
+  readonly uid: number;
+  readonly rootDev: number;
+  readonly rootIno: number;
+  readonly markerDev: number;
+  readonly markerIno: number;
+  readonly markerSha256: string;
 }
 interface Identity { readonly dev: number; readonly ino: number }
 interface Registration {
@@ -119,6 +134,37 @@ export async function verifyWorkspace(root: OwnedScenarioRoot): Promise<{ scenar
   await verifyDirectory(entry.workspace, entry.workspaceIdentity);
   if (entry.gitIdentity) await verifyDirectory(join(entry.workspace, ".git"), entry.gitIdentity);
   return { scenarioRoot: entry.scenarioRoot, workspace: entry.workspace };
+}
+
+export async function attestOwnedScenarioRoot(root: OwnedScenarioRoot): Promise<RegisteredScenarioRootAttestation> {
+  const entry = registration(root);
+  const verified = await verifyWorkspace(root);
+  const rootStat = await lstat(entry.scenarioRoot), workspaceStat = await lstat(verified.workspace);
+  const markerPath = join(entry.scenarioRoot, markerName), markerStat = await lstat(markerPath);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink() || rootStat.uid !== process.getuid?.()
+    || !workspaceStat.isDirectory() || workspaceStat.isSymbolicLink() || workspaceStat.uid !== rootStat.uid
+    || !markerStat.isFile() || markerStat.isSymbolicLink() || markerStat.nlink !== 1
+    || markerStat.uid !== rootStat.uid || (markerStat.mode & 0o7777) !== 0o600
+    || rootStat.dev !== entry.identity?.dev || rootStat.ino !== entry.identity.ino
+    || workspaceStat.dev !== entry.workspaceIdentity?.dev || workspaceStat.ino !== entry.workspaceIdentity.ino) {
+    throw new Error("Registered fixture identity mismatch");
+  }
+  const descriptor = await open(markerPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let markerSha256: string;
+  try {
+    const opened = await descriptor.stat();
+    if (!opened.isFile() || opened.dev !== markerStat.dev || opened.ino !== markerStat.ino
+      || opened.uid !== markerStat.uid || opened.nlink !== 1 || (opened.mode & 0o7777) !== 0o600) {
+      throw new Error("Registered fixture marker mismatch");
+    }
+    const bytes = await descriptor.readFile();
+    if (bytes.toString("utf8") !== entry.marker) throw new Error("Registered fixture marker mismatch");
+    markerSha256 = createHash("sha256").update(bytes).digest("hex");
+  } finally { await descriptor.close(); }
+  return Object.freeze({ attestationVersion: 1, workspacePath: verified.workspace, type: "directory",
+    dev: workspaceStat.dev, ino: workspaceStat.ino, uid: workspaceStat.uid,
+    rootDev: rootStat.dev, rootIno: rootStat.ino,
+    markerDev: markerStat.dev, markerIno: markerStat.ino, markerSha256 });
 }
 
 function childEnvironment(): NodeJS.ProcessEnv {
