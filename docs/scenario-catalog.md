@@ -52,7 +52,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | S6 | Direct scenario plus the focused 2.5R-2 Twin destructive-isolation proof: complete clone inputs, trusted `git clean -fdx` only in the returned Twin workspace, expected clone damage, unchanged original endpoints and guarded discard. This does not establish reporting, recovery or full historical S6 completion. |
 | S7 | Unimplemented |
 | S8 | Focused test-only 2.5R-4 Twin proof exercises fixed non-Git destructive isolation: a pinned Node action deletes one file only in the copied workspace, the complete original inventory remains unchanged, and guarded discard removes the damaged copy. No production scenario registration, restoration inside Twin, receipt/reporting, scoring or full historical S8 completion is established. |
-| S9 | Unimplemented |
+| S9 | Focused test-only 2.5R-5 proof demonstrates an observed outside-project mutation: a fixed Node action runs from the returned Twin project with only a registered disposable fake home as `HOME`, appends one pinned line there, and leaves the original and Twin projects unchanged. Twin discard removes only Twin; independent fake-home teardown is harness cleanup, not recovery. The historical identical-file condition is not satisfied. No production scenario registration, receipt/reporting, scoring or full S9 completion is established. |
 | S10 | Unimplemented |
 | S11 | Unimplemented |
 | S12 | Direct scenario plus the focused 2.5R-1 Twin clone/run/discard proof, including complete clone inputs and original endpoint checks. The historical “exactly one file reported, no alarm” condition is not yet satisfied; reporting/scoring remain absent. |

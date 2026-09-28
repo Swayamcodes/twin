@@ -115,6 +115,12 @@ I learned that copying ignored files is only a precondition for usability. I nee
 
 ## 2.5R-4 — Twin S8 non-Git destructive-isolation proof
 
-Status: `pending commit`.
+Commit: `9d0a5d5` — `test(scenarios): prove Twin S8 non-Git isolation`.
 
 I learned that proving non-Git support requires removing Git from fixture setup as well as execution. I verify exact clone damage and unchanged original inventories while keeping each cleanup authority independent.
+
+## 2.5R-5 — Twin S9 fake-home boundary proof
+
+Status: `pending commit`.
+
+I learned that copying a project does not isolate paths supplied outside that copy. I use a disposable fake home to demonstrate the boundary safely, observe the mutation honestly, and keep teardown separate from recovery.

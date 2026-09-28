@@ -1682,3 +1682,116 @@ This proves fixed destructive isolation for a non-Git directory and original
 endpoint preservation. It does not establish restoration inside Twin,
 reporting, scoring, continuous preservation, OS sandboxing, full S8
 completion, Phase 2 completion or Phase 3 completion.
+
+## 2.5R-5 — guarded Twin S9 fake-home boundary proof
+
+This test-only slice uses a registered non-Git project (`twin-s9-nongit-project-v1`)
+with `project.txt` (`S9 project control.\n`) and `.project-control`
+(`S9 copied dotfile.\n`). A separately registered disposable fake home contains
+only `.s9-note` (`S9 fake-home baseline.\n`); its ownership marker is outside
+the `home/` passed to the child. The fixed action
+`twin-s9-append-fake-home-v1` appends exactly `S9 fixed appended line.\n` to
+that dotfile and emits `TWIN_S9_APPEND_OK\n` only on success. Its verified
+descriptor-read SHA-256 is
+`867bd2b8e74007461fc282608736fc19fb0db6d458eaaff10a373323c5be48d5`.
+The missing-dotfile control exits 1 with empty stdout and only
+`TWIN_S9_APPEND_FAILURE\n` on stderr.
+
+The positive proof observed a complete independent Twin copy, an unchanged
+original project, and an unchanged Twin project while the registered fake-home
+dotfile changed to exactly `S9 fake-home baseline.\nS9 fixed appended line.\n`.
+The mutation remained visible after Twin discard and disappeared only when the
+fake-home authority performed test teardown. This is an observed
+outside-project mutation, not Twin recovery. The historical S9 identical-file
+condition is therefore not satisfied. The real-home identities and repository
+and state trees were excluded before allocation; no real-home path was passed
+to a child. The guard admitted only the captured Node executable, owned module,
+returned Twin cwd and exact registered fake `HOME`, with fixed options and
+environment. Pure malformed-launch tests used only in-memory placeholders.
+
+Production scenario TypeScript checking and scenario test compilation passed.
+The first sandboxed focused run compiled but reproduced the known empty
+child-stdout capture; its serial safety latch blocked later real cases. The
+same unchanged `test:scenarios:twin-s9` script then passed in the approved host
+environment, including core/scenario builds and scenario test compilation:
+**1 file, 28 tests passed**. The successful run measured **0 Git launches;
+7 real fixed Node actions; 2 rejected action attempts with no native forward;
+1 pure in-memory guard forward; 12 support roots; 11 original project roots;
+11 fake-home roots; 11 Twin allocations; 10 returned sessions**. The controlled
+copy failure accounted for one Twin allocation without a returned session.
+All **45 acquired roots were removed**, with zero retained or unknown final
+dispositions, empty final scratch and registration sets, and matching before
+and after temporary-root inventories. Independent cleanup refusals were
+recorded and released only through their known reversible conditions.
+
+No S12/S6/S13/S8 action, Git setup, direct scenario runner, AgentTX, CLI,
+network, capture projection, scoring or broader suite ran. This proof does not
+establish an OS sandbox, containment of arbitrary commands, recovery of an
+outside-project change, receipt/reporting, scoring or full S9 completion.
+Evidence, scoring and reporting remain deferred.
+
+### 2.5R-5 audit correction — private prelaunch fake-home state
+
+The test guard now fixes one private expected fake-home state before dispatch:
+the complete registered baseline note or the independently verified missing-note
+inventory. Immediately before native forwarding it rechecks the complete home
+inventory. The baseline branch also verifies the registered note's device/inode,
+UID, regular type, 0600 mode, single link, exact size and baseline bytes through
+a no-follow descriptor. The missing branch requires exact absence. Neither
+expectation is derived from launch inputs or from the launch-time observation.
+
+A new real filesystem control establishes a valid Twin session, then replaces
+the note while admission is closed with a different regular, single-link 0600
+file holding the same baseline bytes. The specific prelaunch identity check
+rejects before native forwarding. Only that known replacement is reversed;
+support, original, fake-home and Twin roots are then removed by their existing
+authorities. The fixed action and both earlier real controls remain unchanged.
+
+Verification history supplied by the focused command runs: the sandbox run
+compiled but reproduced the documented empty child-stdout capture and serial
+safety latch. The same `test:scenarios:twin-s9` command passed in the approved
+host environment, including core/scenario builds and scenario test compilation:
+**1 file / 29 tests passed in 1.32 seconds** of Vitest time. Final accounting
+was **7 real fixed Node actions; 3 rejected action attempts; 1 pure in-memory
+forward; 0 Git launches; 13 support roots; 12 original project roots;
+12 fake-home roots; 12 Twin allocations; 11 returned sessions**. All **49
+acquired roots were removed**, with none retained or unknown. The action SHA-256
+remained `867bd2b8e74007461fc282608736fc19fb0db6d458eaaff10a373323c5be48d5`.
+The zero-Git boundary and the observed outside-project mutation are unchanged.
+Final observation before forwarding does not eliminate same-user filesystem
+TOCTOU between that observation and the action's open. This remains a fixed
+boundary demonstration, not recovery, reporting, scoring or an OS sandbox.
+
+### Final 2.5R-5 verification
+
+Supplied final verification history, separate from all earlier S9 runs:
+`test:scenarios:twin-s9` completed successfully. Core and scenario builds and
+scenario test compilation passed as prerequisites. The focused Vitest result
+was **1 file, 29 tests passed, 1.27 seconds**. The fixed action SHA-256 remained
+`867bd2b8e74007461fc282608736fc19fb0db6d458eaaff10a373323c5be48d5`.
+
+Final established accounting remained **7 real fixed S9 Node actions;
+3 rejected action attempts; 1 pure in-memory forward; 0 Git launches;
+13 support roots; 12 original non-Git project roots; 12 fake-home roots;
+12 Twin allocations; 11 returned sessions; all 49 acquired roots removed;
+no retained or unknown roots**. The final launch gate checked the complete
+privately authorized fake-home state immediately before native forwarding.
+A same-content replacement with a different note identity was rejected before
+a child launched.
+
+The positive action appended exactly the pinned line to the disposable
+fake-home note. Original and Twin project inventories remained unchanged, and
+the fake-home mutation remained observable after Twin discard. Independent
+fake-home teardown was harness cleanup, not Twin recovery. The historical S9
+identical-file condition remained unsatisfied.
+
+`git diff --cached --check` passed before the final run. All six approved files
+were staged before this documentation update; this appended section remains
+unstaged. No Git setup/action, S12, S6, S13, S8, direct scenario runner,
+AgentTX, CLI, capture projection, scoring or arbitrary agent ran.
+
+The final prelaunch observation does not eliminate same-user filesystem TOCTOU
+before the action opens the file. This proof establishes an observed
+outside-project mutation through a disposable fake home. It does not establish
+recovery, reporting, scoring, continuous preservation, OS sandboxing, full S9
+completion, Phase 2 completion or Phase 3 completion.
