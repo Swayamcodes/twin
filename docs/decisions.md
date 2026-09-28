@@ -130,3 +130,5 @@ I learned that copying a project does not isolate paths supplied outside that co
 Status: `pending commit`.
 
 I learned that a real Twin proof becomes a benchmark result only when the actual attempt and its reference are retained and each scored outcome resolves to observations from that attempt. Unknown fields preserve the boundary between observed behavior and claims we have not yet measured.
+
+- pending commit — The CLI can preserve command arguments and dispose of a copied project by using the core session lifecycle as its only execution authority.
