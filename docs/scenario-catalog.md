@@ -51,7 +51,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | S5 | Unimplemented |
 | S6 | Direct scenario plus the focused 2.5R-2 Twin destructive-isolation proof: complete clone inputs, trusted `git clean -fdx` only in the returned Twin workspace, expected clone damage, unchanged original endpoints and guarded discard. This does not establish reporting, recovery or full historical S6 completion. |
 | S7 | Unimplemented |
-| S8 | Unimplemented |
+| S8 | Focused test-only 2.5R-4 Twin proof exercises fixed non-Git destructive isolation: a pinned Node action deletes one file only in the copied workspace, the complete original inventory remains unchanged, and guarded discard removes the damaged copy. No production scenario registration, restoration inside Twin, receipt/reporting, scoring or full historical S8 completion is established. |
 | S9 | Unimplemented |
 | S10 | Unimplemented |
 | S11 | Unimplemented |

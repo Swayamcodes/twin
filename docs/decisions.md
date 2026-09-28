@@ -109,6 +109,12 @@ I learned to prove destructive isolation by checking that the clone contains the
 
 ## 2.5R-3 — Twin S13 ignored-input usability proof
 
-Status: `pending commit`.
+Commit: `b326e66` — `test(scenarios): prove Twin S13 ignored-input usability`.
 
 I learned that copying ignored files is only a precondition for usability. I need a fixed action to consume their verified bytes inside Twin, with independent unchanged inventories and separate cleanup accounting.
+
+## 2.5R-4 — Twin S8 non-Git destructive-isolation proof
+
+Status: `pending commit`.
+
+I learned that proving non-Git support requires removing Git from fixture setup as well as execution. I verify exact clone damage and unchanged original inventories while keeping each cleanup authority independent.

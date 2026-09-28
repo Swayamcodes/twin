@@ -1504,3 +1504,181 @@ This proves fixed ignored-input usability inside Twin. It does not establish
 generalized dependency compatibility, production redaction, reporting, scoring,
 recovery, receipts, sandboxing, continuous preservation, full S13 completion,
 Phase 2 completion or Phase 3 completion.
+
+## 2.5R-4 — Twin S8 non-Git destructive-isolation product proof
+
+Implementation and verification: 2026-09-28. Initial HEAD and local origin/main
+both matched `b326e66a305e7ffbb6e79f8fa5af3cb5ce96f6dd`, and the working tree
+was clean. The six-file slice contains one test-only helper, one focused test,
+one dedicated root script, this entry, the current S8 catalog status, and decision
+bookkeeping. Core, production scenarios, settled contracts, prior scenario proofs,
+configuration, dependencies and lockfile remain unchanged.
+
+### Fixed non-Git state and action
+
+The separately registered original fixture `twin-s8-nongit-v1` contains only
+`delete-me.txt` (`S8 disposable target.\n`), `.control`
+(`S8 dotfile control.\n`), `controls/`, and `controls/keep.txt`
+(`S8 nested control.\n`). Directories are mode 0700; files are mode 0600 and
+written exclusively. Its ownership marker is outside `workspace`. Complete
+recursive inventories reject extra entries, links, special types, case-folded
+`.git`/`.gitmodules` names and recognizable bare-repository inventories at any
+depth. No Git repository was initialized or required.
+
+Fixed action `twin-s8-delete-v1` is an exclusively written module at the owned
+support root's `actions/delete-one-file.mjs`, outside both compared workspaces.
+It accepts no application arguments; it `lstat`s only literal relative
+`delete-me.txt`, requires a regular file, then calls exactly one `unlinkSync`
+on that path. A successful deletion emits exactly `TWIN_S8_DELETE_OK\n` on
+stdout. Absence or another failure emits only `TWIN_S8_DELETE_FAILURE\n` on
+stderr and exits 1. It creates no replacement, child, network activity or shell
+command. The observed SHA-256 of the verified action bytes was
+`b52dd1901be0ff3fd6137c70525b1a4e21d6dd6f22d3381c36db53c50f0895e2`.
+Support, action-parent and action-file identities, current UID, canonical
+containment, 0600 mode, one hard link and descriptor-backed no-follow exact
+bytes are checked after creation and immediately before native forwarding.
+
+The closed guard was installed before fixture work and had no setup or Git phase.
+It admitted only the captured absolute `process.execPath`, exactly the verified
+owned module argument, canonical returned Twin workspace identity,
+`shell:false`, `detached:false`, fixed ignore/pipe stdio and exactly
+`LANG=C`, `LC_ALL=C`, `TZ=UTC`. A returned running session, completed independent
+non-Git pre-state, private dispatch and unused one-action allowance were required.
+It reserved the allowance before caller reflection, rejected accessors and custom
+array iterators at this narrow boundary, and forwarded only reconstructed plain
+values. Other direct child-process launch APIs rejected. The tests and proof calls
+were serialized.
+
+The complete original and Twin pre-state inventories matched by relative path,
+type, ordinary mode and exact bytes. Every copied regular file had a distinct
+combined device/inode identity. After the successful real action, only Twin's
+`delete-me.txt` was absent; its controls retained their contents, modes and
+types, while the entire original remained unchanged. The successful `RunResult`
+showed exited/started/direct-child-settled, code 0, exact one-line stdout,
+zero-byte stderr, complete untruncated streams and no signal/spawn/termination
+error. Guarded discard removed the Twin allocation, a repeated discard reported
+already-removed, and the original was still byte-identical afterward.
+
+The missing-target control began with a fully verified good copy, then removed
+only Twin's target with dispatch closed and verified that complete negative
+pre-state. The same real module exited 1 with zero stdout, exact fixed failure
+stderr and no additional filesystem effect. This control is not a successful
+deletion proof.
+
+### Focused failures, cleanup and actual accounting
+
+The 25 tests include 14 lifecycle/prerequisite cases, 10 pure critical guard
+cases and one pure restoration case. Three protected-base rejections, token and
+action-preparation failures allocated nothing. Action-byte mismatch allocated
+only support. A controlled real factory copy-read failure recorded its Twin
+allocation without a returned session; core removed that allocation. Failure
+after session return launched no action. The launch-rejection case produced an
+honest spawn-failed result and no native child. A post-state observation failure
+did not skip original checks or cleanup. A known Twin scratch-mode preflight
+refusal was accounted before restoring that mode and calling discard through the
+same session; original cleanup proceeded independently. Original cleanup really
+refused a missing fresh-observation prerequisite, then succeeded after a genuine
+new complete observation. The pure restoration case performed an actual restore
+before injecting its error and confirmed subsequent restore/synchronization.
+
+Support and original cleanup used distinct registered handles, fixed entry
+inventories, marker/UID/mode/identity checks and per-entry rechecks. Support
+cleanup required empty scratch. Discovered paths supplied accounting only.
+No unexplained refusal, partial-deletion retry, adopted root or Twin sweep was
+used. Root outcomes were recorded separately as removed, retained or unknown.
+
+Before Vitest, both new files and their transitive core imports, action body,
+launch policy and cleanup paths were inspected. There was no reachable Git setup,
+other scenario action, direct runner, AgentTX, arbitrary command, shell/rm/glob,
+CLI, network, capture projection or scoring route. Production scenario TypeScript
+no-emit checking passed. The first test compilation found one local entry-type
+inference error; its explicit annotation corrected compilation before Vitest.
+
+The sandboxed first focused run reproduced the previously documented empty child
+stdout capture and therefore failed the exact output assertion. It left no S8
+temporary root. The same dedicated script then passed in the approved host
+environment. After tightening the original-cleanup refusal, the final dedicated
+`test:scenarios:twin-s8` run passed its core/scenario builds and scenario test
+compilation, then **1 file / 25 tests passed** in **1.90 seconds** of Vitest time.
+The fixed output assertion was neither removed nor weakened.
+
+Final mode hardening explicitly applies 0700/0600 after exclusive creation, so
+unusually restrictive process umasks cannot change the fixture contract. The
+dedicated script was rerun after this test-only change: all three compilation
+stages passed and **1 file / 25 tests passed** in **1.27 seconds** of Vitest time.
+The action digest and all root/session/launch totals below were unchanged.
+
+Final inventory review added same-workspace device/inode comparisons for every
+original and Twin post-action entry, beyond the already checked independent
+original-to-copy file identities. The dedicated script again completed all three
+compilation stages and passed **1 file / 25 tests** in **1.28 seconds** of Vitest
+time. Action digest and accounting totals remained unchanged.
+
+Final-run totals: **0 Git launches; 5 real fixed Node actions; 1 rejected action
+attempt with no native forward; 1 pure in-memory guard forward; 9 support roots;
+8 original non-Git roots; 8 Twin allocations; 7 returned sessions**. All **25
+acquired roots were confirmed removed**, with zero retained/unknown final
+dispositions, empty final scratch and registration sets, and matching before/after
+temporary-root inventories. The five real actions were the positive case,
+missing-target control, post-observation failure and two cleanup-refusal cases.
+No S12/S6/S13 action ran.
+
+These local observations establish fixed non-Git destructive isolation and
+original endpoint preservation through disposal of the damaged Twin copy.
+They do not establish restoration inside Twin, a receipt, reporting, scoring,
+continuous preservation, authenticated evidence, arbitrary-agent containment or
+an OS sandbox. Evidence/attempt/retention infrastructure remains frozen; full
+historical S8 completion and the remaining Phase 3 work remain outstanding.
+
+### 2.5R-4 audit correction — proxy admission and fixture hard links
+
+The narrow test launch guard now uses Node's `isProxy` detection to reject
+transparent proxies for argv, options, stdio and environment before native
+forwarding. Four pure in-memory cases exercise those inputs without allocating
+roots or launching children. Fixture inventories now require one link for each
+regular file, including all three expected original and Twin files; directory
+link counts are not interpreted as file hard links. One registered-root fault
+replaces an expected file with a hard link, confirms inventory rejection before
+Twin allocation or action execution, restores the injected fixture state, and
+removes both acquired roots through their existing cleanup authorities.
+
+Verification history supplied by the focused command runs: the sandbox run
+compiled but reproduced the documented empty child-stdout capture and its
+serial safety latch stopped subsequent lifecycle cases. The same unchanged
+`pnpm run test:scenarios:twin-s8` command then passed in the approved host
+environment: all three compilation stages passed and **1 file / 30 tests passed**
+in **1.03 seconds** of Vitest time. The final run reported **0 Git launches;
+5 real fixed Node actions; 1 rejected action attempt without native forwarding;
+1 pure in-memory forward; 10 support roots; 9 original non-Git roots; 8 Twin
+allocations; 7 returned sessions**. All **27 acquired roots were removed**, with
+no retained or unknown dispositions. The fixed action bytes and SHA-256
+`b52dd1901be0ff3fd6137c70525b1a4e21d6dd6f22d3381c36db53c50f0895e2`
+are unchanged. The zero-Git fixture setup and execution boundary is unchanged.
+
+### Final 2.5R-4 verification
+
+Supplied final verification history, separate from the earlier S8 runs:
+`test:scenarios:twin-s8` completed successfully. Core and scenario builds and
+scenario test compilation passed as prerequisites. The focused Vitest result was
+**1 file, 30 tests passed, 926 ms**. The fixed action SHA-256 remained
+`b52dd1901be0ff3fd6137c70525b1a4e21d6dd6f22d3381c36db53c50f0895e2`.
+
+Final established accounting remained **5 real fixed S8 Node actions;
+1 rejected action attempt; 1 pure in-memory forward; 0 Git launches;
+10 support roots; 9 original non-Git roots; 8 Twin allocations;
+7 returned sessions; all 27 acquired roots removed; no retained or unknown
+roots**. Proxy argv, options, stdio and environment values were rejected before
+forwarding. Regular fixture files required a single link; the hard-link
+regression rejected before Twin allocation and action launch. The positive
+proof removed only `delete-me.txt` inside Twin, and the original non-Git
+inventory remained unchanged through Twin discard.
+
+`git diff --cached --check` passed before the final run. All six approved files
+were staged before this documentation update; this appended section remains
+unstaged. No Git setup/action, S12, S6, S13, direct scenario runner, AgentTX,
+CLI, capture projection, scoring or arbitrary agent ran.
+
+This proves fixed destructive isolation for a non-Git directory and original
+endpoint preservation. It does not establish restoration inside Twin,
+reporting, scoring, continuous preservation, OS sandboxing, full S8
+completion, Phase 2 completion or Phase 3 completion.
