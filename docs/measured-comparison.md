@@ -2,8 +2,9 @@
 
 ## Scope and evidence
 
-This is a partial Phase 2 comparison at HEAD
-`bef2dc35e598cd8a5913042f28bea83e91159ad6`. The
+This partial Phase 2 comparison was assembled through checkpoint
+`bef2dc35e598cd8a5913042f28bea83e91159ad6` and reviewed at
+`5c165db1f0bbf7d2f23f0db18ea4dc995ceef664`. The
 [catalog](scenario-catalog.md) supplies the historical conditions. The
 [comparison test](../packages/scenarios/test/cli-plain-git-comparison.test.ts)
 measures Twin's public CLI and separate direct-action fixtures for S1–S7,

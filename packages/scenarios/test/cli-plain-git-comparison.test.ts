@@ -219,6 +219,9 @@ function npmEnvironment(home: string, prefixPath: string, cache: string, tempora
     NPM_CONFIG_FUND: "false", NPM_CONFIG_UPDATE_NOTIFIER: "false", NPM_CONFIG_LOGLEVEL: "error" };
 }
 interface WorkerIdentity { pid: number; token: string; startTime: string }
+function processGone(error: unknown): boolean {
+  return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ESRCH");
+}
 async function waitForWorkerMarker(path: string, token: string): Promise<number> {
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
@@ -239,7 +242,7 @@ async function workerState(pid: number, worker: string, markerPath: string, toke
   let stat: string;
   try { stat = await fs.readFile(`/proc/${pid}/stat`, "utf8"); }
   catch (error: unknown) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    if (processGone(error)) return null;
     throw error;
   }
   const close = stat.lastIndexOf(") ");
@@ -249,9 +252,14 @@ async function workerState(pid: number, worker: string, markerPath: string, toke
   assert(startTime && /^\d+$/.test(startTime), "Missing worker start time");
   if (expectedStart !== undefined) assert.equal(startTime, expectedStart, "Worker PID was reused");
   if (fields[0] === "Z" || fields[0] === "X") return { running: false, startTime };
-  const argv = (await fs.readFile(`/proc/${pid}/cmdline`)).toString("utf8").split("\0").filter(Boolean);
+  let commandLine: Buffer;
+  try { commandLine = await fs.readFile(`/proc/${pid}/cmdline`); }
+  catch (error: unknown) { if (processGone(error)) return null; throw error; }
+  const argv = commandLine.toString("utf8").split("\0").filter(Boolean);
   assert.deepEqual(argv, [process.execPath, worker, markerPath, token], "Unexpected process at S11 PID");
-  const owner = await fs.stat(`/proc/${pid}`);
+  let owner: Awaited<ReturnType<typeof fs.stat>>;
+  try { owner = await fs.stat(`/proc/${pid}`); }
+  catch (error: unknown) { if (processGone(error)) return null; throw error; }
   assert.equal(owner.uid, process.getuid?.(), "S11 worker owner changed");
   return { running: true, startTime };
 }
@@ -259,12 +267,16 @@ async function stopWorker(identity: WorkerIdentity, worker: string, markerPath: 
   const observe = async (): Promise<boolean> =>
     (await workerState(identity.pid, worker, markerPath, identity.token, identity.startTime))?.running ?? false;
   if (!await observe()) return;
-  process.kill(identity.pid, "SIGTERM");
+  try { process.kill(identity.pid, "SIGTERM"); }
+  catch (error: unknown) { if (processGone(error)) return; throw error; }
   for (let attempt = 0; attempt < 100; attempt++) {
     if (!await observe()) return;
     await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
   }
-  if (await observe()) process.kill(identity.pid, "SIGKILL");
+  if (await observe()) {
+    try { process.kill(identity.pid, "SIGKILL"); }
+    catch (error: unknown) { if (processGone(error)) return; throw error; }
+  }
   for (let attempt = 0; attempt < 100; attempt++) {
     if (!await observe()) return;
     await new Promise(resolveDelay => setTimeout(resolveDelay, 25));

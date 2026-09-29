@@ -2372,3 +2372,64 @@ test TypeScript checking, whitespace and four-file scope checks passed. The
 first sandboxed test attempt stopped before tests at the system-Git trust
 check; the host rerun passed. Disposable comparison roots and the S11 worker
 were absent after the run.
+
+## Final Phase 2 review at `5c165db1f0bbf7d2f23f0db18ea4dc995ceef664` — 2026-09-29
+
+**Acceptance decision: BLOCKED. Phase 2 does not yet meet the SPEC's scenario-suite
+acceptance requirements.** The catalog's S1–S13 actions have fixed measurements:
+S1–S7, S9 and S12 use the public-CLI/direct-action comparison; S8/S13 have
+retained Twin attempts; S10/S11 have direct Twin sessions. The comparison uses
+fixed Node actions in place of literal `rm` for S1–S3/S5, a local offline
+tarball for S10, and a bounded worker for S11. These substitutions and their
+limits are stated in the catalog and measured comparison. They establish
+scenario-specific observations, not a general command adapter.
+
+Known Twin outcomes in the measured comparison were checked against their own
+attempt's action, inventory, receipt and after-discard assertions. S6/S12
+retained reporting stays `unknown`; separate CLI attempts support `reported`.
+S8/S9/S13 retained fields use their own evidence references. C/T evaluations
+remain test-local and are not retained `ToolScore` results. Original endpoint
+equality leaves continuous preservation/recovery `unknown`; S13 read reporting
+and all boundary-accuracy fields remain `unknown`. Plain Git/direct actions and
+AgentTX observations remain unscored. AgentTX's S6 copy lacked the ignored
+inputs and baseline-committed `scratch.txt`, so it did not face comparable
+deletion preconditions. No AgentTX hand test was rerun for this review.
+
+The Phase 2 gaps are a complete comparable Twin/AgentTX/plain-Git suite with
+five independent fields for each applicable scenario, a versioned JSON and
+Markdown comparison for that suite, explicit Git recovery attempts, and
+attempt-local evidence sufficient to replace current unknowns where a known
+claim is required. Current combined JSON and Markdown cover only retained
+Twin S12/S6; the wider measured comparison is prose and test-local evaluation.
+The S12 historical no-alarm condition remains unverified. S9's identical
+dotfile, S10's removed package and S11's stopped-or-clearly-reported process
+conditions fail in the measured Twin attempts. External-state reporting and
+process/dependency receipt support are later product implementation work under
+SPEC v1; their absence must remain visible in Phase 2 outcomes. Authenticated
+provenance and continuous preservation are unclaimed limitations, not new
+pass criteria. The frozen contracts and historical catalog conditions were
+not changed to make these results pass.
+
+Review fixes: the measured-comparison introduction no longer labels the older
+`bef2dc3` checkpoint as HEAD. The S11 comparison harness now treats `ESRCH`
+alongside `ENOENT` when its verified worker exits between `/proc` observations
+or signals. The first host comparison run exposed that race: 17 passed, 1
+failed during cleanup, leaving four owned roots. After the narrow fix, the
+same file passed 18/18. No score or product behavior was changed.
+
+Verification: core, scenarios and CLI production TypeScript builds and core/
+scenario test TypeScript checks passed. The scenario contract suite passed
+405/405; runner passed 3/3 on the host (the sandbox run stopped at its
+trusted-system-Git ownership check). Capture foundation passed 222/222.
+Twin S12, S6, S13, S8 and S9 proof suites passed. Retained S12, S6, S8/S13
+and S9 score suites passed. The corrected public-CLI comparison passed 18/18;
+core passed 99/99, CLI 12/12, and combined-score/Markdown 19/19. The failed
+S11 run's four marker-verified roots were removed after worker-exit checks.
+Five older, pre-existing disposable score-test roots were also inspected and
+removed; three held bounded test captures with owner markers and two were
+empty. Final root and worker accounting is recorded with the review's final
+workspace check: no `/tmp/twin-*` or `/tmp/agenttx-*` directories and no
+Node, Vitest, Git or npm test workers remained. `git diff --check` passed;
+HEAD stayed at `5c165db` and only this review's three files were modified.
+The S11 harness still has an inherent observation-to-signal PID reuse window;
+its checks do not establish general process containment.
