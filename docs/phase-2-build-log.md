@@ -2004,3 +2004,54 @@ format's guarantee. Publication is not crash-atomic, and same-user filesystem
 races after final identity checks remain possible. Preservation, reporting
 and boundary-description accuracy remain unknown. This result does not
 complete S12 scoring generally, S6 scoring, Phase 2 or Phase 3.
+
+## 2.6R-2 — retained Twin S6 scoring on current core
+
+The restored S6 work retained its fixed direct reference, separate Twin attempt,
+strict S6 support contract, private four-file attempt and one-line JSON entry.
+The shared four-file persistence refactor was kept and the complete S12 focused
+tests confirmed its prior schemas, opaque reopen handle and five score outcomes.
+The S12 and S6 producers now admit only the eight fixed current-core Git receipt
+classification calls: four before and four after, to the allocation-derived Twin
+workspace. The guard pins `/usr/bin/git`, argv order, cwd, environment, encoding,
+buffer limit, timeout, `shell: false` and `windowsHide: true`; extra calls remain
+closed. These calls are counted separately from fixture setup and scenario action.
+Both fingerprints now include the current core receipt path and the shared
+private artifact helper. The package retains the CLI comparison, S12 score and
+S6 score scripts together.
+
+Verification on 2026-09-29: scenario production and test TypeScript checks and
+the scenarios build passed. Complete focused S12 scoring passed **3 files / 19
+tests**; complete focused S6 scoring passed **3 files / 24 tests**. The existing
+S6 entry test ran separately and passed **1 test** (16 other cases filtered).
+No S6 tests were added beyond the restored 24-test focused group. The S12
+public result retained its schema and outcomes; compiled version fingerprints
+changed to identify the modules that now execute.
+
+Each complete S6 path runs 24 Git children: seven direct setup, one direct
+`git clean -fdx`, seven Twin-original setup, eight receipt classification and
+one Twin `git clean -fdx`. It allocates and removes one direct fixture, one
+Twin original, one support root and one Twin root, returns one session, and
+retains two separately reopened artifacts. The focused S6 paths exercised
+three complete comparisons plus one failed-reference-retention direct action
+and one observer-refused direct root: **80 Git children, 14 producer roots,
+three sessions and six artifacts**. The dedicated entry repeat added **24 Git
+children, four producer roots, one session and two artifacts**. Its entry Node
+process and the focused entry Node process are separate from the Git counts.
+All 16 roots in the four complete S6 paths were removed before their complete
+output; the two failure-path direct roots were removed before incomplete output.
+Six separately registered test artifact parents across the S6 runs later removed the eight
+retained artifacts. The focused S12 paths exercised **51 Git children, five
+Node action children, one entry Node process, 10 producer roots, two sessions
+and four artifacts**; the receipt children account for 16 of those 51 Git
+launches. These are fixed-path guarded workload counts, not an independent OS
+process census.
+
+The complete S6 result is `unknown`, `unknown`, `not-blocked`, `usable`,
+`unknown` in SPEC order. Known outcomes resolve only from strictly reopened
+attempt and reference evidence. The current core receipt is executed but is
+not retained as reporting evidence here; Git stdout remains action output.
+Endpoint equality cannot establish uninterrupted preservation and discard is
+cleanup. Local digests and modes do not authenticate the capture or make its
+publication crash-atomic; same-user filesystem races and broader tool/scenario
+coverage remain deferred.

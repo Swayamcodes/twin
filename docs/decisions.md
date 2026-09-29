@@ -138,3 +138,9 @@ I learned that a real Twin proof becomes a benchmark result only when the actual
 Status: `pending commit`.
 
 I learned that public CLI measurement should test only observable CLI behavior. Existing internal proofs can support the interpretation, but they must not be presented as a fresh independent observation of a Twin workspace that the CLI already discarded.
+
+## 2.6R-2 — retained Twin S6 score
+
+Status: `pending commit`.
+
+I learned that scoring a destructive action needs an independent retained reference and attempt, with process admission updated when the product adds receipt work. Exact output and endpoint states support the observed action and usability; they do not prove continuous preservation, Twin reporting, or recovery by discard.

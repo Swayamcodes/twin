@@ -1,7 +1,5 @@
-import { constants, type Stats } from "node:fs";
-import { mkdir, open, opendir, lstat, realpath, type FileHandle } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
-import { dirname, isAbsolute, join, normalize } from "node:path";
+import { isAbsolute, normalize } from "node:path";
+import { digest, encode, publishPrivateFour, reopenPrivateFour, validatePrivateParent, PrivatePublicationError, type FileName } from "./private-four-file.js";
 import { z } from "zod";
 import { ArtifactIdSchema, SegmentIdSchema, VersionStringSchema,
   type Execution, type OriginalStateObservation } from "../contract/normalized-evidence-schema.js";
@@ -11,10 +9,8 @@ import { validateNormalizedToolEvidence } from "../contract/normalized-evidence-
 import { validateToolAttemptBundle } from "../contract/attempt-protocol-validation.js";
 import { StreamBytesSchema } from "./records.js";
 
-const names = ["identity.json", "attempt.json", "outcome.json", "manifest.json"] as const;
-type Name = typeof names[number];
-const prior = names.slice(0, 3);
-const limits: Readonly<Record<Name, number>> = { "identity.json": 16_384, "attempt.json": 2_097_152,
+const prior = ["identity.json", "attempt.json", "outcome.json"] as const;
+const limits: Readonly<Record<FileName, number>> = { "identity.json": 16_384, "attempt.json": 2_097_152,
   "outcome.json": 32_768, "manifest.json": 4_096 };
 const text = z.string().max(4096).refine(v => Buffer.byteLength(v) <= 4096);
 const header = { formatVersion: z.literal(1), artifactKind: z.literal("twin-s12-attempt"), artifactId: ArtifactIdSchema };
@@ -43,72 +39,7 @@ const ManifestSchema = z.strictObject({ ...header, completeness: z.literal("comp
 // The tuple above is fixed in storage order. A second explicit check protects its names.
 export const TwinS12AttemptRecordsSchema = z.strictObject({ identity: IdentitySchema, attempt: AttemptSchema, outcome: OutcomeSchema });
 export type TwinS12AttemptRecords = z.infer<typeof TwinS12AttemptRecordsSchema>;
-const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const encode = (name: Name, value: unknown): Uint8Array => {
-  const bytes = Buffer.from(JSON.stringify(value), "utf8");
-  if (bytes.length > limits[name]) throw new Error("too-large");
-  return bytes;
-};
-const uid = (): number => { if (typeof process.getuid !== "function") throw new Error("uid-unavailable"); return process.getuid(); };
-function safe(stat: Stats, owner: number, kind: "file" | "directory", name?: Name): void {
-  if (stat.uid !== owner || stat.isSymbolicLink() || (kind === "file" ? !stat.isFile() || stat.nlink !== 1 : !stat.isDirectory())
-    || (stat.mode & 0o7777) !== (kind === "file" ? 0o600 : 0o700) || name && stat.size > limits[name]) throw new Error("unsafe-object");
-}
-async function parent(path: string, owner: number): Promise<Stats> {
-  if (!path || !isAbsolute(path) || normalize(path) !== path || path.length > 4096 || await realpath(path) !== path) throw new Error("invalid-parent");
-  const stat = await lstat(path);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== owner) throw new Error("invalid-parent");
-  return stat;
-}
-export async function validateTwinS12ArtifactParent(path: string): Promise<boolean> {
-  try { await parent(path, uid()); return true; } catch { return false; }
-}
-async function syncDir(handle: FileHandle): Promise<void> {
-  try { await handle.sync(); } catch (error) {
-    const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-    if (code !== "EINVAL" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
-  }
-}
-async function writeOne(path: string, name: Name, bytes: Uint8Array, owner: number): Promise<void> {
-  const handle = await open(join(path, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-  let problem: unknown;
-  try {
-    safe(await handle.stat(), owner, "file", name);
-    for (let offset = 0; offset < bytes.length;) {
-      const result = await handle.write(bytes, offset, bytes.length - offset, offset);
-      if (!Number.isSafeInteger(result.bytesWritten) || result.bytesWritten <= 0 || result.bytesWritten > bytes.length - offset) throw new Error("write-progress");
-      offset += result.bytesWritten;
-    }
-    await handle.sync();
-  } catch (error) { problem = error; }
-  try { await handle.close(); } catch (error) { if (problem === undefined) problem = error; }
-  if (problem !== undefined) throw problem;
-}
-async function readOne(path: string, name: Name, owner: number): Promise<Uint8Array> {
-  const location = join(path, name), before = await lstat(location); safe(before, owner, "file", name);
-  const handle = await open(location, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const opened = await handle.stat(); safe(opened, owner, "file", name);
-    if (opened.dev !== before.dev || opened.ino !== before.ino) throw new Error("replaced");
-    const bytes = new Uint8Array(opened.size);
-    for (let offset = 0; offset < bytes.length;) {
-      const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0 || bytesRead > bytes.length - offset) throw new Error("short-read");
-      offset += bytesRead;
-    }
-    if ((await handle.read(new Uint8Array(1), 0, 1, bytes.length)).bytesRead !== 0) throw new Error("grown");
-    const after = await handle.stat(), named = await lstat(location); safe(after, owner, "file", name); safe(named, owner, "file", name);
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs
-      || named.dev !== opened.dev || named.ino !== opened.ino) throw new Error("changed");
-    return bytes;
-  } finally { await handle.close(); }
-}
-async function exactInventory(path: string): Promise<void> {
-  const dir = await opendir(path), seen = new Set<string>();
-  try { for (;;) { const item = await dir.read(); if (!item) break; if (!names.includes(item.name as Name) || seen.has(item.name)) throw new Error("inventory"); seen.add(item.name); }
-    if (names.some(name => !seen.has(name))) throw new Error("inventory");
-  } finally { await dir.close(); }
-}
+export const validateTwinS12ArtifactParent = validatePrivateParent;
 function coherent(records: TwinS12AttemptRecords): boolean {
   const { identity, attempt, outcome } = records, { bundle } = attempt, id = identity.artifactId;
   const refs = [...bundle.normalizedEvidence.facts, ...bundle.protocolObservations.setup, ...bundle.protocolObservations.workspaceBindings,
@@ -207,53 +138,37 @@ export function projectReopenedTwinS12Attempt(handle: ReopenedTwinS12Attempt): {
 /** Private result contains only an opaque, property-free handle. */
 export async function inspectTwinS12Attempt(directory: string): Promise<TwinS12Inspection> {
   try {
-    const owner = uid(); await parent(dirname(directory), owner);
-    if (!isAbsolute(directory) || normalize(directory) !== directory || await realpath(directory) !== directory) throw new Error("path");
-    const before = await lstat(directory); safe(before, owner, "directory");
-    const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    try {
-      const opened = await handle.stat(); safe(opened, owner, "directory");
-      if (opened.dev !== before.dev || opened.ino !== before.ino) throw new Error("replaced");
-      await exactInventory(directory);
-      const manifestBytes = await readOne(directory, "manifest.json", owner);
-      const manifest = ManifestSchema.parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifestBytes)) as unknown);
+    const value = await reopenPrivateFour(directory, limits, values => {
+      const manifest = ManifestSchema.parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(values[3])) as unknown);
       if (manifest.inventory.map(v => v.name).join(",") !== prior.join(",")) throw new Error("inventory");
-      const values: unknown[] = [];
-      for (const item of manifest.inventory) {
-        const name = item.name as Name, bytes = await readOne(directory, name, owner);
-        if (item.sizeBytes !== bytes.length || item.sha256 !== digest(bytes)) throw new Error("digest");
-        values.push(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown);
-      }
-      const records = TwinS12AttemptRecordsSchema.parse({ identity: values[0], attempt: values[1], outcome: values[2] });
+      const records = TwinS12AttemptRecordsSchema.parse({
+        identity: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(values[0])) as unknown,
+        attempt: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(values[1])) as unknown,
+        outcome: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(values[2])) as unknown,
+      });
       if (manifest.artifactId !== records.identity.artifactId || !coherent(records)) throw new Error("coherence");
       const normalized = validateNormalizedToolEvidence(records.attempt.bundle.normalizedEvidence);
       const protocol = validateToolAttemptBundle(records.attempt.bundle);
       if (!normalized.success || !protocol.success) throw new Error("validation");
-      if (digest(await readOne(directory, "manifest.json", owner)) !== digest(manifestBytes)) throw new Error("manifest-replaced");
-      await exactInventory(directory);
-      const named = await lstat(directory), after = await handle.stat(); safe(named, owner, "directory"); safe(after, owner, "directory");
-      if (named.dev !== opened.dev || named.ino !== opened.ino || after.dev !== opened.dev || after.ino !== opened.ino) throw new Error("changed");
-      return { status: "complete", handle: handleFor({ artifactId: records.identity.artifactId, records, protocol: protocol.result }) };
-    } finally { await handle.close(); }
+      return { artifactId: records.identity.artifactId, records, protocol: protocol.result };
+    });
+    return { status: "complete", handle: handleFor(value) };
   } catch { return { status: "incomplete", reason: "retention-incomplete" }; }
 }
 export async function retainTwinS12Attempt(parentDirectory: string, input: TwinS12AttemptRecords): Promise<{ directory?: string; inspection: TwinS12Inspection }> {
   let directory: string | undefined;
   try {
-    const owner = uid(), before = await parent(parentDirectory, owner), records = TwinS12AttemptRecordsSchema.parse(input);
+    const records = TwinS12AttemptRecordsSchema.parse(input);
     if (!coherent(records)) throw new Error("coherence");
-    const bodies = [encode("identity.json", records.identity), encode("attempt.json", records.attempt), encode("outcome.json", records.outcome)];
+    const bodies = [encode("identity.json", records.identity, limits), encode("attempt.json", records.attempt, limits),
+      encode("outcome.json", records.outcome, limits)] as const;
     const manifest = ManifestSchema.parse({ formatVersion: 1, artifactKind: "twin-s12-attempt", artifactId: records.identity.artifactId,
       completeness: "complete", inventory: prior.map((name, index) => ({ name, sizeBytes: bodies[index]!.length, sha256: digest(bodies[index]!) })) });
-    const manifestBytes = encode("manifest.json", manifest), now = await parent(parentDirectory, owner);
-    if (now.dev !== before.dev || now.ino !== before.ino) throw new Error("parent-changed");
-    directory = join(parentDirectory, `twin-s12-${randomUUID()}`); await mkdir(directory, { mode: 0o700 });
-    const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    try {
-      safe(await handle.stat(), owner, "directory");
-      for (let i = 0; i < prior.length; i++) await writeOne(directory, prior[i] as Name, bodies[i]!, owner);
-      await syncDir(handle); await writeOne(directory, "manifest.json", manifestBytes, owner); await syncDir(handle);
-    } finally { await handle.close(); }
+    const manifestBytes = encode("manifest.json", manifest, limits);
+    directory = await publishPrivateFour(parentDirectory, "twin-s12-", limits, [...bodies, manifestBytes]);
     return { directory, inspection: await inspectTwinS12Attempt(directory) };
-  } catch { return { ...(directory ? { directory } : {}), inspection: { status: "incomplete", reason: "retention-incomplete" } }; }
+  } catch (error) {
+    if (!directory && error instanceof PrivatePublicationError) directory = error.directory;
+    return { ...(directory ? { directory } : {}), inspection: { status: "incomplete", reason: "retention-incomplete" } };
+  }
 }

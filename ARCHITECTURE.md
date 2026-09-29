@@ -570,3 +570,36 @@ their manifest can satisfy those checks; the format does not authenticate its
 producer or original private paths. Decisive public score support resolves to
 retained normalized facts and protocol observations, not private path strings.
 External authentication and crash-atomic publication remain deferred.
+
+## 2.6R-2 — retained Twin S6 score and current receipt reconciliation
+
+The fixed S6 producer runs a fresh direct `git clean -fdx` reference and a
+separate Twin attempt. Each complete run owns four disposable allocations:
+direct fixture, Twin original, support root, and Twin root. The reference and
+attempt are retained in distinct four-file artifacts and strictly reopened
+before support is derived. The private attempt records exact action output,
+original and Twin endpoint inventories, command binding, and cleanup. Complete
+JSON requires all four allocations removed; retained artifacts are controlled
+by the caller's separate artifact-parent authority.
+
+Current core builds its receipt during `session.run()`. Each complete attempt
+admits four ordered Git classification calls before the action and four after,
+using only `/usr/bin/git`, the allocation-derived Twin workspace, core's fixed
+argv, environment, timeout, buffer/encoding policy and `shell: false`. The
+producer counts these eight calls separately from seven direct fixture setup
+Git children, one direct `git clean`, seven Twin-original setup Git children,
+and one Twin `git clean`: **24 Git children per complete S6 comparison**.
+S12 uses the same current-core admission pattern; its complete path has 22 Git
+children (seven direct setup, seven Twin-original setup, eight classification)
+plus two Node action children. Both compiled fingerprints now cover the core
+manifest, Git classification, watch and receipt modules and the shared private
+four-file persistence helper, alongside their execution modules.
+
+S6's five public outcomes are `unknown`, `unknown`, `not-blocked`, `usable`,
+`unknown` in SPEC order. The two known outcomes resolve to reopened attempt
+facts and observations. Git stdout is the action's output, not Twin reporting;
+the core receipt is not retained as decisive report evidence. Equal endpoint
+inventories do not prove continuous preservation, and discard is cleanup.
+Local artifact integrity does not authenticate provenance or provide crash-atomic
+publication; same-user filesystem races remain possible. This checkpoint does
+not complete Phase 2 or general S6 scoring.

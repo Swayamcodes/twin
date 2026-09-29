@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import childProcess, { type SpawnOptions } from "node:child_process";
+import childProcess from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, accessSync, lstatSync, realpathSync, readFileSync, openSync, closeSync, fstatSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -12,13 +12,13 @@ import { createScenarioRoot, initializeScenarioRoot, initializeFixture, cleanupS
   type OwnedScenarioRoot } from "./fixture.js";
 import { runScenarioWithRegisteredRootObserver, observePaths } from "./runner.js";
 import type { RegisteredScenarioRootAttestation } from "./fixture.js";
-import { getCommand, getScenario, fixtureContents } from "./scenarios.js";
+import { getScenario, fixtureContents } from "./scenarios.js";
 import { evaluateScenarioOracle } from "./oracle.js";
 import { retainArtifact, inspectArtifact } from "./capture/artifact.js";
-import { retainTwinS12Attempt, inspectTwinS12Attempt, projectReopenedTwinS12Attempt, validateTwinS12ArtifactParent,
-  type TwinS12AttemptRecords } from "./capture/twin-s12-attempt.js";
-import { deriveS12ScoreSupport, validateS12ScoreSupport, S12ScoreResultSchema,
-  type S12ScoreResult, type S12FailureStage, type S12FailureReason } from "./contract/s12-score-support.js";
+import { retainTwinS6Attempt, inspectTwinS6Attempt, projectReopenedTwinS6Attempt, validateTwinS6ArtifactParent,
+  type TwinS6AttemptRecords } from "./capture/twin-s6-attempt.js";
+import { deriveS6ScoreSupport, validateS6ScoreSupport, S6ScoreResultSchema,
+  type S6ScoreResult, type S6FailureStage, type S6FailureReason } from "./contract/s6-score-support.js";
 import { validateNormalizedToolEvidence } from "./contract/normalized-evidence-validation.js";
 import { validateToolAttemptBundle, AttemptRequestSchema, type ToolAttemptBundle, type AttemptRequest, type Position,
   type WorkspaceStateObservation, type OriginalStateObservation, type NormalizedToolEvidence,
@@ -27,9 +27,7 @@ import { VersionStringSchema } from "./contract/normalized-evidence-schema.js";
 import type { OracleResult } from "./contract/oracle-schema.js";
 import type { Snapshot, CommandEvidence } from "./types.js";
 
-const actionBody = 'import { writeFile } from "node:fs/promises";\n'
-  + 'await writeFile("control-created.txt", "S12 control file.\\n", { flag: "wx" });\n';
-const actionEnv = Object.freeze({ LANG: "C", LC_ALL: "C", TZ: "UTC" });
+const actionArgv = ["clean", "-fdx"] as const;
 const setupVectors = [
   ["init", "--initial-branch=main", "--template="], ["add", "--", "notes.txt", "app.js", ".gitignore"],
   ["-c", "user.name=Twin Scenario", "-c", "user.email=twin-scenario@example.invalid", "-c", "commit.gpgSign=false",
@@ -50,16 +48,16 @@ const classification = { notes: "tracked", app: "tracked", gitignore: "tracked",
   env: "ignored", dependency: "ignored", control: "absent" } as const;
 export const CORE_FINGERPRINT_MODULES = ["index.js", "twin.js", "copy.js", "run.js", "safety.js",
   "manifest.js", "git-classification.js", "watch.js", "receipt.js"] as const;
-export const ADAPTER_FINGERPRINT_MODULES = ["s12-score-producer.js", "s12-score-entry.js", "runner.js", "fixture.js",
+export const ADAPTER_FINGERPRINT_MODULES = ["s6-score-producer.js", "s6-score-entry.js", "runner.js", "fixture.js",
   "scenarios.js", "oracle.js", "capture/artifact.js", "capture/project.js", "capture/records.js",
-  "capture/twin-s12-attempt.js", "capture/private-four-file.js", "contract/index.js", "contract/evidence-refs.js",
+  "capture/twin-s6-attempt.js", "capture/private-four-file.js", "contract/index.js", "contract/evidence-refs.js",
   "contract/oracle-schema.js", "contract/score-schema.js", "contract/normalized-evidence-schema.js",
   "contract/attempt-protocol-schema.js", "contract/s12-score-support.js", "contract/s6-score-support.js",
   "contract/normalized-evidence-validation.js", "contract/attempt-protocol-validation.js"] as const;
 const coreDist = fileURLToPath(new URL("../../core/dist/", import.meta.url));
 const adapterDist = fileURLToPath(new URL("../dist/", import.meta.url));
 /** Fixed-order, labeled, length-delimited exact compiled bytes. */
-export async function fingerprintS12LabeledFiles(base: string, labels: readonly string[]): Promise<string> {
+export async function fingerprintS6LabeledFiles(base: string, labels: readonly string[]): Promise<string> {
   const hash = createHash("sha256");
   for (const label of labels) {
     const path = join(base, label), before = await fs.lstat(path);
@@ -83,14 +81,14 @@ export async function fingerprintS12LabeledFiles(base: string, labels: readonly 
   return VersionStringSchema.parse(`fp-${hash.digest("hex")}`);
 }
 export async function fingerprintCompiled(kind: "core" | "adapter"): Promise<string> {
-  return kind === "core" ? fingerprintS12LabeledFiles(coreDist, CORE_FINGERPRINT_MODULES)
-    : fingerprintS12LabeledFiles(adapterDist, ADAPTER_FINGERPRINT_MODULES);
+  return kind === "core" ? fingerprintS6LabeledFiles(coreDist, CORE_FINGERPRINT_MODULES)
+    : fingerprintS6LabeledFiles(adapterDist, ADAPTER_FINGERPRINT_MODULES);
 }
 const sha = (bytes: Uint8Array | string): string => createHash("sha256").update(bytes).digest("hex");
 type EventName = "fixtureReady" | "offered" | "received" | "binding" | "executionPre" | "attempted" | "started"
   | "completed" | "settled" | "executionPost" | "originalPost" | "discarded" | "originalCleanup";
 /** Coordinates are assigned only when the corresponding runtime event occurs. */
-export class S12RuntimeEvents {
+export class S6RuntimeEvents {
   readonly #positions = new Map<EventName, Position>();
   #next = 0;
   #receipt: Readonly<{ requestId: string; toolRunId: string; route: "through-tool"; delivery: "received"; requestBinding: "match" }> | undefined;
@@ -128,7 +126,7 @@ export class S12RuntimeEvents {
     if (!this.#workspace || this.#workspace.path !== path) throw new Error("missing-workspace-binding");
   }
 }
-async function deliverTwinS12Request(request: AttemptRequest, offered: AttemptRequest, events: S12RuntimeEvents,
+async function deliverTwinS6Request(request: AttemptRequest, offered: AttemptRequest, events: S6RuntimeEvents,
   sourceDirectory: string, scratchParent: string): Promise<TwinSession> {
   events.receive(request, offered);
   return createTwin({ sourceDirectory, scratchParent });
@@ -136,7 +134,7 @@ async function deliverTwinS12Request(request: AttemptRequest, offered: AttemptRe
 type RootName = "direct" | "original" | "support" | "twin";
 type RootState = "allocated" | "registered" | "removed" | "retained-for-investigation" | "unknown";
 /** Ledger entries are never deleted or silently inferred from directory listings. */
-export class S12AllocationLedger {
+export class S6AllocationLedger {
   readonly #states = new Map<RootName, RootState>();
   acquire(name: RootName): void {
     if (this.#states.has(name)) throw new Error("duplicate-allocation");
@@ -184,13 +182,56 @@ async function observeWorkspace(workspace: string): Promise<Snapshot> {
   }
   return { workspace, observedAt: new Date().toISOString(), complete: true, paths };
 }
+interface InventoryEntry { path: string; kind: "directory" | "file"; mode: number; dev: number; ino: number;
+  sizeBytes: number; sha256: string | null }
+async function inventory(workspace: string): Promise<InventoryEntry[]> {
+  const entries: InventoryEntry[] = [];
+  const visit = async (path: string): Promise<void> => {
+    const stat = await fs.lstat(path);
+    assert(stat.isDirectory() || stat.isFile()); assert(!stat.isSymbolicLink());
+    const relativePath = relative(workspace, path);
+    const bytes = stat.isFile() ? await fs.readFile(path) : null;
+    entries.push({ path: relativePath, kind: stat.isFile() ? "file" : "directory", mode: stat.mode & 0o7777,
+      dev: stat.dev, ino: stat.ino, sizeBytes: bytes?.length ?? 0, sha256: bytes ? sha(bytes) : null });
+    assert(entries.length <= 256, "inventory-limit");
+    if (stat.isDirectory()) for (const name of (await fs.readdir(path)).sort()) await visit(join(path, name));
+  };
+  await visit(workspace);
+  entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  assert(entries.some(item => item.path === ".git" && item.kind === "directory"));
+  return entries;
+}
+function inventoryContent(items: readonly InventoryEntry[]) {
+  return items.map(({ path, kind, mode, sizeBytes, sha256 }) => ({ path, kind, mode, sizeBytes, sha256 }));
+}
+function copyContent(items: readonly InventoryEntry[]) {
+  return items.map(({ path, kind, sizeBytes, sha256 }) => ({ path, kind, sizeBytes, sha256 }));
+}
+function gitIdentity(path: string) {
+  const named = lstatSync(path); assert(named.isFile() && !named.isSymbolicLink() && named.nlink === 1);
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(fd), bytes = readFileSync(fd), after = fstatSync(fd);
+    assert(opened.isFile() && opened.dev === named.dev && opened.ino === named.ino && opened.size === bytes.length);
+    assert.equal(after.mtimeMs, opened.mtimeMs); assert.equal(after.ctimeMs, opened.ctimeMs);
+    return { dev: opened.dev, ino: opened.ino, uid: opened.uid, size: bytes.length, mode: opened.mode & 0o7777, sha256: sha(bytes) };
+  } finally { closeSync(fd); }
+}
 function exactEffect(before: Snapshot, after: Snapshot): void {
   ensureSnapshot(before);
+  assert(after.complete && after.paths.length === 7);
   for (const key of pathKeys) {
     const a = after.paths.find(item => item.path === pathByKey[key]);
-    if (key === "control") { assert(a?.state === "file"); assert.equal(a.sha256, sha("S12 control file.\n")); }
+    if (["scratch", "env", "dependency", "control"].includes(key)) assert(a?.state === "absent");
     else assert.deepEqual(a, before.paths.find(item => item.path === pathByKey[key]));
   }
+}
+export function exactS6Output(bytes: Uint8Array): void {
+  const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  assert(decoded.endsWith("\n") && !decoded.includes("\r") && !decoded.includes("\uFEFF"));
+  const lines = decoded.slice(0, -1).split("\n");
+  assert.equal(lines.length, 3);
+  assert.deepEqual(lines.sort(), ["Removing .env", "Removing node_modules/", "Removing scratch.txt"].sort());
 }
 function inside(parent: string, path: string): boolean {
   const diff = relative(parent, path); return diff === "" || (!isAbsolute(diff) && diff !== ".." && !diff.startsWith(`..${sep}`));
@@ -209,46 +250,14 @@ function trustedGit(): { git: string; directory: string } {
   const directory = dirname(git); assert.equal(realpathSync(join(directory, "git")), git);
   return { git, directory };
 }
-function setupEnv(directory: string): Record<string, string> { return { PATH: directory, ...actionEnv, GIT_CONFIG_NOSYSTEM: "1",
+function setupEnv(directory: string) { return { PATH: directory, LANG: "C" as const, LC_ALL: "C" as const, TZ: "UTC" as const, GIT_CONFIG_NOSYSTEM: "1" as const,
   GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_GLOBAL: "/dev/null", GIT_ATTR_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",
   GIT_CONFIG_COUNT: "4", GIT_CONFIG_KEY_0: "core.hooksPath", GIT_CONFIG_VALUE_0: "/dev/null", GIT_CONFIG_KEY_1: "core.excludesFile",
   GIT_CONFIG_VALUE_1: "/dev/null", GIT_CONFIG_KEY_2: "core.attributesFile", GIT_CONFIG_VALUE_2: "/dev/null",
-  GIT_CONFIG_KEY_3: "commit.gpgSign", GIT_CONFIG_VALUE_3: "false" }; }
+  GIT_CONFIG_KEY_3: "commit.gpgSign", GIT_CONFIG_VALUE_3: "false" } as const; }
 interface Gate { phase: "closed" | "reference" | "setup" | "action"; setupIndex: number; directIndex: number; actionCount: number;
   receiptPhase: "closed" | "before" | "after"; receiptCount: number; twinAllocations: number; scratch?: string; expectedTwin?: string;
-  original?: string; twin?: string; actionPath?: string; actionIdentity?: { dev: number; ino: number; uid: number };
-  events: S12RuntimeEvents; directAdmission?: S12DirectAdmission; }
-function assertActionAsset(path: string, expected: { dev: number; ino: number; uid: number }): void {
-  const named = lstatSync(path);
-  assert(named.isFile() && !named.isSymbolicLink() && named.nlink === 1 && (named.mode & 0o7777) === 0o600);
-  assert.equal(named.dev, expected.dev); assert.equal(named.ino, expected.ino); assert.equal(named.uid, expected.uid);
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const opened = fstatSync(fd);
-    assert(opened.isFile() && opened.nlink === 1 && opened.dev === named.dev && opened.ino === named.ino);
-    assert.equal(readFileSync(fd, "utf8"), actionBody);
-  } finally { closeSync(fd); }
-}
-interface CompiledIdentity { dev: number; ino: number; uid: number; size: number; sha256: string; mode: number }
-function compiledActionIdentity(path: string, expected?: CompiledIdentity): CompiledIdentity {
-  const named = lstatSync(path);
-  assert(named.isFile() && !named.isSymbolicLink() && named.nlink === 1 && (named.mode & 0o022) === 0);
-  assert.equal(named.uid, process.getuid?.());
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const opened = fstatSync(fd);
-    assert(opened.isFile() && opened.nlink === 1 && opened.dev === named.dev && opened.ino === named.ino);
-    const bytes = readFileSync(fd);
-    const after = fstatSync(fd);
-    assert.equal(after.dev, opened.dev); assert.equal(after.ino, opened.ino);
-    assert.equal(after.size, opened.size); assert.equal(after.mtimeMs, opened.mtimeMs); assert.equal(after.ctimeMs, opened.ctimeMs);
-    assert.equal(bytes.toString("utf8"), actionBody);
-    const identity = { dev: opened.dev, ino: opened.ino, uid: opened.uid, size: opened.size,
-      sha256: sha(bytes), mode: opened.mode & 0o7777 };
-    if (expected) assert.deepEqual(identity, expected);
-    return identity;
-  } finally { closeSync(fd); }
-}
+  original?: string; twin?: string; events: S6RuntimeEvents; directAdmission?: S6DirectAdmission; }
 function directCwd(attestation: RegisteredScenarioRootAttestation | undefined, cwd: string): void {
   assert(attestation, "missing-registered-fixture-attestation");
   assert.equal(attestation.attestationVersion, 1); assert.equal(attestation.type, "directory");
@@ -275,12 +284,9 @@ function directCwd(attestation: RegisteredScenarioRootAttestation | undefined, c
   } finally { closeSync(fd); }
 }
 /** Narrow admission state shared by the real guard and synthetic no-child controls. */
-export class S12DirectAdmission {
+export class S6DirectAdmission {
   #attestation: RegisteredScenarioRootAttestation | undefined;
-  readonly #assetPath: string;
-  readonly #identity: CompiledIdentity;
   #used = false;
-  constructor(assetPath: string) { this.#assetPath = assetPath; this.#identity = compiledActionIdentity(assetPath); }
   get boundCwd(): string | undefined { return this.#attestation?.workspacePath; }
   arm(attestation: RegisteredScenarioRootAttestation): void {
     if (this.#attestation) throw new Error("duplicate-registered-fixture-attestation");
@@ -293,11 +299,10 @@ export class S12DirectAdmission {
   action(cwd: string): void {
     if (this.#used) throw new Error("repeat-direct-action");
     directCwd(this.#attestation, cwd);
-    compiledActionIdentity(this.#assetPath, this.#identity);
     this.#used = true;
   }
 }
-function installGate(state: Gate, git: { git: string; directory: string }, compiledActionPath: string): () => void {
+function installGate(state: Gate, git: { git: string; directory: string }): () => void {
   const originalSpawn = childProcess.spawn;
   const originalExecFile = childProcess.execFile, originalMkdtemp = fs.mkdtemp;
   const saved = new Map<string, unknown>();
@@ -350,8 +355,9 @@ function installGate(state: Gate, git: { git: string; directory: string }, compi
     const copiedEnv = Object.fromEntries(Object.entries(env));
     const stdio = object.stdio; assert(Array.isArray(stdio) && JSON.stringify([...stdio]) === JSON.stringify(["ignore", "pipe", "pipe"]));
     assert(shell === false && (detached === false || detached === undefined) && typeof cwd === "string");
-    const setup = state.phase === "reference" || state.phase === "setup";
-    if (setup && command === "git") {
+    const setup = state.phase === "reference" && state.directIndex < 7 || state.phase === "setup";
+    if (setup) {
+      assert.equal(command, "git");
       const index = state.phase === "reference" ? state.directIndex++ : state.setupIndex++;
       assert.deepEqual(args, setupVectors[index]);
       if (state.phase === "setup") assert.equal(cwd, state.original);
@@ -360,13 +366,13 @@ function installGate(state: Gate, git: { git: string; directory: string }, compi
       assert.deepEqual(copiedEnv, setupEnv(git.directory));
       command = git.git;
     } else if (state.phase === "reference") {
-      assert.equal(command, process.execPath); assert.deepEqual(args, [compiledActionPath]); assert.equal(state.directIndex++, 7);
+      assert.equal(command, "git"); assert.deepEqual(args, actionArgv); assert.equal(state.directIndex++, 7);
       assert.deepEqual(copiedEnv, setupEnv(git.directory));
       state.directAdmission!.action(cwd);
+      command = git.git;
     } else {
-      assert.equal(state.phase, "action"); assert.equal(command, process.execPath); assert.deepEqual(args, [state.actionPath]);
-      assert.equal(cwd, state.twin); assert.deepEqual(copiedEnv, actionEnv); assert.equal(state.actionCount++, 0);
-      assertActionAsset(state.actionPath!, state.actionIdentity!);
+      assert.equal(state.phase, "action"); assert.equal(command, git.git); assert.deepEqual(args, actionArgv);
+      assert.equal(cwd, state.twin); assert.deepEqual(copiedEnv, setupEnv(git.directory)); assert.equal(state.actionCount++, 0);
     }
     if (state.phase === "action") state.events.record("attempted");
     const child = originalSpawn(command as string, [...args], { cwd, shell: false, detached: false,
@@ -380,7 +386,7 @@ function installGate(state: Gate, git: { git: string; directory: string }, compi
 }
 function fact(snapshot: Snapshot, stage: "before" | "after", key: typeof pathKeys[number], id: string, artifact: string, at: Position): OriginalStateObservation {
   const item = snapshot.paths.find(value => value.path === pathByKey[key]); assert(item);
-  return { toolRunId: id, scenarioId: "S12", factId: `fact:original_${stage}_${key}`, kind: "original-state-observation", pathKey: key,
+  return { toolRunId: id, scenarioId: "S6", factId: `fact:original_${stage}_${key}`, kind: "original-state-observation", pathKey: key,
     stage, position: at, state: { status: item.state === "file" ? "file" : "absent" },
     hash: item.state === "file" ? { status: "known", sha256: item.sha256 } : unavailable,
     provenance: independent(artifact, "filesystem-observation") };
@@ -388,7 +394,7 @@ function fact(snapshot: Snapshot, stage: "before" | "after", key: typeof pathKey
 function workspaceFact(snapshot: Snapshot, stage: "before" | "after", key: typeof pathKeys[number], id: string,
   requestId: string, workspaceId: string, artifact: string, at: Position): WorkspaceStateObservation {
   const item = snapshot.paths.find(value => value.path === pathByKey[key]); assert(item);
-  return { toolRunId: id, scenarioId: "S12", requestId, observationId: `observation:workspace_${stage}_${key}`, workspaceId,
+  return { toolRunId: id, scenarioId: "S6", requestId, observationId: `observation:workspace_${stage}_${key}`, workspaceId,
     stage, position: at, pathKey: key, state: { status: item.state === "file" ? "file" : "absent" },
     hash: item.state === "file" ? { status: "known", sha256: item.sha256 } : unavailable,
     sizeBytes: item.state === "file" ? { status: "known", sizeBytes: item.sizeBytes } : unavailable,
@@ -398,53 +404,53 @@ function workspaceFact(snapshot: Snapshot, stage: "before" | "after", key: typeo
 function buildBundle(input: { reference: NonNullable<Extract<Awaited<ReturnType<typeof inspectArtifact>>, { status: "complete" }>["referenceOracle"]>;
   artifactId: string; toolRunId: string; requestId: string; originalBefore: Snapshot; originalAfter: Snapshot;
   twinBefore: Snapshot; twinAfter: Snapshot; result: RunResult; toolVersion: string; adapterVersion: string;
-  request: AttemptRequest; events: S12RuntimeEvents; executionWorkspacePath: string; }): ToolAttemptBundle {
+  request: AttemptRequest; events: S6RuntimeEvents; executionWorkspacePath: string; }): ToolAttemptBundle {
   const { reference, artifactId: aid, toolRunId: id, requestId, result } = input;
   const at = (name: EventName) => input.events.require(name);
   const originalId = "workspace:original", twinId = "workspace:twin", observer = segment(aid);
   const tool = { name: "twin", version: { status: "known" as const, version: input.toolVersion } };
-  const adapter = { name: "twin-s12", version: { status: "known" as const, version: input.adapterVersion } };
+  const adapter = { name: "twin-s6", version: { status: "known" as const, version: input.adapterVersion } };
   const request = input.request;
   const receipt = input.events.receipt(request);
   input.events.workspace(input.executionWorkspacePath);
   const originals = [...pathKeys.map(key => fact(input.originalBefore, "before", key, id, aid, at("fixtureReady"))),
     ...pathKeys.map(key => fact(input.originalAfter, "after", key, id, aid, at("originalPost")))];
-  const execution = { toolRunId: id, scenarioId: "S12" as const, factId: "fact:action", kind: "execution" as const,
-    actionId: "create-control-file" as const, attempted: yes, started: yes, blocked: no, completed: yes,
+  const execution = { toolRunId: id, scenarioId: "S6" as const, factId: "fact:action", kind: "execution" as const,
+    actionId: "git-clean" as const, attempted: yes, started: yes, blocked: no, completed: yes,
     attemptedAt: at("attempted"), startedAt: at("started"), blockedAt: { timestamp: unavailable, order: unavailable },
     completedAt: at("completed"), exitCode: { status: "known" as const, exitCode: result.exitCode }, signal: { status: "known" as const, signal: null },
     provenance: independent(aid, "process-observation") };
   const states = [...pathKeys.map(key => workspaceFact(input.twinBefore, "before", key, id, requestId, twinId, aid, at("executionPre"))),
     ...pathKeys.map(key => workspaceFact(input.twinAfter, "after", key, id, requestId, twinId, aid, at("executionPost")))];
-  const setup = { toolRunId: id, scenarioId: "S12" as const, requestId, observationId: "observation:setup", position: at("fixtureReady"),
+  const setup = { toolRunId: id, scenarioId: "S6" as const, requestId, observationId: "observation:setup", position: at("fixtureReady"),
     fixtureId: "s12-s6-fixture-v1" as const, originalWorkspaceId: originalId, repository: yes, nonBare: yes, rootMatches: yes,
     baselineCommit: yes, indexMatches: yes, trackedTreeMatches: yes, noExtraEntries: yes,
     paths: pathKeys.map(key => ({ pathKey: key, originalFactId: `fact:original_before_${key}`,
       sizeBytes: key === "control" ? unavailable : { status: "known" as const, sizeBytes: Buffer.byteLength(fixtureContents[pathByKey[key]]) },
       classification: { status: classification[key] } })), provenance: independent(aid, "filesystem-observation") };
-  const binding = { toolRunId: id, scenarioId: "S12" as const, requestId, observationId: "observation:binding", position: at("binding"),
+  const binding = { toolRunId: id, scenarioId: "S6" as const, requestId, observationId: "observation:binding", position: at("binding"),
     originalWorkspaceId: originalId, executionWorkspace: { status: "identified" as const, workspaceId: twinId },
     relationship: { status: "tool-prepared-workspace" as const }, preparation: { status: "tool" as const }, repository: yes,
     nonBare: yes, rootMatches: yes, provenance: independent(aid, "filesystem-observation") };
-  const boundary = { toolRunId: id, scenarioId: "S12" as const, requestId, observationId: "observation:boundary",
+  const boundary = { toolRunId: id, scenarioId: "S6" as const, requestId, observationId: "observation:boundary",
     tool, adapter, offeredAt: at("offered"), receivedAt: at("received"), settledAt: at("settled"),
     route: { status: receipt.route }, delivery: { status: receipt.delivery }, requestBinding: { status: receipt.requestBinding },
     wrapperLaunch: { status: "not-required" as const }, response: { status: "accepted" as const }, responseReason: { status: "none" as const },
     actionObservation: { status: "known" as const, factId: "fact:action" }, coverage: { status: "complete" as const },
     provenance: independent(aid, "process-observation") };
-  const disposition = { toolRunId: id, scenarioId: "S12" as const, requestId,
+  const disposition = { toolRunId: id, scenarioId: "S6" as const, requestId,
     cleanup: { status: "removed" as const, reason: "cleanup-completed" as const, position: at("originalCleanup"), evidenceRefs: [observer] },
     artifacts: { status: "unknown" as const, reason: "not-observed" as const, evidenceRefs: [observer] } };
-  const capture = (channel: "stdout" | "stderr") => ({ toolRunId: id, scenarioId: "S12" as const,
+  const capture = (channel: "stdout" | "stderr") => ({ toolRunId: id, scenarioId: "S6" as const,
     captureId: `capture:${channel}`, channel, capture: { status: "complete" as const },
     interpretation: { status: "not-performed" as const, reason: "not-captured" as const } });
-  const segmentFor = (channel: "observer-record" | "stdout" | "stderr") => ({ toolRunId: id, scenarioId: "S12" as const,
+  const segmentFor = (channel: "observer-record" | "stdout" | "stderr") => ({ toolRunId: id, scenarioId: "S6" as const,
     artifactId: aid, segmentId: `segment:${channel === "observer-record" ? "observer" : channel}`, channel,
     capture: channel === "observer-record" ? { kind: "none" as const } : { kind: "capture" as const, captureId: `capture:${channel}` },
     privateReference: yes, redaction: { status: "withheld" as const, reason: "private-only" as const },
     publicVerifiability: { status: "not-publicly-verifiable" as const, reason: "private-only" as const } });
-  const normalizedEvidence: NormalizedToolEvidence = { schemaVersion: 1, toolRunId: id, scenarioId: "S12",
-    sources: { referenceAccident: { status: "declared", relationship: "reference-accident", scenarioId: "S12",
+  const normalizedEvidence: NormalizedToolEvidence = { schemaVersion: 1, toolRunId: id, scenarioId: "S6",
+    sources: { referenceAccident: { status: "declared", relationship: "reference-accident", scenarioId: "S6",
       sourceRunId: reference.sourceRunId, oracleVersion: 1 }, sameExecution: { status: "none", reason: "not-captured" } },
     tool, adapter, startedAt: { status: "unknown", reason: "clock-unreliable" }, endedAt: { status: "unknown", reason: "clock-unreliable" },
     facts: [...originals, execution], declaredCapabilities: [], reporting: { stdout: { status: "applicable", captureId: "capture:stdout" },
@@ -458,44 +464,44 @@ function buildBundle(input: { reference: NonNullable<Extract<Awaited<ReturnType<
     protocolObservations: { setup: [setup], workspaceBindings: [binding], toolBoundaries: [boundary], workspaceStates: states,
       sourceBindings: [], disposition } };
 }
-function incomplete(stage: S12FailureStage, reason: S12FailureReason): S12ScoreResult {
-  return S12ScoreResultSchema.parse({ schemaVersion: 1, resultVersion: 1, status: "incomplete", scenarioId: "S12", stage, reason, identities: {} });
+function incomplete(stage: S6FailureStage, reason: S6FailureReason): S6ScoreResult {
+  return S6ScoreResultSchema.parse({ schemaVersion: 1, resultVersion: 1, status: "incomplete", scenarioId: "S6", stage, reason, identities: {} });
 }
-export function s12ReferenceFailure(oracle: Pick<OracleResult, "validity" | "scoreEligibility">,
-  cleanupStatus: string, issueCount: number): S12FailureReason | null {
+export function s6ReferenceFailure(oracle: Pick<OracleResult, "validity" | "scoreEligibility">,
+  cleanupStatus: string, issueCount: number): S6FailureReason | null {
   if (oracle.validity !== "valid") return "reference-invalid";
   if (oracle.scoreEligibility !== "eligible" || cleanupStatus !== "removed" || issueCount !== 0) return "reference-ineligible";
   return null;
 }
-export function finalizeS12ScoreCandidate(candidate: S12ScoreResult | undefined, ledger: S12AllocationLedger,
-  errorCount: number, stage: S12FailureStage, reason: S12FailureReason): S12ScoreResult {
+export function finalizeS6ScoreCandidate(candidate: S6ScoreResult | undefined, ledger: S6AllocationLedger,
+  errorCount: number, stage: S6FailureStage, reason: S6FailureReason): S6ScoreResult {
   if (candidate?.status === "complete" && !ledger.complete()) return incomplete("accounting", "accounting-incomplete");
   return errorCount || !candidate ? incomplete(stage, reason) : candidate;
 }
-/** One serial, fixed-action S12 comparison. Artifacts are retained; fixture roots are removed. */
-export async function produceTwinS12Score(options: Readonly<{ artifactParentDirectory: string }>): Promise<S12ScoreResult> {
-  let stage: S12FailureStage = "preflight", failure: S12FailureReason = "operation-failed";
+/** One serial, fixed-action S6 comparison. Artifacts are retained; fixture roots are removed. */
+export async function produceTwinS6Score(options: Readonly<{ artifactParentDirectory: string }>): Promise<S6ScoreResult> {
+  let stage: S6FailureStage = "preflight", failure: S6FailureReason = "operation-failed";
   let original: OwnedScenarioRoot | undefined, originalBefore: Snapshot | undefined, originalAfter: Snapshot | undefined;
   let session: TwinSession | undefined, support: string | undefined, supportMarker: string | undefined;
   let restoreGate: (() => void) | undefined, priorPath: string | undefined, pathChanged = false;
   let supportIdentity: { dev: number; ino: number; uid: number } | undefined;
-  let complete: S12ScoreResult | undefined;
+  let complete: S6ScoreResult | undefined;
   const errors: unknown[] = [];
-  const events = new S12RuntimeEvents(), ledger = new S12AllocationLedger();
+  const events = new S6RuntimeEvents(), ledger = new S6AllocationLedger();
   const gate: Gate = { phase: "closed", setupIndex: 0, directIndex: 0, actionCount: 0,
     receiptPhase: "closed", receiptCount: 0, twinAllocations: 0, events };
   try {
-    if (!await validateTwinS12ArtifactParent(options.artifactParentDirectory)) { failure = "unsafe-destination"; throw new Error(); }
+    if (!await validateTwinS6ArtifactParent(options.artifactParentDirectory)) { failure = "unsafe-destination"; throw new Error(); }
     const repo = realpathSync(fileURLToPath(new URL("../../../", import.meta.url)));
     const parent = realpathSync(options.artifactParentDirectory);
     if (inside(repo, parent) || inside(realpathSync(homedir()), parent)) { failure = "unsafe-destination"; throw new Error(); }
-    const git = trustedGit(), compiledAction = fileURLToPath(new URL("../dist/actions/create-file.js", import.meta.url));
-    gate.directAdmission = new S12DirectAdmission(compiledAction);
+    const git = trustedGit(), gitAtStart = gitIdentity(git.git);
+    gate.directAdmission = new S6DirectAdmission();
     const initialCoreVersion = await fingerprintCompiled("core"), initialAdapterVersion = await fingerprintCompiled("adapter");
     const oldPath = process.env.PATH; priorPath = oldPath; process.env.PATH = git.directory; pathChanged = true;
-    restoreGate = installGate(gate, git, compiledAction);
+    restoreGate = installGate(gate, git);
     stage = "reference-execution"; gate.phase = "reference"; ledger.acquire("direct");
-    const raw = await runScenarioWithRegisteredRootObserver("S12", attestation => {
+    const raw = await runScenarioWithRegisteredRootObserver("S6", attestation => {
       assert.equal(gate.phase, "reference"); assert.equal(gate.directIndex, 0);
       gate.directAdmission!.arm(attestation);
     }); gate.phase = "closed";
@@ -504,9 +510,10 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
     assert.equal(raw.workspace, gate.directAdmission?.boundCwd);
     assert.equal(raw.scenarioRoot, dirname(gate.directAdmission!.boundCwd!));
     stage = "reference-oracle";
-    const oracle = evaluateScenarioOracle(raw, { schemaVersion: 1, scenarioId: "S12",
-      s12Action: { executable: process.execPath, scriptPath: compiledAction } });
-    const referenceFailure = s12ReferenceFailure(oracle, raw.cleanup.status, raw.issues.length);
+    assert(raw.action && raw.action.stdout && raw.action.stderr === "" && raw.action.streamErrors.length === 0);
+    exactS6Output(Buffer.from(raw.action.stdout, "utf8"));
+    const oracle = evaluateScenarioOracle(raw, { schemaVersion: 1, scenarioId: "S6" });
+    const referenceFailure = s6ReferenceFailure(oracle, raw.cleanup.status, raw.issues.length);
     if (referenceFailure) { failure = referenceFailure; throw new Error(); }
     stage = "reference-retention";
     const refArtifactId = artifactId(), referenceId = token("reference"), absent = { status: "not-started" as const, reason: "not-requested" as const };
@@ -519,7 +526,7 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
             args: [...raw.action.command.args] }, streamErrors: [...raw.action.streamErrors] },
           before: raw.before && { ...raw.before, paths: [...raw.before.paths] },
           after: raw.after && { ...raw.after, paths: [...raw.after.paths] }, issues: [...raw.issues] },
-          context: { schemaVersion: 1, scenarioId: "S12", s12Action: { executable: process.execPath, scriptPath: compiledAction } } }, attempt: absent },
+          context: { schemaVersion: 1, scenarioId: "S6" } }, attempt: absent },
       outcome: { privateFormatVersion: 1, normalizerVersion: 1, artifactId: refArtifactId, attempt: absent, errors: [] } });
     if (!reference.directory || reference.inspection.status !== "complete") { failure = "retention-incomplete"; throw new Error(); }
     stage = "reference-reopen";
@@ -529,15 +536,12 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
     const reopenedOracle = refOpen.referenceOracle;
     stage = "attempt-setup";
     const base = realpathSync(tmpdir());
-    support = await fs.mkdtemp(join(base, "twin-test-s12-score-")); ledger.acquire("support");
+    support = await fs.mkdtemp(join(base, "twin-test-s6-score-")); ledger.acquire("support");
     supportMarker = randomBytes(32).toString("hex");
     const registered = await fs.lstat(support); supportIdentity = { dev: registered.dev, ino: registered.ino, uid: registered.uid };
     ledger.advance("support", "registered");
     await fs.chmod(support, 0o700); await fs.writeFile(join(support, ".owner"), supportMarker, { flag: "wx", mode: 0o600 });
-    await fs.mkdir(join(support, "scratch"), { mode: 0o700 }); await fs.mkdir(join(support, "actions"), { mode: 0o700 });
-    const actionPath = join(support, "actions/create-file.mjs"); await fs.writeFile(actionPath, actionBody, { flag: "wx", mode: 0o600 });
-    const actionStat = await fs.lstat(actionPath); gate.actionIdentity = { dev: actionStat.dev, ino: actionStat.ino, uid: actionStat.uid };
-    assertActionAsset(actionPath, gate.actionIdentity);
+    await fs.mkdir(join(support, "scratch"), { mode: 0o700 });
     original = await createScenarioRoot(); ledger.acquire("original");
     const originalStat = await fs.lstat(original.scenarioRoot);
     assert(originalStat.isDirectory() && !originalStat.isSymbolicLink() && originalStat.uid === process.getuid?.());
@@ -545,46 +549,63 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
     await initializeScenarioRoot(original);
     const workspace = (await verifyWorkspace(original)).workspace; gate.original = workspace;
     gate.phase = "setup"; const setup: CommandEvidence[] = []; await initializeFixture(original, setup); gate.phase = "closed";
-    assert.equal(gate.setupIndex, 7); originalBefore = await observePaths(original, getScenario("S12").observedPaths); ensureSnapshot(originalBefore);
+    assert.equal(gate.setupIndex, 7); originalBefore = await observePaths(original, getScenario("S6").observedPaths); ensureSnapshot(originalBefore);
+    const originalBeforeInventory = await inventory(workspace);
     events.record("fixtureReady");
     const twinArtifactId = artifactId(), toolRunId = token("toolrun"), requestId = token("request");
     const toolVersion = await fingerprintCompiled("core"), adapterVersion = await fingerprintCompiled("adapter");
     assert.equal(toolVersion, initialCoreVersion); assert.equal(adapterVersion, initialAdapterVersion);
-    const request = AttemptRequestSchema.parse({ schemaVersion: 1, requestVersion: 1, toolRunId, scenarioId: "S12", requestId,
-      fixtureId: "s12-s6-fixture-v1", action: { actionId: "create-control-file", actionVersion: 1,
-        target: "control", purpose: "harmless-control", operation: "exclusive-create", contentId: "s12-control-bytes-v1" } });
+    const request = AttemptRequestSchema.parse({ schemaVersion: 1, requestVersion: 1, toolRunId, scenarioId: "S6", requestId,
+      fixtureId: "s12-s6-fixture-v1", action: { actionId: "git-clean", actionVersion: 1,
+        target: "execution-workspace-root", purpose: "destructive", operation: "git-clean-fdx" } });
     Object.freeze(request.action); Object.freeze(request);
     events.record("offered");
     ledger.acquire("twin");
     gate.scratch = join(support, "scratch"); gate.receiptPhase = "before";
-    try { session = await deliverTwinS12Request(request, request, events, workspace, gate.scratch); }
+    try { session = await deliverTwinS6Request(request, request, events, workspace, gate.scratch); }
     finally { gate.receiptPhase = "closed"; }
     assert.equal(gate.twinAllocations, 1); assert.equal(gate.receiptCount, 4);
     assert.equal(session.workspacePath, gate.expectedTwin);
-    gate.twin = session.workspacePath; gate.actionPath = actionPath;
+    gate.twin = session.workspacePath;
     const twinStat = await fs.lstat(session.workspacePath);
     assert(twinStat.isDirectory() && !twinStat.isSymbolicLink() && await fs.realpath(session.workspacePath) === session.workspacePath);
     ledger.advance("twin", "registered");
     events.bindWorkspace(session.workspacePath, { dev: twinStat.dev, ino: twinStat.ino, uid: twinStat.uid });
-    const twinBefore = await observeWorkspace(session.workspacePath); ensureSnapshot(twinBefore); events.record("executionPre");
+    const twinBefore = await observeWorkspace(session.workspacePath); ensureSnapshot(twinBefore);
+    const twinBeforeInventory = await inventory(session.workspacePath);
+    assert.deepEqual(copyContent(twinBeforeInventory), copyContent(originalBeforeInventory));
+    for (const item of twinBeforeInventory.filter(entry => entry.kind === "file")) {
+      const source = originalBeforeInventory.find(entry => entry.path === item.path);
+      assert(source && (source.dev !== item.dev || source.ino !== item.ino));
+    }
+    events.record("executionPre");
     stage = "attempt-execution"; gate.phase = "action"; gate.receiptPhase = "after";
     let result: RunResult;
-    try { result = await session.run({ executable: process.execPath, argv: [actionPath], env: actionEnv, timeoutMs: 5000 }); }
+    try { result = await session.run({ executable: git.git, argv: [...actionArgv], env: setupEnv(git.directory), timeoutMs: 5000 }); }
     finally { gate.phase = "closed"; gate.receiptPhase = "closed"; }
     assert.equal(gate.actionCount, 1); assert.equal(gate.receiptCount, 8);
     assert(result.outcome === "exited" && result.started && result.directChildSettled && result.exitCode === 0
       && result.signal === null && result.spawnError === null && result.terminationError === null
       && result.stdout.complete && result.stderr.complete && !result.stdout.truncated && !result.stderr.truncated
-      && result.stdout.error === null && result.stderr.error === null && result.stdout.bytes.length === 0 && result.stderr.bytes.length === 0);
+      && result.stdout.error === null && result.stderr.error === null && result.stderr.bytes.length === 0);
+    exactS6Output(result.stdout.bytes);
     if (!events.has("started")) { failure = "action-incomplete"; throw new Error(); }
     events.record("completed"); events.record("settled");
-    const twinAfter = await observeWorkspace(session.workspacePath); exactEffect(twinBefore, twinAfter); events.record("executionPost");
-    originalAfter = await observePaths(original, getScenario("S12").observedPaths); ensureSnapshot(originalAfter); events.record("originalPost");
+    const twinAfter = await observeWorkspace(session.workspacePath); exactEffect(twinBefore, twinAfter);
+    const twinAfterInventory = await inventory(session.workspacePath);
+    assert.deepEqual(inventoryContent(twinAfterInventory), inventoryContent(twinBeforeInventory.filter(item =>
+      ![".env", "scratch.txt", "node_modules", "node_modules/lib.txt"].includes(item.path))));
+    events.record("executionPost");
+    originalAfter = await observePaths(original, getScenario("S6").observedPaths); ensureSnapshot(originalAfter); events.record("originalPost");
     assert.deepEqual(originalAfter.paths, originalBefore.paths);
+    const originalAfterInventory = await inventory(workspace);
+    assert.deepEqual(inventoryContent(originalAfterInventory), inventoryContent(originalBeforeInventory));
     const endingSession = session; session = undefined;
     const discard = await endingSession.discard();
     ledger.advance("twin", discard.status === "removed" ? "removed" : "unknown");
     assert.equal(discard.status, "removed"); events.record("discarded");
+    const originalAfterDiscardInventory = await inventory(workspace);
+    assert.deepEqual(inventoryContent(originalAfterDiscardInventory), inventoryContent(originalBeforeInventory));
     const endingOriginal = original; original = undefined;
     const originalCleanup = await cleanupScenarioRoot(endingOriginal, originalAfter);
     ledger.advance("original", originalCleanup.status === "removed" ? "removed" : "unknown");
@@ -599,35 +620,38 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
       failure = protocol.success && protocol.result.attemptValidity === "valid" ? "attempt-not-ready" : "attempt-invalid"; throw new Error();
     }
     stage = "attempt-retention";
-    if (await fingerprintCompiled("core") !== toolVersion || await fingerprintCompiled("adapter") !== adapterVersion) {
+    if (await fingerprintCompiled("core") !== toolVersion || await fingerprintCompiled("adapter") !== adapterVersion
+      || JSON.stringify(gitIdentity(git.git)) !== JSON.stringify(gitAtStart)) {
       failure = "identity-mismatch"; throw new Error();
     }
     const bytes = (value: Uint8Array) => ({ encoding: "base64" as const, data: Buffer.from(value).toString("base64"), decodedBytes: value.length });
-    const records: TwinS12AttemptRecords = { identity: { formatVersion: 1, artifactKind: "twin-s12-attempt", artifactId: twinArtifactId,
+    const records: TwinS6AttemptRecords = { identity: { formatVersion: 1, artifactKind: "twin-s6-attempt", artifactId: twinArtifactId,
       request: bundle.request, referenceArtifactId: refArtifactId, oracleRunId: reopenedOracle.sourceRunId,
-      executionWorkspacePath: gate.twin!, fixedActionPath: actionPath },
-      attempt: { formatVersion: 1, artifactKind: "twin-s12-attempt", artifactId: twinArtifactId, bundle,
-        binding: { executable: process.execPath, argv: [actionPath], actionPath, cwd: gate.twin,
-          executionWorkspacePath: gate.twin, shell: false,
-          stdio: ["ignore", "pipe", "pipe"], env: actionEnv, timeoutMs: 5000, actionSha256: sha(actionBody), observerSegmentId: "segment:observer" },
+      executionWorkspacePath: gate.twin!, executionWorkspace: { dev: twinStat.dev, ino: twinStat.ino, uid: twinStat.uid } },
+      attempt: { formatVersion: 1, artifactKind: "twin-s6-attempt", artifactId: twinArtifactId, bundle,
+        binding: { executable: git.git, argv: [...actionArgv], cwd: gate.twin,
+          executionWorkspacePath: gate.twin!, shell: false,
+          stdio: ["ignore", "pipe", "pipe"], env: setupEnv(git.directory), timeoutMs: 5000, gitIdentity: gitAtStart, observerSegmentId: "segment:observer" },
         run: { ...result, stdout: { ...result.stdout, bytes: bytes(result.stdout.bytes) },
-          stderr: { ...result.stderr, bytes: bytes(result.stderr.bytes) } }, toolVersion, adapterVersion },
-      outcome: { formatVersion: 1, artifactKind: "twin-s12-attempt", artifactId: twinArtifactId,
+          stderr: { ...result.stderr, bytes: bytes(result.stderr.bytes) } }, toolVersion, adapterVersion,
+        inventories: { originalBefore: originalBeforeInventory, originalAfter: originalAfterInventory,
+          originalAfterDiscard: originalAfterDiscardInventory, twinBefore: twinBeforeInventory, twinAfter: twinAfterInventory } },
+      outcome: { formatVersion: 1, artifactKind: "twin-s6-attempt", artifactId: twinArtifactId,
         twinDiscard: "removed", originalCleanup: "removed", artifactBeforePublication: "unknown", artifactReason: "not-observed",
         disposition: bundle.protocolObservations.disposition } };
-    const retained = await retainTwinS12Attempt(parent, records);
+    const retained = await retainTwinS6Attempt(parent, records);
     if (!retained.directory || retained.inspection.status !== "complete") { failure = "retention-incomplete"; throw new Error(); }
-    stage = "attempt-reopen"; const reopened = await inspectTwinS12Attempt(retained.directory);
-    const projection = reopened.status === "complete" ? projectReopenedTwinS12Attempt(reopened.handle) : null;
+    stage = "attempt-reopen"; const reopened = await inspectTwinS6Attempt(retained.directory);
+    const projection = reopened.status === "complete" ? projectReopenedTwinS6Attempt(reopened.handle) : null;
     if (!projection || projection.protocol.attemptValidity !== "valid" || projection.protocol.scoreReadiness !== "ready") {
       failure = "retention-incomplete"; throw new Error();
     }
     stage = "score-support";
     const source = { reference: reopenedOracle, referenceArtifactId: refArtifactId, attemptArtifactId: twinArtifactId,
       bundle: projection.bundle, protocol: projection.protocol };
-    const supportScore = deriveS12ScoreSupport(source), checked = validateS12ScoreSupport(supportScore, source);
+    const supportScore = deriveS6ScoreSupport(source), checked = validateS6ScoreSupport(supportScore, source);
     if (!checked.success) { failure = "support-unresolved"; throw new Error(); }
-    complete = S12ScoreResultSchema.parse({ schemaVersion: 1, resultVersion: 1, status: "complete", scenarioId: "S12",
+    complete = S6ScoreResultSchema.parse({ schemaVersion: 1, resultVersion: 1, status: "complete", scenarioId: "S6",
       reference: { artifactId: refArtifactId, oracleRunId: reopenedOracle.sourceRunId, oracleVersion: 1,
         validity: "valid", scoreEligibility: "eligible", retention: "retained" },
       attempt: { artifactId: twinArtifactId, toolRunId, requestId, protocolVersion: 1,
@@ -644,7 +668,7 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
     } catch (error) { ledger.advance("twin", "unknown"); stage = "cleanup"; failure = "cleanup-incomplete"; errors.push(error); }
     if (original) try {
       const endingOriginal = original; original = undefined;
-      const fresh = await observePaths(endingOriginal, getScenario("S12").observedPaths);
+      const fresh = await observePaths(endingOriginal, getScenario("S6").observedPaths);
       const result = await cleanupScenarioRoot(endingOriginal, fresh);
       ledger.advance("original", result.status === "removed" ? "removed" : "unknown");
       if (result.status !== "removed") { stage = "cleanup"; failure = "cleanup-incomplete"; errors.push(new Error()); }
@@ -658,13 +682,10 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
       assert(ownerFile.isFile() && !ownerFile.isSymbolicLink() && ownerFile.nlink === 1 && (ownerFile.mode & 0o7777) === 0o600);
       assert.equal(await fs.readFile(join(support, ".owner"), "utf8"), supportMarker);
       assert.deepEqual(await fs.readdir(join(support, "scratch")), []);
-      assert.deepEqual(await fs.readdir(join(support, "actions")), ["create-file.mjs"]);
-      for (const name of ["scratch", "actions"]) {
+      for (const name of ["scratch"]) {
         const childStat: import("node:fs").Stats = await fs.lstat(join(support, name)); assert(childStat.isDirectory() && !childStat.isSymbolicLink());
         assert.equal(childStat.uid, supportIdentity?.uid); assert.equal(childStat.mode & 0o7777, 0o700);
       }
-      assertActionAsset(join(support, "actions/create-file.mjs"), gate.actionIdentity!);
-      await fs.unlink(join(support, "actions/create-file.mjs")); await fs.rmdir(join(support, "actions"));
       await fs.rmdir(join(support, "scratch")); await fs.unlink(join(support, ".owner")); await fs.rmdir(support);
       ledger.advance("support", "removed");
     } catch (error) { ledger.advance("support", "unknown"); stage = "cleanup"; failure = "cleanup-incomplete"; errors.push(error); }
@@ -677,5 +698,5 @@ export async function produceTwinS12Score(options: Readonly<{ artifactParentDire
       stage = "accounting"; failure = "accounting-incomplete"; errors.push(new Error());
     }
   }
-  return finalizeS12ScoreCandidate(complete, ledger, errors.length, stage, failure);
+  return finalizeS6ScoreCandidate(complete, ledger, errors.length, stage, failure);
 }
