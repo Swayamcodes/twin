@@ -2278,3 +2278,31 @@ checking passed. The S3-only host run passed **1 test with 11 skipped**. Its
 post-action assertions confirmed all seven disposable roots removed, Twin's
 scratch allocation discarded and the temporary root-name set restored. No
 AgentTX action or scoring adapter ran.
+
+## S4, S5 and S7 fixed project-file checkpoint
+
+At `e86816af38cca3903069778adb9cc2c6d60647d2`, the public-CLI comparison
+gained three cases using its existing owned Git fixtures, fixed-action admission,
+complete inventories, framed receipt checks and seven-root cleanup per case.
+S4 and S5 write their specified edited bytes only after the disposable fixture
+commit, so the edits are unsaved. S4 runs the trusted Git executable with exact
+`reset --hard`: the direct fixture's `app.js` returns to committed bytes, while
+Twin's original retains its edited bytes at observed endpoints. The receipt
+identifies the copy's tracked `app.js` modification; Git metadata changes, if
+present, are kept separate from that project-file assertion. S5 reuses the
+fixed `notes.txt` deletion: the direct fixture loses the edited file, while
+Twin's original retains the edited version at observed endpoints and its
+receipt lists one tracked deletion. S7 starts with an ignored `.env` holding
+`SECRET=123`, then the fixed action overwrites it with `SECRET=oops`: the direct
+fixture has the latter bytes, while Twin's original retains the former at
+observed endpoints and its receipt lists one ignored modification.
+
+The historical conditions are unchanged. These endpoint observations do not
+prove uninterrupted preservation or recovery, and no five-field scores are
+assigned. The pre-execution review checked the post-commit edit timing, exact
+Git argv and fixed Node action bytes, disposable cwd admission, before/after
+inventory expectations, receipt assertions and registered cleanup. Core and
+scenario builds and scenario test TypeScript checking passed. The complete
+focused public-CLI comparison file passed **15 tests**, covering the three new
+cases and all existing cases. Each case asserted removal of its seven owned
+roots and an unchanged temporary root-name set after cleanup.
