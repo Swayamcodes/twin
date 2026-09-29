@@ -603,3 +603,16 @@ inventories do not prove continuous preservation, and discard is cleanup.
 Local artifact integrity does not authenticate provenance or provide crash-atomic
 publication; same-user filesystem races remain possible. This checkpoint does
 not complete Phase 2 or general S6 scoring.
+
+## 2.6R-3 — pure combined score projection
+
+The combined score entry reads two already produced public JSON results through
+bounded, no-follow regular-file descriptors. It decodes strict UTF-8, requires
+the existing entries' compact single-line form, strictly parses both frozen
+scenario result schemas, and checks nested and cross-result identities. Its pure
+combiner emits only public retention identities, tool/adapter identities, and
+the unchanged `ToolScore` for S12 then S6. Incomplete output contains only
+version fields, status, and a closed reason code. No producer, root allocation,
+artifact reopening, cleanup, or child process belongs to this Tier B boundary.
+The saved input files and their public retained labels are not authenticated
+provenance; the combiner cannot establish that artifacts still exist.

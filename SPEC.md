@@ -102,3 +102,16 @@ Recovery is not one yes/no. Each scenario run is scored on:
 "Fixed" for a scenario means a specific, checkable condition (e.g. "`.env`
 exists with byte-identical contents to before the run"), never a subjective
 judgment.
+
+## Combined retained S12 and S6 JSON
+
+The Tier B combined entry reads exactly two saved JSON lines from the existing
+S12 and S6 score entries, in either argument order. Each file must be a distinct,
+regular, non-symlink file of at most 8 MiB containing one compact JSON object
+and exactly one final LF. A complete output is one version-1 JSON line with
+S12 then S6. Each result carries only its public scenario ID, retained reference
+and attempt identities, tool and adapter identities, and unchanged five-dimension
+`ToolScore`. It adds no total, ranking, winner, Markdown, or AgentTX result.
+Invalid or incomplete inputs yield one closed, identity-free incomplete line and
+a nonzero exit. The combiner does not run either producer or authenticate saved
+results or retained artifacts. Plain Git receives no five-dimension score here.

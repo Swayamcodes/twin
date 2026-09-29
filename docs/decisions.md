@@ -144,3 +144,9 @@ I learned that public CLI measurement should test only observable CLI behavior. 
 Status: `pending commit`.
 
 I learned that scoring a destructive action needs an independent retained reference and attempt, with process admission updated when the product adds receipt work. Exact output and endpoint states support the observed action and usability; they do not prove continuous preservation, Twin reporting, or recovery by discard.
+
+## 2.6R-3 — combined retained score JSON
+
+Status: `pending commit`.
+
+I learned that a combined result can preserve the two measured scores and their public retention links by strictly validating saved producer outputs before projecting them. Keeping execution outside the combiner makes its boundary reproducible and leaves provenance authentication as an explicit limit.
