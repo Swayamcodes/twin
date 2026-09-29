@@ -2203,3 +2203,15 @@ tests add no five-field scores. Before cleanup, a current process-reference
 check found no cwd, executable or open descriptor inside the three attempts.
 All three disposable attempts, including fake homes, AgentTX stores, support
 files and private captured output, were removed.
+
+## Current partial measured comparison
+
+[The measured comparison](measured-comparison.md) brings together the committed
+retained Twin five-dimension outcomes, public CLI/plain-Git observations, and
+AgentTX 0.3.0 hand-test notes at `271c0427adf4ad42abf7f0a31e1c88e4522c6b21`.
+Plain Git and AgentTX remain unscored. In particular, AgentTX's S6 clone omitted
+ignored inputs and baseline-committed `scratch.txt`, so its zero-change run did
+not exercise the Twin/plain-Git deletion preconditions. S9 changed the separate
+fake-home dotfile and neither Twin discard nor AgentTX rollback restored it;
+both tools' reports omitted that outside-project change. This document records
+current evidence and remaining gaps, not completion of Phase 2.
