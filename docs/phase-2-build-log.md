@@ -2306,3 +2306,46 @@ scenario builds and scenario test TypeScript checking passed. The complete
 focused public-CLI comparison file passed **15 tests**, covering the three new
 cases and all existing cases. Each case asserted removal of its seven owned
 roots and an unchanged temporary root-name set after cleanup.
+
+## S10/S11 external-state measurement checkpoint
+
+At `c85ccfa70ee4a41b1bca79579bd46e30032368ba`, two fixed cases use the
+existing owned-root and inventory conventions with explicit Twin sessions, so
+external state can be observed after the action and again after Twin discard.
+The historical conditions remain package removal for S10 and a stopped or
+clearly reported process for S11. Neither case receives a five-field score.
+
+S10 substitutes a locally packed test package for a registry package. It still
+executes npm's real `install -g` path, from an offline tarball, with scripts,
+audit and funding requests disabled. The command receives only an owned global
+prefix, fake HOME, cache, temporary directory and npm config files. The package
+is absent before action, present in the disposable prefix after action, and
+unchanged there after Twin discard. The original project stays unchanged at
+observed endpoints. Twin's receipt contains no project file changes or package
+report. Later removal of the prefix is harness cleanup, not Twin recovery; the
+historical package-gone condition is not met in this measurement.
+
+S11's fixed launcher starts a bounded-life Node worker that writes its PID and
+random token to an owned marker. Linux `/proc` command line, UID and start time
+checks bind observations and cleanup to that specific process. It is running
+after the direct action settles and remains running after Twin discard. Twin's
+receipt contains no process entry or mention, and its project file list is
+empty. Only after those observations does the harness signal the verified
+worker and wait for it to stop. That termination is not Twin behavior, so the
+historical stopped-or-reported condition is not met in this measurement.
+
+The focused Tier A review checked the fixed npm CLI/argv and local tarball,
+offline config and path ownership, fixed worker bytes, bounded action and
+process waits, receipt interpretation, PID reuse checks, and cleanup ordering.
+Core and scenario builds plus scenario test TypeScript checking passed. The
+S10-only and S11-only host tests each passed; the complete comparison regression
+file passed **17 tests**. Each case verified its owned roots removed, and S11
+verified its worker stopped before root teardown. These local observations do
+not establish wider process containment, package recovery or continuous
+preservation.
+
+S11 cleanup correction: if its launched worker cannot be identified or stopped,
+the harness reports that failure and skips any pending Twin discard and owned-root
+deletion. A stubbed failure test verifies teardown is not called. The successful
+measurement still observes the worker after Twin discard, then stops it before
+root removal; an already completed measurement discard cannot be undone.

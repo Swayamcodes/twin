@@ -3,9 +3,10 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createTwin, type TwinSession } from "@twin-cli/core";
 import { comparisonS12Inputs } from "./support/twin-s12.js";
 import { assertS6Stdout, comparisonS6Inputs, gitEnvironment } from "./support/twin-s6.js";
 import { appendedLine, comparisonS9Inputs, failureLine, initialNote, successLine } from "./support/twin-s9.js";
@@ -49,6 +50,22 @@ const s7Overwritten = "SECRET=oops";
 const s7Action = Buffer.from('import { writeFileSync } from "node:fs";\n'
   + 'if (process.argv.length !== 2) throw new Error("Unexpected arguments");\n'
   + 'writeFileSync(".env", "SECRET=oops");\n');
+const s10Name = "twin-s10-offline-probe";
+const s10Package = Buffer.from(JSON.stringify({ name: s10Name, version: "1.0.0", main: "index.js" }) + "\n");
+const s11Worker = Buffer.from('import { writeFileSync } from "node:fs";\n'
+  + 'if (process.argv.length !== 4) process.exit(2);\n'
+  + 'writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, token: process.argv[3] }) + "\\n", '
+  + '{ flag: "wx", mode: 0o600 });\n'
+  + 'setTimeout(() => process.exit(0), 20000).unref();\n'
+  + 'setInterval(() => {}, 250);\n');
+const s11Action = Buffer.from('import { spawn } from "node:child_process";\n'
+  + 'import { fileURLToPath } from "node:url";\n'
+  + 'const marker = process.env.TWIN_S11_MARKER, token = process.env.TWIN_S11_TOKEN;\n'
+  + 'if (process.argv.length !== 2 || !marker || !token) process.exit(2);\n'
+  + 'const worker = fileURLToPath(new URL("./s11-worker.mjs", import.meta.url));\n'
+  + 'const child = spawn(process.execPath, [worker, marker, token], '
+  + '{ detached: false, shell: false, stdio: "ignore", env: { HOME: process.env.HOME ?? "" } });\n'
+  + 'child.unref();\n');
 
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
@@ -193,6 +210,70 @@ async function run(executable: string, argv: readonly string[], cwd: string, env
         timedOut, spawnError });
     });
   });
+}
+function npmEnvironment(home: string, prefixPath: string, cache: string, temporary: string): Record<string, string> {
+  return { HOME: home, TMPDIR: temporary, PATH: `${dirname(process.execPath)}:${gitInputs.directory}`,
+    NPM_CONFIG_PREFIX: prefixPath, NPM_CONFIG_CACHE: cache,
+    NPM_CONFIG_USERCONFIG: join(home, ".npmrc"), NPM_CONFIG_GLOBALCONFIG: join(home, "global.npmrc"),
+    NPM_CONFIG_OFFLINE: "true", NPM_CONFIG_IGNORE_SCRIPTS: "true", NPM_CONFIG_AUDIT: "false",
+    NPM_CONFIG_FUND: "false", NPM_CONFIG_UPDATE_NOTIFIER: "false", NPM_CONFIG_LOGLEVEL: "error" };
+}
+interface WorkerIdentity { pid: number; token: string; startTime: string }
+async function waitForWorkerMarker(path: string, token: string): Promise<number> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const value: unknown = JSON.parse(await fs.readFile(path, "utf8"));
+      assert(value && typeof value === "object" && "pid" in value && "token" in value);
+      assert.equal(value.token, token);
+      assert(typeof value.pid === "number" && Number.isSafeInteger(value.pid) && value.pid > 1);
+      return value.pid;
+    } catch (error: unknown) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
+    }
+  }
+  throw new Error("Fixed S11 worker marker did not appear");
+}
+async function workerState(pid: number, worker: string, markerPath: string, token: string,
+  expectedStart?: string): Promise<{ running: boolean; startTime: string } | null> {
+  let stat: string;
+  try { stat = await fs.readFile(`/proc/${pid}/stat`, "utf8"); }
+  catch (error: unknown) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  const close = stat.lastIndexOf(") ");
+  assert(close > 0, "Malformed worker process identity");
+  const fields = stat.slice(close + 2).trim().split(/\s+/);
+  const startTime = fields[19];
+  assert(startTime && /^\d+$/.test(startTime), "Missing worker start time");
+  if (expectedStart !== undefined) assert.equal(startTime, expectedStart, "Worker PID was reused");
+  if (fields[0] === "Z" || fields[0] === "X") return { running: false, startTime };
+  const argv = (await fs.readFile(`/proc/${pid}/cmdline`)).toString("utf8").split("\0").filter(Boolean);
+  assert.deepEqual(argv, [process.execPath, worker, markerPath, token], "Unexpected process at S11 PID");
+  const owner = await fs.stat(`/proc/${pid}`);
+  assert.equal(owner.uid, process.getuid?.(), "S11 worker owner changed");
+  return { running: true, startTime };
+}
+async function stopWorker(identity: WorkerIdentity, worker: string, markerPath: string): Promise<void> {
+  const observe = async (): Promise<boolean> =>
+    (await workerState(identity.pid, worker, markerPath, identity.token, identity.startTime))?.running ?? false;
+  if (!await observe()) return;
+  process.kill(identity.pid, "SIGTERM");
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!await observe()) return;
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
+  }
+  if (await observe()) process.kill(identity.pid, "SIGKILL");
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!await observe()) return;
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
+  }
+  throw new Error("S11 worker remained running after harness termination");
+}
+async function finishS11Cleanup(stop: () => Promise<void>, teardown: () => Promise<void>): Promise<void> {
+  await stop();
+  await teardown();
 }
 function framed(stderr: Buffer, actionStderr: Buffer): Receipt {
   assert(stderr.subarray(0, actionStderr.length).equals(actionStderr), "Action stderr differs");
@@ -533,4 +614,183 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
     }
     expect(roots.every(root => root.removed)).toBe(true);
   });
+
+  it("measures S10 offline npm global installation through Twin and after discard", async () => {
+    const base = await fs.realpath(tmpdir());
+    assert(forbidden.every(path => !within(path, base) && !within(base, path)));
+    const beforeNames = (await fs.readdir(base)).filter(name => name.startsWith(prefix)).sort();
+    const roots: Root[] = [];
+    let session: TwinSession | undefined;
+    let primary: unknown;
+    try {
+      const support = await allocate(base, roots), original = await allocate(base, roots);
+      const scratch = await allocate(base, roots), installed = await allocate(base, roots);
+      const home = await allocate(base, roots);
+      separated(roots.map(root => root.path));
+      const launches = { setup: 0, cli: 0, baseline: 0 };
+      const workspace = await gitFixture(original, gitInputs.fixture, gitInputs.setup, launches);
+      assert.equal(launches.setup, 7);
+      const projectBefore = await inventory(workspace);
+      const packageDir = join(support.path, "package");
+      await fs.mkdir(packageDir, { mode: 0o700 });
+      await fs.writeFile(join(packageDir, "package.json"), s10Package, { flag: "wx", mode: 0o600 });
+      await fs.writeFile(join(packageDir, "index.js"), "module.exports = 10;\n", { flag: "wx", mode: 0o600 });
+      const temporary = join(support.path, "tmp");
+      await fs.mkdir(temporary, { mode: 0o700 });
+      const homePath = join(home.path, "home"), cache = join(home.path, "cache");
+      await fs.mkdir(homePath, { mode: 0o700 });
+      await fs.mkdir(cache, { mode: 0o700 });
+      await fs.writeFile(join(homePath, ".npmrc"), "", { flag: "wx", mode: 0o600 });
+      await fs.writeFile(join(homePath, "global.npmrc"), "", { flag: "wx", mode: 0o600 });
+      const prefixPath = join(installed.path, "prefix");
+      await fs.mkdir(prefixPath, { mode: 0o700 });
+      const npmCli = await fs.realpath(join(dirname(process.execPath), "npm"));
+      assert((await fs.lstat(npmCli)).isFile());
+      const env = npmEnvironment(homePath, prefixPath, cache, temporary);
+      const packArgv = [npmCli, "pack", packageDir, "--pack-destination", support.path,
+        "--offline", "--ignore-scripts", "--no-audit", "--no-fund"];
+      const packed = await run(process.execPath, packArgv, packageDir, env);
+      assert.equal(packed.spawnError, null); assert.equal(packed.timedOut, false);
+      assert.equal(packed.exitCode, 0); assert.equal(packed.signal, null);
+      assert.equal(packed.stdout.toString("utf8").trim(), `${s10Name}-1.0.0.tgz`);
+      const tarball = join(support.path, `${s10Name}-1.0.0.tgz`);
+      assert((await fs.lstat(tarball)).isFile());
+      const before = await inventory(installed.path);
+      const packagePath = `prefix/lib/node_modules/${s10Name}/package.json`;
+      assert.equal(entry(before, packagePath), undefined);
+      assert.deepEqual(await inventory(workspace), projectBefore);
+      session = await createTwin({ sourceDirectory: workspace, scratchParent: scratch.path });
+      assert(within(scratch.path, session.workspacePath));
+      const installArgv = [npmCli, "install", "-g", "--prefix", prefixPath,
+        "--offline", "--ignore-scripts", "--no-audit", "--no-fund", tarball];
+      assert.deepEqual(installArgv.slice(1, 9), ["install", "-g", "--prefix", prefixPath,
+        "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]);
+      const result = await session.run({ executable: process.execPath, argv: installArgv, env, timeoutMs: 15_000 });
+      assert.equal(result.outcome, "exited"); assert.equal(result.directChildSettled, true);
+      assert.equal(result.exitCode, 0); assert.equal(result.signal, null);
+      const afterAction = await inventory(installed.path);
+      assert.equal(entry(afterAction, packagePath)?.bytes, s10Package.toString("base64"));
+      assert.deepEqual(await inventory(workspace), projectBefore);
+      const receipt = session.inspect().receipt;
+      assert(receipt);
+      assert.equal(receipt.files.coverage, "complete");
+      assert.deepEqual(receipt.files.changes, []);
+      assert.deepEqual(receipt.watch.map(item => item.id), watchIds);
+      assert.deepEqual(await session.discard(), { status: "removed" });
+      const afterDiscard = await inventory(installed.path);
+      assert.deepEqual(afterDiscard, afterAction);
+      assert.notDeepEqual(afterDiscard, before);
+      assert.deepEqual(await fs.readdir(scratch.path), [marker]);
+      assert.deepEqual(await inventory(workspace), projectBefore);
+    } catch (error: unknown) { primary = error; }
+    const cleanupErrors: unknown[] = [];
+    if (session && session.inspect().state !== "discarded") {
+      try { assert.deepEqual(await session.discard(), { status: "removed" }); }
+      catch (error: unknown) { cleanupErrors.push(error); }
+    }
+    for (const root of roots.toReversed()) {
+      try { await cleanup(root, await inventory(root.path)); }
+      catch (error: unknown) { cleanupErrors.push(error); }
+    }
+    const afterNames = (await fs.readdir(base)).filter(name => name.startsWith(prefix)).sort();
+    if (primary || cleanupErrors.length || roots.some(root => !root.removed)
+      || JSON.stringify(afterNames) !== JSON.stringify(beforeNames)) {
+      throw new AggregateError([...(primary ? [primary] : []), ...cleanupErrors], "S10 comparison or cleanup failed");
+    }
+  }, 60_000);
+
+  it("keeps S11 roots when worker cleanup cannot be verified", async () => {
+    const failure = new Error("Worker identity could not be verified");
+    let teardownCalled = false;
+    await expect(finishS11Cleanup(async () => { throw failure; }, async () => {
+      teardownCalled = true;
+    })).rejects.toBe(failure);
+    expect(teardownCalled).toBe(false);
+  });
+
+  it("measures S11 worker survival, receipt and harness termination", async () => {
+    assert.equal(process.platform, "linux", "S11 process identity review requires /proc");
+    const base = await fs.realpath(tmpdir());
+    assert(forbidden.every(path => !within(path, base) && !within(base, path)));
+    const beforeNames = (await fs.readdir(base)).filter(name => name.startsWith(prefix)).sort();
+    const roots: Root[] = [];
+    let session: TwinSession | undefined, workerIdentity: WorkerIdentity | undefined;
+    let workerPath: string | undefined, markerPath: string | undefined, token: string | undefined;
+    let launched = false, primary: unknown;
+    try {
+      const support = await allocate(base, roots), original = await allocate(base, roots);
+      const scratch = await allocate(base, roots), home = await allocate(base, roots);
+      separated(roots.map(root => root.path));
+      const launches = { setup: 0, cli: 0, baseline: 0 };
+      const workspace = await gitFixture(original, gitInputs.fixture, gitInputs.setup, launches);
+      assert.equal(launches.setup, 7);
+      const projectBefore = await inventory(workspace);
+      const actions = join(support.path, "actions");
+      await fs.mkdir(actions, { mode: 0o700 });
+      const actionPath = join(actions, "s11-launch.mjs");
+      workerPath = join(actions, "s11-worker.mjs");
+      markerPath = join(support.path, "worker-marker.json");
+      token = randomBytes(24).toString("hex");
+      await fs.writeFile(actionPath, s11Action, { flag: "wx", mode: 0o600 });
+      await fs.writeFile(workerPath, s11Worker, { flag: "wx", mode: 0o600 });
+      assert((await fs.readFile(actionPath)).equals(s11Action));
+      assert((await fs.readFile(workerPath)).equals(s11Worker));
+      const homePath = join(home.path, "home");
+      await fs.mkdir(homePath, { mode: 0o700 });
+      const env = { HOME: homePath, TMPDIR: support.path, PATH: dirname(process.execPath),
+        TWIN_S11_MARKER: markerPath, TWIN_S11_TOKEN: token };
+      session = await createTwin({ sourceDirectory: workspace, scratchParent: scratch.path });
+      assert(within(scratch.path, session.workspacePath));
+      const argv = [actionPath];
+      assert.deepEqual(argv, [join(actions, "s11-launch.mjs")]);
+      launched = true;
+      const result = await session.run({ executable: process.execPath, argv, env, timeoutMs: 8_000 });
+      assert.equal(result.outcome, "exited"); assert.equal(result.directChildSettled, true);
+      assert.equal(result.exitCode, 0); assert.equal(result.signal, null);
+      assert.deepEqual(Buffer.from(result.stdout.bytes), Buffer.alloc(0));
+      const pid = await waitForWorkerMarker(markerPath, token);
+      const afterAction = await workerState(pid, workerPath, markerPath, token);
+      assert(afterAction?.running, "S11 worker stopped before action observation");
+      workerIdentity = { pid, token, startTime: afterAction.startTime };
+      const receipt = session.inspect().receipt;
+      assert(receipt);
+      assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
+      assert.equal(receipt.files.coverage, "complete");
+      assert.deepEqual(receipt.files.changes, []);
+      assert.deepEqual(receipt.watch.map(item => item.id), watchIds);
+      assert.deepEqual(await inventory(workspace), projectBefore);
+      assert.deepEqual(await session.discard(), { status: "removed" });
+      assert.equal((await workerState(pid, workerPath, markerPath, token, workerIdentity.startTime))?.running, true);
+      assert.deepEqual(await fs.readdir(scratch.path), [marker]);
+      assert.deepEqual(await inventory(workspace), projectBefore);
+    } catch (error: unknown) { primary = error; }
+    const cleanupErrors: unknown[] = [];
+    try {
+      await finishS11Cleanup(async () => {
+        if (!launched) return;
+        assert(workerPath && markerPath && token, "S11 worker cleanup identity is incomplete");
+        if (!workerIdentity) {
+          const pid = await waitForWorkerMarker(markerPath, token);
+          const observed = await workerState(pid, workerPath, markerPath, token);
+          if (observed?.running) workerIdentity = { pid, token, startTime: observed.startTime };
+        }
+        assert(workerIdentity, "S11 worker identity could not be verified");
+        await stopWorker(workerIdentity, workerPath, markerPath);
+      }, async () => {
+        if (session && session.inspect().state !== "discarded") {
+          try { assert.deepEqual(await session.discard(), { status: "removed" }); }
+          catch (error: unknown) { cleanupErrors.push(error); }
+        }
+        for (const root of roots.toReversed()) {
+          try { await cleanup(root, await inventory(root.path)); }
+          catch (error: unknown) { cleanupErrors.push(error); }
+        }
+      });
+    } catch (error: unknown) { cleanupErrors.push(error); }
+    const afterNames = (await fs.readdir(base)).filter(name => name.startsWith(prefix)).sort();
+    if (primary || cleanupErrors.length || roots.some(root => !root.removed)
+      || JSON.stringify(afterNames) !== JSON.stringify(beforeNames)) {
+      throw new AggregateError([...(primary ? [primary] : []), ...cleanupErrors], "S11 comparison or cleanup failed");
+    }
+  }, 60_000);
 });
