@@ -2055,3 +2055,69 @@ Endpoint equality cannot establish uninterrupted preservation and discard is
 cleanup. Local digests and modes do not authenticate the capture or make its
 publication crash-atomic; same-user filesystem races and broader tool/scenario
 coverage remain deferred.
+
+## Phase 2 — retained fixed Twin S8/S13 measurements (uncommitted)
+
+The Tier A pre-execution review compared the committed S8 and S13 proof action
+bytes, fixture values, one-action launch gates, existing Twin direct-child
+runner, and registered cleanup authorities. S8's pinned action only checks and
+unlinks relative `delete-me.txt`; S13's pinned action only reads and verifies
+`.env` and `node_modules/lib.txt`. The new producer verifies those bytes in the
+returned copy before running either action. S8 has no Git setup; S13 uses the
+existing seven fixed setup commands. Both use separate fresh disposable
+original, support and Twin roots, bounded action streams and explicit direct-
+child and root dispositions. The known copied effects, original endpoints,
+action output and Twin receipt are distinct evidence.
+
+The first sandboxed focused run failed: S8 produced incomplete action output,
+matching the known sandbox child-stdout limitation, and S13's copy check found
+that core-created Git subdirectories use different modes from the original.
+A guarded host run passed S8 while confirming the S13 directory-mode difference.
+The copy check now compares all relative paths, kinds, regular-file modes and
+hashes while recording directory modes independently; original endpoint checks
+still compare their complete modes and hashes. Subsequent focused host runs
+passed, including the final run after adding attempt and compiled-version
+identities: **2 files / 5 tests**. That command compiled core, scenario source
+and scenario tests, then ran only the S8/S13 focused files. The independent
+post-execution review reopened each bounded private artifact, independently
+recomputed its saved evidence digest, and checked each
+known score field against the attempt's copied inputs, action result, effect
+and receipt. S8's five outcomes are `unknown`, `reported`, `not-blocked`,
+`usable`, `unknown`; S13's are `unknown`, `unknown`, `not-blocked`, `usable`,
+`unknown`. S13's read-only action produced no invented file-change report.
+
+The three failed early attempts intentionally retained **six registered
+scenario roots containing three Twin allocations** for inspection. Their
+private paths are excluded from public results. Later successful attempts
+removed their original, support and Twin roots; their test-owned artifacts
+were reopened and then removed by the focused tests. The retained artifacts
+are bounded local evidence, not authenticated or crash-atomic publication.
+No descendant containment or continuous-preservation proof is claimed.
+AgentTX S12/S6/S9 remain unmeasured because this WSL2 account has no protected
+cgroup delegation. This checkpoint neither completes Phase 2 nor narrows the
+remaining work across the seven project phases.
+
+The final focused repeat after requiring stable original and Twin entry
+identities across observations also passed **2 files / 5 tests**. No additional
+failed attempt or retained root was created by that repeat.
+The independent artifact-reader repeat passed **2 files / 5 tests** as well,
+with no additional retained root.
+
+Tier A review of failed attempts A1–A3 found a cleanup-authority gap: their
+six retained scenario roots have current ownership markers, but those attempts
+did not durably register root identities or process settlement. Their current
+state cannot reconstruct the missing historical facts. A1–A3 remain unresolved;
+all six roots remain retained and are excluded from automatic cleanup.
+The correction starts a private, synced attempt journal before allocation,
+registers returned root identities, and records launch, settlement, validation
+and disposition. Cleanup now requires a reopened journal, complete action
+evidence, settled direct child and matching live root identities. An allocation
+that fails before a handle returns remains unknown and needs manual review.
+The journal is a local authority record, not protected descendant containment
+or a guarantee against concurrent same-user mutation.
+The corrected focused host gate passed **2 files / 10 tests**, including five
+cleanup-refusal controls. Scenario source and test TypeScript checks, the
+scenario build, whitespace check, exact 11-file scope and lockfile comparison
+passed. No new unresolved scenario root was observed. The remaining unknowns
+are the A1–A3 historical settlement and ownership record, and any allocation
+that fails before a handle can be durably registered in a future attempt.

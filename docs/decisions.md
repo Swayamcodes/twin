@@ -156,3 +156,14 @@ I learned that a combined result can preserve the two measured scores and their 
 Status: `pending commit`.
 
 I learned that a human-readable report needs a stricter claim boundary than its JSON carrier: fixed ordering and closed outcome/reason pairs keep unreviewed fields from becoming prose. A read-only renderer can show current Twin evidence while explicitly leaving the wider tool comparison unfinished.
+
+## Phase 2 — retained Twin S8/S13 measurements
+
+Status: `pending commit`.
+
+I learned that non-Git deletion and ignored-input work need separate fixed attempts and evidence from their actual copied workspaces. A complete endpoint inventory and a successful action support narrow claims, while process descendants, continuous preservation and unreviewed reporting stay explicit unknowns.
+
+The A1–A3 review showed that a live ownership marker cannot establish the
+cleanup authority of an earlier attempt. I now require a synced attempt-local
+record of allocation, identity, action settlement and disposition before
+cleanup; absent or changed evidence leaves the root for manual review.

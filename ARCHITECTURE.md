@@ -1,5 +1,26 @@
 # twin — ARCHITECTURE.md
 
+## Retained fixed Twin S8/S13 measurement (Phase 2)
+
+The scenarios package has a separate version-one S8/S13 result path. It uses the
+committed proof actions and fresh disposable originals: S8 has no Git repository;
+S13 uses the existing fixed Git fixture and verifies ignored input bytes in the
+returned Twin copy before the action reads them. The producer records complete
+relative-path inventories, bounded action streams, direct-child disposition,
+the Twin receipt separately from action output, and four root dispositions.
+It reopens a private bounded evidence artifact before removing the original and
+support roots. Incomplete settlement or uncertain authority yields an incomplete
+result and retains still-owned roots; an artifact failure may leave an unknown
+private artifact directory. Same-user mutation races and descendants are not
+contained by this fixed-action path.
+
+The new strict five-field result does not reinterpret the frozen S12/S6
+`ToolScore` or change their combined Twin-only report. S8 receipt evidence may
+support reporting of the copied target deletion. S13's read-only action makes
+no file change, and no read-reporting claim is inferred. Original endpoint
+equality does not establish continuous preservation or recovery. Neither
+AgentTX nor plain Git gets a five-field score from this path.
+
 ## Offline retained-capture foundation (Phase 2 Step 2.5c-1)
 
 Internal `scenarios/src/capture/{records,project,artifact}.ts` modules add bounded
