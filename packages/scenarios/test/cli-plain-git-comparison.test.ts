@@ -673,6 +673,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.deepEqual(await inventory(workspace), projectBefore);
       const receipt = session.inspect().receipt;
       assert(receipt);
+      assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);

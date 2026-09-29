@@ -2349,3 +2349,26 @@ the harness reports that failure and skips any pending Twin discard and owned-ro
 deletion. A stubbed failure test verifies teardown is not called. The successful
 measurement still observes the worker after Twin discard, then stops it before
 root removal; an already completed measurement discard cannot be undone.
+
+## Supported-score comparison checkpoint
+
+At `bef2dc35e598cd8a5913042f28bea83e91159ad6`, the
+[measured comparison](measured-comparison.md) records test-local five-dimension
+Twin evaluations for the public-CLI S1–S7, S9 and S12 cases and direct-session
+S10/S11 cases. Each known outcome cites same-attempt action, inventory or
+receipt assertions. S6/S12 retained scores remain frozen: their reporting
+fields are unknown, while separate CLI attempts have receipt-backed reporting
+observations. Existing retained S8/S9/S13 scores are unchanged. Plain-Git
+direct actions and AgentTX hand tests remain unscored because the available
+evidence lacks a comparable recovery/report attempt or matching preconditions.
+The catalog now distinguishes those paths. S10 adds an explicit receipt-shape
+assertion; no scenario action or core feature was changed for the score.
+The focused scoring-accuracy review matched each known C/T outcome to its
+same-attempt action result, named state assertion or receipt assertion, and
+checked the retained R rows against their frozen producers. It left endpoint
+preservation, S13 read reporting and every boundary-accuracy field unknown.
+The host comparison file passed 18 tests; scenario production build, scenario
+test TypeScript checking, whitespace and four-file scope checks passed. The
+first sandboxed test attempt stopped before tests at the system-Git trust
+check; the host rerun passed. Disposable comparison roots and the S11 worker
+were absent after the run.

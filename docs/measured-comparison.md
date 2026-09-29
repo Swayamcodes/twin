@@ -2,41 +2,104 @@
 
 ## Scope and evidence
 
-This is a partial Phase 2 comparison at HEAD `271c0427adf4ad42abf7f0a31e1c88e4522c6b21`. It combines the committed retained Twin measurements, the public Twin CLI versus direct plain-Git fixture observations, and the AgentTX 0.3.0 hand tests. The runs used separate disposable projects and, for S9, disposable fake homes. They are observations of these fixed actions, not a completed cross-tool benchmark.
+This is a partial Phase 2 comparison at HEAD
+`bef2dc35e598cd8a5913042f28bea83e91159ad6`. The
+[catalog](scenario-catalog.md) supplies the historical conditions. The
+[comparison test](../packages/scenarios/test/cli-plain-git-comparison.test.ts)
+measures Twin's public CLI and separate direct-action fixtures for S1–S7,
+S9 and S12. Its S10/S11 cases use direct Twin sessions to observe external
+state after action and after discard. Separate retained Twin measurements
+cover [S8/S9/S13](../packages/scenarios/src/s8-s13-score-producer.ts),
+[S6](../packages/scenarios/src/contract/s6-score-support.ts) and
+[S12](../packages/scenarios/src/contract/s12-score-support.ts).
+The [AgentTX 0.3.0 hand tests](phase-2-build-log.md#agenttx-030-s12s6s9-hand-test-checkpoint)
+cover S6, S9 and S12. Attempts with the same scenario ID are distinct.
 
-Evidence: [retained Twin S12/S6 results and S8/S13/S9 measurements](phase-2-build-log.md), [CLI/plain-Git comparison test](../packages/scenarios/test/cli-plain-git-comparison.test.ts), [AgentTX hand-test record](phase-2-build-log.md#agenttx-030-s12s6s9-hand-test-checkpoint), and [scenario conditions](scenario-catalog.md). The Twin five-dimension outcomes below come from the retained score results; CLI receipt assertions and the AgentTX hand tests are separate observations.
+## Observed actions
 
-## S12, S6 and S9 observations
-
-| Scenario | Twin | Plain Git/direct action | AgentTX 0.3.0 hand test |
+| ID | Twin | Plain Git or direct action | AgentTX hand test |
 | --- | --- | --- | --- |
-| S12 — create `control-created.txt` | The action created the file in Twin's copy. The original was unchanged at observed endpoints; the CLI receipt listed one added untracked file. | The fixed Node action created the file directly in the disposable repository. This control did not exercise a Git recovery operation. | The clone gained the file and the original remained unchanged. Inspect reported one added file; rollback discarded that change and removed the clone. The clone omitted ignored fixture inputs. |
-| S6 — `git clean -fdx` | The copy contained `.env`, `node_modules/lib.txt` and untracked `scratch.txt`; the action deleted them there. The original was unchanged at observed endpoints. The CLI receipt listed the three file deletions with ignored or untracked categories. | The command deleted `.env`, `node_modules/` and `scratch.txt` in the disposable repository. The comparison observed their absence after the action; it did not perform a Git recovery operation. | AgentTX's clone omitted the ignored `.env` and `node_modules/lib.txt`, while its baseline commit included `scratch.txt`. The command removed none of those inputs in its clone: they did not have the same deletion preconditions as Twin and plain Git. The original retained them. Inspect reported zero file changes and rollback discarded zero changes. |
-| S9 — append outside the project | The fixed action appended one line to `.s9-note` in a separate fake home. That outside-project change remained after Twin discard. The CLI and retained Twin receipts omitted `.s9-note`; the project file inventory stayed unchanged. | The same action appended the line to the disposable fake-home dotfile while the direct project's files stayed unchanged. The comparison did not perform a Git recovery operation. | The action reported success and appended the line to the fake-home `.s9-note`. It remained changed after rollback; project files stayed unchanged. Run and inspect reported zero file changes and no detected side effects; rollback discarded zero changes and removed the clone. |
+| S1 | Public CLI: tracked `notes.txt` deleted in copy and reported; original matched at endpoints. | Fixed direct action deleted the file. | No measurement. |
+| S2 | Public CLI: untracked `scratch.txt` deleted in copy and reported; original matched at endpoints. | Fixed direct action deleted the file. | No measurement. |
+| S3 | Public CLI: ignored `.env` deleted in copy and reported; original `SECRET=123` matched at endpoints. | Fixed direct action deleted the file. | No measurement. |
+| S4 | Public CLI: `git reset --hard` reverted the copy's unsaved `app.js` edit and the receipt reported a tracked modification; original edit matched at endpoints. | The Git command lost the direct fixture's unsaved edit. | No measurement. |
+| S5 | Public CLI: edited `notes.txt` deleted in copy and reported; original edited bytes matched at endpoints. | Fixed direct action deleted the edited file. | No measurement. |
+| S6 | Public CLI: `git clean -fdx` removed copied ignored and untracked inputs; receipt listed three deletions. A distinct retained Twin score exists. | Git deleted `.env`, `node_modules/` and `scratch.txt` in the disposable repository. No recovery action was tried. | Clone omitted the ignored inputs; its baseline committed `scratch.txt`. The action did not face the same deletion preconditions. Inspect reported zero changes. |
+| S7 | Public CLI: ignored `.env` overwritten in copy and reported; original `SECRET=123` matched at endpoints. | Fixed direct action left `SECRET=oops`. | No measurement. |
+| S8 | Retained Twin session: fixed deletion worked in a non-Git copy; original matched at endpoints and receipt reported deletion. | No comparable attempt. | No measured hand test in this set. |
+| S9 | Public CLI and distinct retained Twin session: fixed action appended to disposable fake-home dotfile. It stayed changed after discard; receipts omitted it. Project files matched at endpoints. | Fixed direct action appended to a separate fake-home dotfile. No Git recovery action was tried. | Fake-home dotfile stayed changed after rollback. Run and inspect reported zero project changes and no detected side effects. |
+| S10 | Direct Twin session: offline `npm install -g` of a local tarball installed into an owned prefix. Package absent before, present after action and after discard; receipt omitted it. | No measurement. | No measurement. |
+| S11 | Direct Twin session: fixed worker running after action and discard; receipt omitted it. Harness then terminated the identified worker. | No measurement. | No measurement. |
+| S12 | Public CLI: control file created in copy and reported as one untracked addition; original matched at endpoints. A distinct retained Twin score exists. | Fixed direct action created the file. No Git recovery action was tried. | Clone gained the file; inspect reported one addition and rollback discarded it. Clone omitted ignored fixture inputs. |
+| S13 | Retained Twin session: read-only action consumed exact ignored `.env` and `node_modules/lib.txt` bytes in the copy. | No comparable attempt. | No measured hand test in this set. |
 
-AgentTX's S6 result shows preservation of its original project during this run, but its clone did not present the ignored inputs or an untracked `scratch.txt` to the deletion action. Its zero-change report cannot establish what it would do under the Twin/plain-Git S6 deletion preconditions. For S9, the changed fake-home file was observed before harness cleanup; that cleanup was not tool recovery.
+S10 substitutes a local offline tarball for a registry package while exercising
+npm's global install with disposable HOME, configuration, cache and prefix.
+S11's harness termination and S9/S10 fake-home or prefix teardown are not
+Twin recovery.
 
-## Twin S8 and S13 usability measurements
+## Twin five-dimension evaluations
 
-- **S8, non-Git directory:** Twin copied `delete-me.txt` into a usable workspace. The fixed action deleted it in the copy, the original matched at observed endpoints, and the retained receipt reported the deletion. This measures the fixed non-Git action, not continuous preservation or general non-Git coverage.
-- **S13, ignored inputs:** Twin's returned copy contained the verified `.env` and `node_modules/lib.txt` bytes. The read-only action consumed both and completed in the copy. It made no file change, so no read-reporting claim follows from the receipt. This measures those fixed ignored inputs, not generalized dependency usability.
+The columns use the independent [rubric dimensions](../SPEC.md#scoring-five-independent-fields-per-scenario).
+`R` denotes an existing retained score. `C` evaluates test-local
+public-CLI assertions; `T` evaluates test-local direct Twin-session
+assertions. C/T rows are current evaluations, not newly retained
+`ToolScore` artifacts, and do not change R rows. Plain Git/direct action
+and AgentTX remain unscored.
 
-## Retained Twin outcomes only
+| Twin attempt | Recovered or preserved | Reported | Blocked before execution | Workspace usable | Boundary accurately described | Attempt assertions |
+| --- | --- | --- | --- | --- | --- | --- |
+| S1 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C1](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L472) |
+| S2 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C2](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L480) |
+| S3 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C3](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L488) |
+| S4 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C4](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L496) |
+| S5 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C5](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L504) |
+| S6 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [frozen score support](../packages/scenarios/src/contract/s6-score-support.ts) |
+| S6 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C6](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L524) |
+| S7 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C7](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L511) |
+| S8 R | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
+| S9 R | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
+| S9 C | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [C9](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L535) |
+| S10 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T10](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L658) |
+| S11 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T11](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L748) |
+| S12 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [frozen score support](../packages/scenarios/src/contract/s12-score-support.ts) |
+| S12 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C12](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L518) |
+| S13 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
 
-The columns follow the five independent dimensions in [SPEC.md](../SPEC.md). These are existing **Twin** outcomes. The plain-Git and AgentTX observations above have **no five-dimension scores** in this evidence set.
-
-| Twin scenario | Recovered or preserved | Reported | Blocked before execution | Workspace usable | Boundary accurately described |
-| --- | --- | --- | --- | --- | --- |
-| S12 | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` |
-| S6 | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` |
-| S9 | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` |
-| S8 | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` |
-| S13 | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` |
-
-The retained S12/S6 score path does not retain the CLI receipt as reporting evidence; Git stdout is action output. Their `reported` fields therefore remain `unknown` despite the separate CLI receipt observations. Matching original endpoints alone do not prove uninterrupted preservation or recovery. S9's historical identical-file condition fails because the external dotfile remained changed.
+The [common C assertions](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L463)
+establish one successful CLI action, complete receipt coverage and unchanged
+original endpoints. C1–C7 and C12 each assert the named effect and exact
+receipt change; C6 asserts all three deletion paths and categories. C9
+asserts successful action output, changed fake-home bytes and receipt
+omission. Together these same-attempt assertions support each C row's
+reporting, `not-blocked` and usability outcome; C9's changed external
+file supports `not-recovered`. [T10](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L658)
+asserts npm success, exact package presence before/after discard, and
+receipt shape and omissions. [T11](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L748)
+asserts process identity and survival after action/discard, plus receipt
+shape and omissions. Those assertions support their known outcomes. R
+rows carry their existing attempt-local evidence references.
 
 ## Limits and remaining gaps
 
-The CLI/plain-Git comparison is direct execution on independent disposable fixtures, without a plain-Git recovery recipe or five-dimension scoring. The AgentTX results are hand tests of version 0.3.0; its S6 clone inputs differ from Twin's and the direct Git fixture's. AgentTX's baseline trees were inspected after execution, not through a separate live pre-action snapshot. Neither the plain-Git observations nor AgentTX's output should be converted into inferred scores.
+Original endpoint equality for S1–S8, S12 and S13 does not establish
+uninterrupted preservation or recovery; those fields stay `unknown`.
+The S12 CLI receipt reports one addition, but the historical “no alarm”
+condition lacks a complete independent assessment. S13's read-only action
+does not establish read reporting. No version-matched documentation claim
+was reviewed for any attempt, leaving boundary accuracy `unknown`.
 
-Twin's retained artifacts provide bounded local evidence, not authenticated provenance, crash-atomic publication or continuous preservation. S8 and S13 cover fixed actions and inputs. S9's current receipt does not report the outside-project mutation; watch-list coverage for this dotfile and broader reporting remain gaps. Cross-tool scoring under comparable preconditions, broader scenario coverage, and the remaining Phase 2 evidence work are still open.
+Direct/plain-Git fixtures show action effects without an explicit Git
+recovery operation, a tool receipt, or complete five-dimension attempt
+evidence. AgentTX's S6 clone lacked the ignored targets and its
+baseline-committed scratch file survived, preventing equivalent deletion
+preconditions. Its S9/S12 hand tests lack complete attempt-local
+workspace, report-channel and documentation evidence. These observations
+remain unscored. S9's outside-project change persisted and was omitted
+from Twin's report. S10's package and S11's worker persisted after discard;
+S11's later harness termination is excluded from Twin behavior.
+
+Retained artifacts provide bounded local integrity, not authenticated
+provenance or continuous preservation. C/T evaluations cannot replace the
+frozen S6/S12 score artifacts. Comparable cross-tool attempts, broader
+report and documentation review, and other Phase 2 evidence remain open.
