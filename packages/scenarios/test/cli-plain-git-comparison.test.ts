@@ -10,7 +10,7 @@ import { comparisonS12Inputs } from "./support/twin-s12.js";
 import { assertS6Stdout, comparisonS6Inputs, gitEnvironment } from "./support/twin-s6.js";
 import { appendedLine, comparisonS9Inputs, failureLine, initialNote, successLine } from "./support/twin-s9.js";
 
-type Scenario = "S1" | "S2" | "S12" | "S6" | "S9";
+type Scenario = "S1" | "S2" | "S3" | "S12" | "S6" | "S9";
 type Kind = "file" | "directory";
 interface Entry { path: string; kind: Kind; mode: number; sha256?: string; bytes?: string }
 interface Result { stdout: Buffer; stderr: Buffer; exitCode: number | null; signal: NodeJS.Signals | null;
@@ -38,6 +38,10 @@ const s1Action = Buffer.from('import { unlinkSync } from "node:fs";\n'
 const s2Action = Buffer.from('import { unlinkSync } from "node:fs";\n'
   + 'if (process.argv.length !== 2) throw new Error("Unexpected arguments");\n'
   + 'unlinkSync("scratch.txt");\n');
+const s3Contents = "SECRET=123";
+const s3Action = Buffer.from('import { unlinkSync } from "node:fs";\n'
+  + 'if (process.argv.length !== 2) throw new Error("Unexpected arguments");\n'
+  + 'unlinkSync(".env");\n');
 
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
@@ -84,6 +88,10 @@ function assertBaselineEffect(scenario: Scenario, before: readonly Entry[], afte
     assert.equal(entry(before, "scratch.txt")?.bytes, Buffer.from("Untracked scratch data.\n").toString("base64"));
     assert.equal(entry(after, "scratch.txt"), undefined);
     assert.deepEqual(after, before.filter(value => value.path !== "scratch.txt"));
+  } else if (scenario === "S3") {
+    assert.equal(entry(before, ".env")?.bytes, Buffer.from(s3Contents).toString("base64"));
+    assert.equal(entry(after, ".env"), undefined);
+    assert.deepEqual(after, before.filter(value => value.path !== ".env"));
   } else if (scenario === "S12") {
     assert.equal(entry(before, "control-created.txt"), undefined);
     assert.equal(entry(after, "control-created.txt")?.bytes, Buffer.from("S12 control file.\n").toString("base64"));
@@ -258,13 +266,16 @@ async function comparison(scenario: Scenario): Promise<{ record: Comparison; roo
       actionExecutable = process.execPath; actionArgv = [action];
     } else {
       const inputs = scenario === "S12" ? comparisonS12Inputs() : gitInputs;
-      originalCwd = await gitFixture(original, inputs.fixture, inputs.setup, launches);
-      baselineCwd = await gitFixture(baseline, inputs.fixture, inputs.setup, launches);
-      if (scenario === "S12" || scenario === "S1" || scenario === "S2") {
-        actionBytes = scenario === "S12" ? comparisonS12Inputs().action : scenario === "S1" ? s1Action : s2Action;
+      const fixture = scenario === "S3" ? { ...inputs.fixture, ".env": s3Contents } : inputs.fixture;
+      originalCwd = await gitFixture(original, fixture, inputs.setup, launches);
+      baselineCwd = await gitFixture(baseline, fixture, inputs.setup, launches);
+      if (scenario === "S12" || scenario === "S1" || scenario === "S2" || scenario === "S3") {
+        actionBytes = scenario === "S12" ? comparisonS12Inputs().action
+          : scenario === "S1" ? s1Action : scenario === "S2" ? s2Action : s3Action;
         await fs.mkdir(join(support.path, "actions"), { mode: 0o700 });
         const action = join(support.path, "actions", scenario === "S1" ? "delete-notes.mjs"
-          : scenario === "S2" ? "delete-scratch.mjs" : "create-file.mjs");
+          : scenario === "S2" ? "delete-scratch.mjs"
+            : scenario === "S3" ? "delete-env.mjs" : "create-file.mjs");
         await fs.writeFile(action, actionBytes, { flag: "wx", mode: 0o600 });
         actionExecutable = process.execPath; actionArgv = [action];
       } else { actionExecutable = gitInputs.git; actionArgv = [...gitInputs.actionArgv]; }
@@ -273,7 +284,8 @@ async function comparison(scenario: Scenario): Promise<{ record: Comparison; roo
     const fixedArgv = scenario === "S6" ? ["clean", "-fdx"]
       : [join(support.path, "actions", scenario === "S1" ? "delete-notes.mjs"
         : scenario === "S2" ? "delete-scratch.mjs"
-          : scenario === "S12" ? "create-file.mjs" : "append-fake-home.mjs")];
+          : scenario === "S3" ? "delete-env.mjs"
+            : scenario === "S12" ? "create-file.mjs" : "append-fake-home.mjs")];
     demandAction(scenario, actionExecutable, actionArgv, originalCwd, join(original.path, "workspace"), fixedArgv, actionBytes);
     demandAction(scenario, actionExecutable, actionArgv, baselineCwd, join(baseline.path, "workspace"), fixedArgv, actionBytes);
     const originalBefore = await inventory(originalCwd), baselineBefore = await inventory(baselineCwd);
@@ -323,7 +335,7 @@ async function comparison(scenario: Scenario): Promise<{ record: Comparison; roo
 }
 
 describe("public Twin CLI against independent plain-Git fixtures", () => {
-  it.each(["S1", "S2", "S12", "S6", "S9"] as const)("measures %s with a framed receipt and complete external inventories", async scenario => {
+  it.each(["S1", "S2", "S3", "S12", "S6", "S9"] as const)("measures %s with a framed receipt and complete external inventories", async scenario => {
     const { record, roots, beforeNames, afterNames } = await comparison(scenario);
     expect(roots).toHaveLength(7); expect(roots.every(root => root.removed)).toBe(true);
     expect(record.launches).toEqual({ setup: scenario === "S9" ? 0 : 14, cli: 1, baseline: 1 });
@@ -347,6 +359,14 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       expect(entry(record.baselineAfter, "scratch.txt")).toBeUndefined();
       expect(record.receipt.files.changes).toEqual([expect.objectContaining({
         path: { encoding: "utf8", value: "scratch.txt" }, change: "deleted", category: "untracked" })]);
+    } else if (scenario === "S3") {
+      expect(record.twin.stdout).toEqual(Buffer.alloc(0));
+      expect(entry(record.originalBefore, ".env")?.bytes).toBe(Buffer.from("SECRET=123").toString("base64"));
+      expect(entry(record.baselineBefore, ".env")?.bytes).toBe(Buffer.from("SECRET=123").toString("base64"));
+      expect(entry(record.originalAfter, ".env")).toEqual(entry(record.originalBefore, ".env"));
+      expect(entry(record.baselineAfter, ".env")).toBeUndefined();
+      expect(record.receipt.files.changes).toEqual([expect.objectContaining({
+        path: { encoding: "utf8", value: ".env" }, change: "deleted", category: "ignored" })]);
     } else if (scenario === "S12") {
       expect(record.twin.stdout).toEqual(Buffer.alloc(0));
       expect(entry(record.baselineBefore, "control-created.txt")).toBeUndefined();

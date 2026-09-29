@@ -46,7 +46,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | --- | --- |
 | S1 | Fixed-action CLI comparison on the existing Git fixture: a Node action deletes only tracked `notes.txt` in Twin's copy and in a separate direct-action fixture. The direct fixture loses the file; Twin's original retains the same bytes at observed endpoints, and its CLI receipt lists one tracked deletion. No five-field score, continuous-preservation proof or general `rm` adapter is established. |
 | S2 | Fixed-action public-CLI comparison on the existing Git fixture: a Node action deletes only untracked `scratch.txt` in Twin's copy and in a separate direct-action fixture. The direct fixture loses the file; Twin's original retains the same bytes at observed endpoints, and its CLI receipt lists one untracked deletion. No five-field score or continuous-preservation proof is established. |
-| S3 | Unimplemented |
+| S3 | Fixed-action public-CLI comparison with an S3-only ignored `.env` containing exactly `SECRET=123`. A Node action deletes `.env` in Twin's copy and a separate direct-action fixture. The direct fixture loses the file; Twin's original retains the exact bytes at observed endpoints, and its CLI receipt lists one ignored deletion. No five-field score or continuous-preservation proof is established. |
 | S4 | Unimplemented |
 | S5 | Unimplemented |
 | S6 | Direct scenario plus the focused 2.5R-2 Twin destructive-isolation proof: complete clone inputs, trusted `git clean -fdx` only in the returned Twin workspace, expected clone damage, unchanged original endpoints and guarded discard. This does not establish reporting, recovery or full historical S6 completion. |

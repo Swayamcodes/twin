@@ -2258,3 +2258,23 @@ The S2-only host run passed **1 test with 10 skipped**. Its cleanup assertions
 confirmed all seven disposable roots were removed, Twin's scratch allocation
 was discarded, and the temporary root-name set returned to its starting state.
 No AgentTX action or scoring adapter ran.
+
+## S3 fixed ignored-file deletion checkpoint
+
+At `6d15bb36aafc1fa9f2d66402039e2a6e8ba4b309`, the public-CLI comparison
+gained S3 using the existing disposable Git fixture with only its ignored
+`.env` value set to the catalog's exact `SECRET=123` bytes (no newline). The
+fixed Node action unlinks relative `.env` only. The direct-action fixture loses
+that file and otherwise matches its before inventory; Twin's original still
+has the exact bytes at observed endpoints, and its framed receipt lists one
+ignored deletion. The catalog's historical fixed condition is unchanged.
+Endpoint equality does not prove continuous preservation, and no five-field
+score is assigned.
+
+The pre-action review checked the fixed action bytes and `SECRET=123` fixture,
+command/cwd admission, complete inventory comparisons, receipt assertions and
+registered cleanup. Core and scenario builds and scenario test TypeScript
+checking passed. The S3-only host run passed **1 test with 11 skipped**. Its
+post-action assertions confirmed all seven disposable roots removed, Twin's
+scratch allocation discarded and the temporary root-name set restored. No
+AgentTX action or scoring adapter ran.
