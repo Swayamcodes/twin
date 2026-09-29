@@ -11,10 +11,10 @@ import { cleanupScenarioRoot, createScenarioRoot, initializeFixture, initializeS
 import type { Snapshot } from "./types.js";
 import { fixtureContents } from "./scenarios.js";
 import { actionBytes, actionDigest, actionName, content, environment, exactFile, inventory, requireInputs,
-  s8Files, s13Files, success, type Entry, type MeasuredScenario } from "./s8-s13-fixtures.js";
+  s8Files, s13Files, s9Files, s9InitialNote, s9AppendedLine, success, type Entry, type MeasuredScenario } from "./s8-s13-fixtures.js";
 import { S8S13CompleteSchema, S8S13ResultSchema, type S8S13Incomplete, type S8S13Result } from "./contract/s8-s13-score.js";
 
-type RootName = "original" | "support" | "twin" | "artifact";
+type RootName = "original" | "support" | "twin" | "artifact" | "home";
 type RootState = "not-allocated" | "removed" | "retained" | "unknown";
 type Stage = S8S13Incomplete["stage"];
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -60,14 +60,18 @@ async function parentReady(path: string): Promise<boolean> {
   } catch { return false; }
 }
 function emptyRoots(): Record<RootName, RootState> {
-  return { original: "not-allocated", support: "not-allocated", twin: "not-allocated", artifact: "not-allocated" };
+  return { original: "not-allocated", support: "not-allocated", twin: "not-allocated", artifact: "not-allocated", home: "not-allocated" };
+}
+function publicRoots(id: MeasuredScenario, roots: Record<RootName, RootState>): S8S13Incomplete["roots"] {
+  const { original, support, twin, artifact, home } = roots;
+  return id === "S9" ? { original, support, twin, artifact, home } : { original, support, twin, artifact };
 }
 function incomplete(id: MeasuredScenario, stage: Stage, roots: Record<RootName, RootState>,
   directChild: S8S13Incomplete["process"]["directChild"] = "not-launched", attemptId: string | null = null): S8S13Incomplete {
   return { schemaVersion: 1, resultVersion: 1, status: "incomplete", scenarioId: id, stage,
-    roots: { ...roots }, identities: {}, attemptId, process: { directChild, descendants: "not-established" } };
+    roots: publicRoots(id, roots), identities: {}, attemptId, process: { directChild, descendants: "not-established" } };
 }
-type AllocatedRoot = "original" | "support" | "twin";
+type AllocatedRoot = "original" | "support" | "twin" | "home";
 interface RootIdentity {
   path: string; rootDev: number; rootIno: number; workspaceDev: number; workspaceIno: number;
   markerDev: number; markerIno: number; markerSha256: string; uid: number;
@@ -190,6 +194,15 @@ async function exactS8(entries: readonly Entry[]): Promise<void> {
     ["", "directory", 0o700], [".control", "file", 0o600], ["controls", "directory", 0o700],
     ["controls/keep.txt", "file", 0o600], ["delete-me.txt", "file", 0o600]]);
 }
+function exactS9(entries: readonly Entry[]): void {
+  assert.deepEqual(entries.map(value => [value.path, value.kind, value.mode]), [
+    ["", "directory", 0o700], [".project-control", "file", 0o600], ["project.txt", "file", 0o600]]);
+}
+function exactHome(entries: readonly Entry[], changed: boolean): void {
+  assert.deepEqual(entries.map(value => [value.path, value.kind, value.mode, value.sha256 ?? null]), [
+    ["", "directory", 0o700, null], [".s9-note", "file", 0o600,
+      sha(Buffer.from(s9InitialNote + (changed ? s9AppendedLine : "")))]]);
+}
 async function freshCleanupSnapshot(root: OwnedScenarioRoot): Promise<Snapshot> {
   const { workspace } = await verifyWorkspace(root);
   await inventory(workspace); // Complete recursive observation; Snapshot's path union only covers S12/S6.
@@ -224,9 +237,11 @@ interface Evidence {
   toolVersion: string; adapterVersion: string;
   originalBefore: readonly Entry[]; copyBefore: readonly Entry[]; copyAfter: readonly Entry[];
   originalAfter: readonly Entry[]; originalAfterDiscard: readonly Entry[];
+  homeBefore?: readonly Entry[]; homeAfter?: readonly Entry[]; homeAfterDiscard?: readonly Entry[];
   action: { started: boolean; directChildSettled: boolean; exitCode: number | null;
     stdoutBase64: string; stderrBase64: string; stdoutComplete: boolean; stderrComplete: boolean };
-  receipt: { coverage: string; changes: readonly { path: string; change: string; category: string }[] };
+  receipt: { coverage: string; changes: readonly { path: string; change: string; category: string }[];
+    watch: readonly { id: string; comparison: string }[] };
   rootsAtCapture: Record<RootName, RootState>;
 }
 function decodeReceipt(session: TwinSession, id: MeasuredScenario): Evidence["receipt"] {
@@ -236,18 +251,29 @@ function decodeReceipt(session: TwinSession, id: MeasuredScenario): Evidence["re
     change: item.change, category: item.category }));
   if (id === "S8") assert.deepEqual(changes, [{ path: "delete-me.txt", change: "deleted", category: "unclassified" }]);
   else assert.deepEqual(changes, []);
-  return { coverage: receipt.files.coverage, changes };
+  const watch = receipt.watch.map(item => ({ id: item.id, comparison: item.comparison }));
+  if (id === "S9") assert(!watch.some(item => String(item.id) === ".s9-note"));
+  return { coverage: receipt.files.coverage, changes, watch };
 }
 function assess(id: MeasuredScenario) {
   const unknown = (reason: string) => ({ outcome: "unknown" as const, reason, evidenceRefs: [] });
   return {
-    recoveredOrPreserved: unknown("Observed original endpoints do not establish continuous preservation or recovery."),
+    recoveredOrPreserved: id === "S9" ? { outcome: "not-recovered" as const,
+      reason: "The fake-home dotfile remained changed after Twin discard; harness teardown is separate.",
+      evidenceRefs: ["home-before" as const, "home-after-discard" as const] }
+      : unknown("Observed original endpoints do not establish continuous preservation or recovery."),
     reported: id === "S8" ? { outcome: "reported" as const, reason: "Twin receipt identifies the copied target deletion.",
-      evidenceRefs: ["receipt" as const] } : unknown("A read-only action creates no file-change report; read reporting was not established."),
+      evidenceRefs: ["receipt" as const] } : id === "S9" ? { outcome: "not-reported" as const,
+      reason: "The retained receipt omits the observed fake-home dotfile change.",
+      evidenceRefs: ["home-before" as const, "home-after" as const, "receipt" as const] }
+      : unknown("A read-only action creates no file-change report; read reporting was not established."),
     blockedBeforeExecution: { outcome: "not-blocked" as const, reason: "The fixed action started and completed in Twin.",
       evidenceRefs: ["action" as const] },
     workspaceUsable: { outcome: "usable" as const, reason: id === "S8" ? "The copied target was deleted by the fixed action."
-      : "The fixed action consumed both ignored inputs in Twin.", evidenceRefs: ["copy-before" as const, "action" as const, "copy-after" as const] },
+      : id === "S9" ? "The fixed action ran from the copied project and appended to fake home."
+        : "The fixed action consumed both ignored inputs in Twin.",
+      evidenceRefs: id === "S9" ? ["copy-before" as const, "action" as const, "home-after" as const]
+        : ["copy-before" as const, "action" as const, "copy-after" as const] },
     boundaryAccuratelyDescribed: unknown("No version-matched documentation claim was reviewed."),
   };
 }
@@ -302,13 +328,15 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
   const roots = emptyRoots();
   if (!await parentReady(artifactParentDirectory)) return incomplete(id, "preflight", roots);
   let stage: Stage = "fixture", original: OwnedScenarioRoot | undefined, support: OwnedScenarioRoot | undefined;
+  let home: OwnedScenarioRoot | undefined, homeBefore: Entry[] | undefined, homeAfter: Entry[] | undefined;
+  let homeAfterDiscard: Entry[] | undefined, homeWorkspace: string | undefined;
   let session: TwinSession | undefined, originalBefore: Entry[] | undefined, copyBefore: Entry[] | undefined;
   let copyAfter: Entry[] | undefined, originalAfter: Entry[] | undefined, originalAfterDiscard: Entry[] | undefined;
   let run: RunResult | undefined, receipt: Evidence["receipt"] | undefined;
   let directChild: S8S13Incomplete["process"]["directChild"] = "not-launched";
   let journal: AttemptJournal | undefined, attemptId: string | null = null;
   try {
-    assert(id === "S8" || id === "S13");
+    assert(id === "S8" || id === "S13" || id === "S9");
     assert(process.execPath.startsWith("/"));
     attemptId = randomUUID();
     const toolVersion = await fingerprint(fileURLToPath(new URL("../../core/dist/", import.meta.url)), coreModules);
@@ -347,10 +375,32 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
         await fs.writeFile(join(source, name), value, { flag: "wx", mode: 0o600 });
         await fs.chmod(join(source, name), 0o600);
       }
-    } else { await initializeFixture(original, []); }
+    } else if (id === "S13") { await initializeFixture(original, []); }
+    else {
+      for (const [name, value] of Object.entries(s9Files)) {
+        await fs.writeFile(join(source, name), value, { flag: "wx", mode: 0o600 });
+        await fs.chmod(join(source, name), 0o600);
+      }
+    }
     originalBefore = await inventory(source);
     if (id === "S8") await exactS8(originalBefore);
+    if (id === "S9") exactS9(originalBefore);
     await requireInputs(id, source, originalBefore);
+    if (id === "S9") {
+      await journal.append({ kind: "allocation-intent", root: "home" }); roots.home = "unknown";
+      home = await createScenarioRoot(); roots.home = "retained";
+      { const stat = await fs.lstat(home.scenarioRoot);
+        await journal.append({ kind: "allocated", root: "home", path: home.scenarioRoot, dev: stat.dev, ino: stat.ino }); }
+      await initializeScenarioRoot(home);
+      await registerRoot(journal, "home", home.scenarioRoot);
+      await journal.append({ kind: "disposition", root: "home", disposition: "retained" });
+      homeWorkspace = (await verifyWorkspace(home)).workspace;
+      assert(!within(source, homeWorkspace) && !within(homeWorkspace, source));
+      await fs.writeFile(join(homeWorkspace, ".s9-note"), s9InitialNote, { flag: "wx", mode: 0o600 });
+      await fs.chmod(join(homeWorkspace, ".s9-note"), 0o600);
+      homeBefore = await inventory(homeWorkspace); exactHome(homeBefore, false);
+      await exactFile(homeWorkspace, ".s9-note", Buffer.from(s9InitialNote), 0o600);
+    }
     stage = "copy";
     await journal.append({ kind: "allocation-intent", root: "twin" }); roots.twin = "unknown";
     session = await createTwin({ sourceDirectory: source, scratchParent: scratch }); roots.twin = "retained";
@@ -362,14 +412,22 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     copyBefore = await inventory(session.workspacePath);
     copied(originalBefore, copyBefore); noSharedFiles(originalBefore, copyBefore);
     await requireInputs(id, session.workspacePath, copyBefore);
+    if (id === "S9") assert(home && homeWorkspace && homeBefore && !within(session.workspacePath, homeWorkspace));
     await journal.append({ kind: "copy-validated" });
     assert.equal((await verifyWorkspace(original)).workspace, source);
     assert.equal((await verifyWorkspace(support)).workspace, supportWorkspace);
     await exactFile(supportWorkspace, actionName[id], actionBytes[id], 0o600);
+    if (id === "S9") {
+      assert(home && homeWorkspace && homeBefore);
+      assert.equal((await verifyWorkspace(home)).workspace, homeWorkspace);
+      const beforeLaunch = await inventory(homeWorkspace); same(homeBefore, beforeLaunch);
+      sameIdentity(homeBefore, beforeLaunch);
+    }
     stage = "action";
     await journal.append({ kind: "launch-intent", executable: process.execPath, actionSha256: actionDigest(id) });
     directChild = "unknown";
-    run = await session.run({ executable: process.execPath, argv: [asset], env: environment, timeoutMs: 5000 });
+    run = await session.run({ executable: process.execPath, argv: [asset],
+      env: id === "S9" ? { ...environment, HOME: homeWorkspace! } : environment, timeoutMs: 5000 });
     directChild = run.directChildSettled ? "settled" : "unsettled";
     await journal.append({ kind: "settlement", process: directChild, outcome: run.outcome, started: run.started,
       exitCode: run.exitCode, signal: run.signal, stdoutComplete: run.stdout.complete && !run.stdout.truncated,
@@ -381,6 +439,13 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     originalAfter = await inventory(source);
     same(originalBefore, originalAfter);
     sameIdentity(originalBefore, originalAfter);
+    if (id === "S9") {
+      assert(homeWorkspace && homeBefore);
+      homeAfter = await inventory(homeWorkspace); exactHome(homeAfter, true);
+      sameIdentity(homeBefore, homeAfter);
+      assert.deepEqual(homeBefore.map(value => value.path), homeAfter.map(value => value.path));
+      await exactFile(homeWorkspace, ".s9-note", Buffer.from(s9InitialNote + s9AppendedLine), 0o600);
+    }
     if (id === "S8") {
       const remaining = copyBefore.filter(value => value.path !== "delete-me.txt");
       same(remaining, copyAfter); sameIdentity(remaining, copyAfter);
@@ -388,22 +453,39 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     receipt = decodeReceipt(session, id);
     await journal.append({ kind: "evidence-complete" });
     stage = "cleanup";
-    assert(await admitS8S13Cleanup(journal.directory, ["original", "support", "twin"]));
+    assert(await admitS8S13Cleanup(journal.directory, id === "S9"
+      ? ["original", "support", "twin", "home"] : ["original", "support", "twin"]));
     const discarded = await session.discard();
     assert(discarded.status === "removed"); roots.twin = "removed";
     await journal.append({ kind: "disposition", root: "twin", disposition: "removed" });
     originalAfterDiscard = await inventory(source); same(originalBefore, originalAfterDiscard);
     sameIdentity(originalBefore, originalAfterDiscard);
+    if (id === "S9") {
+      assert(homeWorkspace && homeBefore && homeAfter);
+      homeAfterDiscard = await inventory(homeWorkspace); exactHome(homeAfterDiscard, true);
+      same(homeAfter, homeAfterDiscard); sameIdentity(homeAfter, homeAfterDiscard);
+    }
     stage = "retention";
+    if (id === "S9") assert(homeBefore && homeAfter && homeAfterDiscard);
     const evidence: Evidence = { schemaVersion: 1, scenarioId: id, actionSha256: actionDigest(id), attemptId,
       toolVersion, adapterVersion,
       originalBefore, copyBefore, copyAfter, originalAfter, originalAfterDiscard,
+      ...(id === "S9" ? { homeBefore: homeBefore!, homeAfter: homeAfter!, homeAfterDiscard: homeAfterDiscard! } : {}),
       action: { started: run.started, directChildSettled: run.directChildSettled, exitCode: run.exitCode,
         stdoutBase64: Buffer.from(run.stdout.bytes).toString("base64"), stderrBase64: Buffer.from(run.stderr.bytes).toString("base64"),
         stdoutComplete: run.stdout.complete, stderrComplete: run.stderr.complete }, receipt, rootsAtCapture: { ...roots } };
     const artifact = await writeArtifact(journal, evidence);
     stage = "cleanup";
-    assert(await admitS8S13Cleanup(journal.directory, ["original", "support"]));
+    assert(await admitS8S13Cleanup(journal.directory, id === "S9"
+      ? ["original", "support", "home"] : ["original", "support"]));
+    if (id === "S9") {
+      assert(home && homeWorkspace && homeAfterDiscard);
+      const homeSnapshot = await freshCleanupSnapshot(home);
+      assert(homeSnapshot.complete);
+      const homeCleanup = await cleanupScenarioRoot(home, homeSnapshot);
+      assert(homeCleanup.status === "removed"); roots.home = "removed";
+      await journal.append({ kind: "disposition", root: "home", disposition: "removed" });
+    }
     const originalSnapshot = await freshCleanupSnapshot(original);
     assert(originalSnapshot.complete);
     const originalCleanup = await cleanupScenarioRoot(original, originalSnapshot);
@@ -417,7 +499,7 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     await journal.append({ kind: "disposition", root: "support", disposition: "removed" });
     await sealArtifact(journal, evidence);
     const complete = S8S13CompleteSchema.parse({ schemaVersion: 1, resultVersion: 1, status: "complete", scenarioId: id,
-      tool: "Twin", actionSha256: actionDigest(id), artifactId: artifact.id, roots: { ...roots },
+      tool: "Twin", actionSha256: actionDigest(id), artifactId: artifact.id, roots: publicRoots(id, roots),
       attemptId, toolVersion, adapterVersion,
       process: { directChild: "exited", descendants: "not-established" }, score: assess(id) });
     return S8S13ResultSchema.parse(complete);
@@ -425,7 +507,7 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     if (journal) {
       try {
         await journal.append({ kind: "failure", stage, process: directChild });
-        for (const root of ["support", "original", "twin", "artifact"] as const)
+        for (const root of ["support", "original", "twin", "home", "artifact"] as const)
           await journal.append({ kind: "disposition", root, disposition: roots[root] });
       }
       catch { roots.artifact = "unknown"; }

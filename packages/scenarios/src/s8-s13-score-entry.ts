@@ -12,10 +12,11 @@ async function line(value: S8S13Result): Promise<void> {
   }
 }
 export async function main(args: readonly string[]): Promise<number> {
-  const id = args[0] === "S8" || args[0] === "S13" ? args[0] : "S8";
+  const id = args[0] === "S8" || args[0] === "S13" || args[0] === "S9" ? args[0] : "S8";
   let value: S8S13Result;
   if (args.length !== 2 || args[0] !== id) value = { schemaVersion: 1, resultVersion: 1, status: "incomplete", scenarioId: id,
-    stage: "preflight", roots: { original: "not-allocated", support: "not-allocated", twin: "not-allocated", artifact: "not-allocated" }, identities: {}, attemptId: null,
+    stage: "preflight", roots: { original: "not-allocated", support: "not-allocated", twin: "not-allocated", artifact: "not-allocated",
+      ...(id === "S9" ? { home: "not-allocated" as const } : {}) }, identities: {}, attemptId: null,
     process: { directChild: "not-launched", descendants: "not-established" } };
   else value = await produceS8S13Score(id, args[1]!);
   try { await line(value); } catch { return 1; }

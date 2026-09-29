@@ -2121,3 +2121,39 @@ scenario build, whitespace check, exact 11-file scope and lockfile comparison
 passed. No new unresolved scenario root was observed. The remaining unknowns
 are the A1–A3 historical settlement and ownership record, and any allocation
 that fails before a handle can be durably registered in a future attempt.
+
+## Tier C A1–A3 disposable-root cleanup and retained Twin S9 score
+
+The six known A1–A3 roots were `/tmp/twin-scenario-edmGcp`,
+`/tmp/twin-scenario-hOTpVi`, `/tmp/twin-scenario-qHnZvj`,
+`/tmp/twin-scenario-cON5yK`, `/tmp/twin-scenario-ldD7iW`, and
+`/tmp/twin-scenario-w2Tber`. Their scenario markers, ownership, modes,
+fixture contents and three nested Twin markers matched the retained S8/S13
+attempts. A current `/proc` cwd, executable and open-descriptor check found no
+process using them. All six roots and their three nested Twin allocations were
+removed. This manual Tier C cleanup does not infer earlier process settlement
+or change the historical A1–A3 attempt scores.
+
+The retained S9 producer reuses the S8/S13 attempt journal, owned fixture
+roots, explicit Twin session and private digest-checked artifact. It pins the
+committed S9 proof action bytes, creates a separate registered fake-home root,
+passes only that workspace as the action's `HOME`, and records its dotfile
+before action, after action and after Twin discard. The copied project and
+original stay unchanged at observed endpoints. The fake-home dotfile remains
+changed after discard and Twin's retained receipt contains no `.s9-note`
+report. The five outcomes are `not-recovered`, `not-reported`, `not-blocked`,
+`usable`, `unknown`; the historical identical-file condition fails. Fake-home
+teardown follows evidence capture and is not scored as recovery.
+
+The focused Tier A review compared the production action bytes with the
+committed proof action, checked fake-home isolation and prelaunch file
+identity, action settlement and exact output, independent artifact digests,
+the receipt omission, post-discard file identity and cleanup ordering. It
+found no unsupported known outcome. The host S9 gate passed **1 file / 3
+tests**; the host S8/S13 regression gate passed **2 files / 10 tests**.
+Scenario production and test TypeScript checks, the scenario build, scope and
+whitespace checks passed. The first sandboxed S9 attempts had the documented
+empty child-stdout limitation; their three test-owned sets of roots and
+artifact parents were subsequently checked and removed. No new retained
+test root remains. Retained artifacts establish local integrity, not
+authenticated provenance or continuous preservation.
