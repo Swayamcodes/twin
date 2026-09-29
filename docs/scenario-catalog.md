@@ -44,7 +44,7 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 
 | ID | Current implementation |
 | --- | --- |
-| S1 | Unimplemented |
+| S1 | Fixed-action CLI comparison on the existing Git fixture: a Node action deletes only tracked `notes.txt` in Twin's copy and in a separate direct-action fixture. The direct fixture loses the file; Twin's original retains the same bytes at observed endpoints, and its CLI receipt lists one tracked deletion. No five-field score, continuous-preservation proof or general `rm` adapter is established. |
 | S2 | Unimplemented |
 | S3 | Unimplemented |
 | S4 | Unimplemented |

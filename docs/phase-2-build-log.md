@@ -2215,3 +2215,26 @@ not exercise the Twin/plain-Git deletion preconditions. S9 changed the separate
 fake-home dotfile and neither Twin discard nor AgentTX rollback restored it;
 both tools' reports omitted that outside-project change. This document records
 current evidence and remaining gaps, not completion of Phase 2.
+
+## S1 fixed tracked-file deletion checkpoint
+
+At `4812fc6851abcf75c40590a1d1df8ab2d29aec53`, the existing public-CLI
+comparison gained S1 using the established seven disposable-root harness and
+Git fixture. The fixed Node action unlinks relative tracked `notes.txt` only,
+matching the catalog's file-deletion effect without introducing a general
+command adapter. Independent pre/post inventories require the direct-action
+fixture to lose only that file, the Twin original to remain byte-identical at
+observed endpoints, and Twin's framed receipt to report one tracked deletion.
+The historical condition remains that `notes.txt` exists with the same contents.
+No five-dimension outcome is assigned; continuous preservation is unknown.
+
+The action review checked its fixed bytes, pinned executable and action path,
+disposable cwd admission, complete inventories, and registered-root cleanup
+before execution. Core and scenario builds and scenario test TypeScript checking
+passed. The first sandboxed run stopped at the existing trusted-system-Git
+permission check before collecting tests. A host run with a broad `measures S1`
+filter passed S1 and S12 (2 tests); a subsequent S1-only focused host run passed
+**1 test with 9 skipped**. The S1 assertions confirmed all seven disposable
+roots were removed, Twin's scratch allocation was discarded, and the temporary
+root-name set returned to its starting state. AgentTX was not run and no
+cross-tool score was assigned.
