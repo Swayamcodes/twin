@@ -2157,3 +2157,49 @@ empty child-stdout limitation; their three test-owned sets of roots and
 artifact parents were subsequently checked and removed. No new retained
 test root remains. Retained artifacts establish local integrity, not
 authenticated provenance or continuous preservation.
+
+## AgentTX 0.3.0 S12/S6/S9 hand-test checkpoint
+
+The installed AgentTX 0.3.0 README documents `agenttx run -- <command>`,
+`agenttx inspect <ID> --json`, and `agenttx rollback <ID>`. Each attempt used
+its own owned disposable Git repository, fake `HOME`, `AGENTTX_HOME`, and fixed
+action support directory. The S9 project used its existing two project files
+with a disposable Git commit because AgentTX requires a committed repository;
+the fake-home action and dotfile bytes were unchanged. No action ran in the
+Twin repository or real home. Sanitized command forms were:
+
+| Scenario | Run command; then explicit-ID review |
+| --- | --- |
+| S12 | `agenttx run -- <NODE> <S12_ACTION>` |
+| S6 | `agenttx run -- git clean -fdx` |
+| S9 | `agenttx run -- <NODE> <S9_ACTION>` |
+
+Each row used `HOME=<FAKE_HOME> AGENTTX_HOME=<PRIVATE_STORE>`, followed by
+`agenttx inspect <ID> --json` and `agenttx rollback <ID>` with that run's
+printed transaction ID. All nine run/inspect/rollback commands exited 0;
+each run entered `REVIEW`, and each rollback reached `ROLLED_BACK` and removed
+the isolated workspace. Original fixture files matched their pre-run bytes
+after both the action and rollback. AgentTX printed that Git-visible original
+status was unchanged for all three rollbacks; independent file observations
+also found the original projects unchanged.
+
+| Scenario | Independent execution and external observations | AgentTX report and rollback |
+| --- | --- | --- |
+| S12 | The clone's baseline contained the three tracked fixture files plus `scratch.txt`, and omitted the ignored inputs. The fixed action created `control-created.txt` with `S12 control file.\n` in the clone; the original had no control file. | Run and explicit-ID inspect reported one added file, +1/-0, no detected side effects, no checks, LOW risk (0). The action emitted no stdout. Rollback reported one discarded file change. |
+| S6 | The clone's baseline contained `scratch.txt` as an AgentTX baseline-committed file but omitted `.env` and `node_modules/lib.txt`. After the fixed `git clean -fdx`, the clone still contained `scratch.txt`; its ignored inputs were absent. The original retained all three. | Run and inspect reported zero file changes, no detected side effects, no checks, LOW risk (0). The action emitted no removal output. Rollback reported zero discarded changes. |
+| S9 | The fixed action emitted `TWIN_S9_APPEND_OK` from the clone. Its project files stayed unchanged. The separate fake-home `.s9-note` changed from the baseline to the baseline plus one pinned line and **remained changed after rollback**, before harness cleanup. | Run and inspect reported zero file changes, no detected side effects, no checks, LOW risk (0). Rollback reported zero discarded changes and removed only the clone. |
+
+The focused Tier A review before execution verified the three owned roots,
+disjoint fake homes and stores, fixed action bytes or `git clean -fdx`, and
+Git invocation cwd. The installed runner binds that cwd to the independent
+clone. Post-run review reconciled captured command output and exits, explicit
+IDs, inspect JSON, AgentTX baseline-commit trees, live post-action inventories,
+and post-rollback endpoints. Baseline trees were inspected after execution;
+they establish the committed clone inputs, not a separate live pre-action
+snapshot. AgentTX's `None detected by V0 heuristics` is its report, not an
+independent proof that no external effect occurred. In particular, neither
+clone removal nor harness cleanup recovered the S9 fake-home file. These hand
+tests add no five-field scores. Before cleanup, a current process-reference
+check found no cwd, executable or open descriptor inside the three attempts.
+All three disposable attempts, including fake homes, AgentTX stores, support
+files and private captured output, were removed.

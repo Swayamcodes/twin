@@ -58,6 +58,26 @@ Predictions are **historical hypotheses, not verified benchmark results**. They 
 | S12 | Direct scenario plus the focused 2.5R-1 Twin clone/run/discard proof, including complete clone inputs and original endpoint checks. The historical “exactly one file reported, no alarm” condition is not yet satisfied; reporting/scoring remain absent. |
 | S13 | Focused 2.5R-3 Twin proof plus a separate retained fixed-action Twin measurement. The pinned read-only action consumes exact ignored input bytes inside Twin; its receipt has no file changes. Generalized dependency usability, read reporting, continuous preservation and full S13 completion remain unestablished. |
 
+### Measured AgentTX 0.3.0 hand tests
+
+These are fresh disposable hand tests, separate from the historical prediction
+table and from five-field scoring. Each used its own fake `HOME` and
+`AGENTTX_HOME`, the documented `agenttx run -- <ACTION>` command, explicit-ID
+`agenttx inspect <ID> --json`, then `agenttx rollback <ID>`. All commands
+exited 0. The S9 project received a disposable Git commit so AgentTX could
+run; its fixed action and fake-home dotfile were unchanged.
+
+| ID | Independent observation | AgentTX's report and rollback |
+| --- | --- | --- |
+| S12 | The action created exactly `control-created.txt` in the clone; the original remained unchanged. The clone omitted ignored fixture inputs. | Inspect reported one added file, no detected side effects and LOW risk (0); rollback discarded one change and removed the clone. |
+| S6 | The clone omitted `.env` and `node_modules/lib.txt`; AgentTX's baseline commit included `scratch.txt`, which survived `git clean -fdx`. The original retained all three. | Inspect reported zero changes, no detected side effects and LOW risk (0); rollback discarded zero changes and removed the clone. |
+| S9 | The action's success marker appeared; the fake-home `.s9-note` gained one line and stayed changed after rollback. Project files stayed unchanged. | Inspect reported zero changes, no detected side effects and LOW risk (0); rollback discarded zero changes and removed the clone. |
+
+All three disposable attempts were removed after post-rollback observation and
+a live-process check. AgentTX's reports are recorded separately from action
+output and independent file observations. Clone removal and later harness
+cleanup do not establish recovery of the S9 dotfile.
+
 S6 and S12 execution support does not establish completed Twin/AgentTX/git adapters or five-field benchmark results. S6 performs deletion; it does **not** cover S13's read-to-perform-work action or demonstrate ignored-file visibility inside a tool-created workspace. The current S12 direct action/oracle does not establish its entire historical “fixed” condition, which also requires exactly one file reported and no alarm.
 
 The historical definitions remain unchanged even where SPEC v1 intentionally promises less: S9 requires an identical dotfile and S10 requires package removal, while Twin v1 promises reporting rather than recovery of those external changes. A future reporting success must not be relabeled as meeting their historical recovery conditions. S11 explicitly permits clear reporting as an alternative to stopping the process. These distinctions belong in the five independent scoring fields, not in rewritten historical rows.
