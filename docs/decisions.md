@@ -150,3 +150,9 @@ I learned that scoring a destructive action needs an independent retained refere
 Status: `pending commit`.
 
 I learned that a combined result can preserve the two measured scores and their public retention links by strictly validating saved producer outputs before projecting them. Keeping execution outside the combiner makes its boundary reproducible and leaves provenance authentication as an explicit limit.
+
+## 2.6R-4 — current Twin S12/S6 Markdown report
+
+Status: `pending commit`.
+
+I learned that a human-readable report needs a stricter claim boundary than its JSON carrier: fixed ordering and closed outcome/reason pairs keep unreviewed fields from becoming prose. A read-only renderer can show current Twin evidence while explicitly leaving the wider tool comparison unfinished.

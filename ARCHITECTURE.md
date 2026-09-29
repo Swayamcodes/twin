@@ -616,3 +616,15 @@ version fields, status, and a closed reason code. No producer, root allocation,
 artifact reopening, cleanup, or child process belongs to this Tier B boundary.
 The saved input files and their public retained labels are not authenticated
 provenance; the combiner cannot establish that artifacts still exist.
+
+## 2.6R-4 — current Twin-only S12/S6 Markdown reader
+
+The standalone Markdown entry opens one existing combined JSON file with
+`O_NOFOLLOW`, checks a regular-file descriptor and an 8 MiB limit, decodes fatal
+UTF-8, and requires a single object with one final LF. The pure renderer strictly
+parses the committed combined schema, requires complete status and the current
+closed S12/S6 outcome/reason pairs, then emits fixed sections in SPEC order.
+Only public sanitized tool/adapter identities enter the output. Validation and
+rendering finish before stdout is written; failures produce a closed stderr code.
+This reader invokes no producer, process, root allocation or cleanup. The report
+is current Twin-only evidence, not the final AgentTX/plain-Git comparison report.

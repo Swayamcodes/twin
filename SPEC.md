@@ -115,3 +115,13 @@ and attempt identities, tool and adapter identities, and unchanged five-dimensio
 Invalid or incomplete inputs yield one closed, identity-free incomplete line and
 a nonzero exit. The combiner does not run either producer or authenticate saved
 results or retained artifacts. Plain Git receives no five-dimension score here.
+
+## Current Twin S12/S6 Markdown report
+
+The Tier B Markdown entry reads one existing combined-result JSON file through a
+bounded, no-follow regular-file descriptor. It accepts only a complete version-1
+combined object followed by one LF, and renders the current Twin S12/S6 outcomes
+and their closed reasons in the five-dimension order above. Fixed limitations and
+sanitized public tool/adapter identities are included. This is not the final
+AgentTX/plain-Git comparison report. It performs no producer work or cleanup and
+does not authenticate the saved file or retained artifacts.
