@@ -2238,3 +2238,23 @@ filter passed S1 and S12 (2 tests); a subsequent S1-only focused host run passed
 roots were removed, Twin's scratch allocation was discarded, and the temporary
 root-name set returned to its starting state. AgentTX was not run and no
 cross-tool score was assigned.
+
+## S2 fixed untracked-file deletion checkpoint
+
+At `d64100f6149b54b12545b9e84dc4cf81cb8d0f14`, the existing public-CLI
+comparison gained S2 using the established disposable Git fixture and seven-root
+lifecycle. The fixed Node action unlinks relative `scratch.txt` only, matching
+the catalog's deletion effect. The direct-action fixture loses that file and
+otherwise matches its before inventory; Twin's original retains the same bytes
+at observed endpoints, and its framed CLI receipt lists one untracked deletion.
+The historical condition remains that `scratch.txt` exists with the same
+contents. Continuous preservation is unestablished, and no five-dimension
+score is assigned.
+
+The pre-action review checked fixed action bytes, command/cwd admission,
+original and direct before/after inventories, receipt assertions, and registered
+cleanup. Core and scenario builds and scenario test TypeScript checking passed.
+The S2-only host run passed **1 test with 10 skipped**. Its cleanup assertions
+confirmed all seven disposable roots were removed, Twin's scratch allocation
+was discarded, and the temporary root-name set returned to its starting state.
+No AgentTX action or scoring adapter ran.
