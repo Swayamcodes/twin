@@ -537,11 +537,13 @@ not contain descendants that create a new session. The marker lives outside the
 command workspace;
 cleanup never traverses symlinks and refuses missing or replaced authority.
 
-This early slice does not implement the planned reflink, manifest/diff, receipt,
-apply, watch-list or complete descendant-process responsibilities above. It does not
-integrate or change the frozen scenario/evidence contracts. A clone is not an OS
-sandbox. See [minimal core](docs/phase-3-minimal-core.md) for the public lifecycle,
-exact symlink/Git boundaries, timeout limits and focused verification history.
+The initial Phase 3.0 slice has since gained a bounded file manifest, a minimal
+file/watch receipt, and a public CLI with captured and inherited stdio. Apply,
+reflink/CoW, full dependency and process reporting, and complete descendant
+discovery remain open. It does not change the frozen scenario/evidence contracts.
+A clone is not an OS sandbox. See [minimal core](docs/phase-3-minimal-core.md) for
+the public lifecycle, exact symlink/Git boundaries, execution limits and current
+acceptance status.
 
 ## 2.6R-1 — first retained Twin S12 score
 

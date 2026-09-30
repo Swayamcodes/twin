@@ -93,7 +93,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         await write(process.stdout, result.stdout.bytes);
         await write(process.stderr, result.stderr.bytes);
       }
-      exitCode = !interruption.signal.aborted && result.exitCode === 0 ? 0 : 1;
+      exitCode = !interruption.signal.aborted && result.outcome === "exited" && result.started
+        && result.directChildSettled && !result.lifecycleIssue && result.exitCode === 0
+        && result.signal === null && result.spawnError === null && result.terminationError === null ? 0 : 1;
     } catch (error) {
       await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
     } finally {

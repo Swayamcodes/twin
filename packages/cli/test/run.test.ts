@@ -24,10 +24,11 @@ function mockWrite(...args: unknown[]): boolean {
 
 function result(exitCode: number): RunResult {
   return {
-    exitCode,
-    stdout: { bytes: output.encode("from stdout") },
-    stderr: { bytes: output.encode("from stderr") },
-  } as RunResult;
+    schemaVersion: 1, outcome: "exited", started: true, directChildSettled: true,
+    exitCode, signal: null, spawnError: null, terminationError: null,
+    stdout: { bytes: output.encode("from stdout"), complete: true, truncated: false, error: null },
+    stderr: { bytes: output.encode("from stderr"), complete: true, truncated: false, error: null },
+  };
 }
 
 beforeEach(() => {
@@ -48,8 +49,8 @@ describe("twin run", () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: "node", argv: ["-e", "console.log(1)"] }));
     expect(inspect).toHaveBeenCalledOnce();
     expect(discard).toHaveBeenCalledOnce();
-    expect(run.mock.invocationCallOrder[0]).toBeLessThan(inspect.mock.invocationCallOrder[0]);
-    expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(discard.mock.invocationCallOrder[0]);
+    expect(run.mock.invocationCallOrder[0]!).toBeLessThan(inspect.mock.invocationCallOrder[0]!);
+    expect(inspect.mock.invocationCallOrder[0]!).toBeLessThan(discard.mock.invocationCallOrder[0]!);
     expect(process.stdout.write).toHaveBeenCalledWith(output.encode("from stdout"), expect.any(Function));
     expect(process.stderr.write).toHaveBeenCalledWith(output.encode("from stderr"), expect.any(Function));
   });
@@ -57,7 +58,7 @@ describe("twin run", () => {
   it("preserves every argument token after the separator", async () => {
     const args = ["--flag", "two words", "", "'quoted'", "--", "λ"];
     expect(await main(["run", "--", "tool", ...args])).toBe(0);
-    expect(run.mock.calls[0][0].argv).toEqual(args);
+    expect(run.mock.calls[0]![0].argv).toEqual(args);
   });
 
   it("selects inherited stdio without replaying captured bytes", async () => {
@@ -77,7 +78,7 @@ describe("twin run", () => {
     const beforeTerm = process.listeners("SIGTERM");
     const running = main(["run", "--", "tool"]);
     await vi.waitFor(() => expect(createTwin).toHaveBeenCalledOnce());
-    const listener = process.listeners(requested).at(-1);
+    const listener = process.listeners(requested).at(-1) as (() => void) | undefined;
     expect(listener).toBeDefined();
     listener!();
     listener!();
@@ -106,6 +107,17 @@ describe("twin run", () => {
     expect(discard).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { outcome: "timed-out" as const },
+    { lifecycleIssue: "process group present" },
+    { terminationError: "Could not deliver SIGTERM" },
+  ])("returns nonzero for incomplete execution despite child exit zero: %j", async difference => {
+    run.mockResolvedValue({ ...result(0), ...difference });
+    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(inspect).toHaveBeenCalledOnce();
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
   it("attempts discard when the command throws", async () => {
     run.mockRejectedValue(new Error("command failed"));
     expect(await main(["run", "--", "tool"])).toBe(1);
@@ -122,13 +134,13 @@ describe("twin run", () => {
     expect(bytes.subarray(commandBytes.length)).toEqual(Buffer.concat([
       Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"), payload, Buffer.from("\n"),
     ]));
-    expect(vi.mocked(process.stderr.write).mock.invocationCallOrder[1]).toBeLessThan(discard.mock.invocationCallOrder[0]);
+    expect(vi.mocked(process.stderr.write).mock.invocationCallOrder[1]!).toBeLessThan(discard.mock.invocationCallOrder[0]!);
   });
 
   it("treats refused discard as failure", async () => {
     discard.mockResolvedValue({ status: "refused", reason: "guard" });
     expect(await main(["run", "--", "tool"])).toBe(1);
-    expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(discard.mock.invocationCallOrder[0]);
+    expect(inspect.mock.invocationCallOrder[0]!).toBeLessThan(discard.mock.invocationCallOrder[0]!);
     expect(process.stderr.write).toHaveBeenCalledWith("Twin discard refused: guard\n", expect.any(Function));
   });
 

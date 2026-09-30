@@ -1,8 +1,10 @@
-# Early Phase 3.0 — minimal Twin core
+# Phase 3 execution — core and CLI
 
-`@twin-cli/core` now provides a dependency-free copy/run/inspect/discard session.
-This is an early slice, not completion of Phase 3 or evidence of scenario scores.
-Existing scenario, contract, capture, CLI and adapter infrastructure is frozen.
+`@twin-cli/core` provides a dependency-free copy/run/inspect/discard session.
+The execution and cleanup boundary below also applies to the public `twin run`
+CLI. The historical Phase 3.0 verification notes are retained below; the current
+project-plan checkpoint decision is at the end of this guide. This is not evidence
+of scenario scores.
 
 ## API and lifecycle
 
@@ -141,12 +143,12 @@ The CLI listens for SIGINT and SIGTERM from before copy creation through receipt
 and cleanup. A signal before command launch prevents the run; the CLI waits for
 copy creation to finish, then discards through the ordinary session rules. During
 execution, the first signal is sent to the command's process group. Repeated caller
-signals
-are ignored while settlement proceeds. If group members remain after one
+signals are ignored while settlement proceeds. If group members remain after one
 second, the existing termination path sends SIGKILL and waits up to five more
 seconds for observed exit. A previously started timeout keeps its own termination
 sequence. Signal listeners are removed after CLI cleanup. The CLI returns nonzero
-for an interrupted run even if the child handles the signal and exits zero.
+for an interrupted or timed-out run even if the child handles the signal and
+exits zero. A lifecycle issue or reported termination error is also nonzero.
 Receipt creation and discard use the same lifecycle checks as an ordinary run.
 Group signaling reaches ordinary descendants that stay in the group, including
 writers holding captured pipes open. A descendant can escape with `setsid` or
@@ -154,8 +156,8 @@ similar calls; group absence cannot prove such a process stopped. An escaped
 process retaining a captured pipe makes capture incomplete and cleanup refuse,
 but one that closes its pipes may remain unseen. Process-group ID reuse and
 concurrent process mutation remain limits of a process-group check. This is not
-OS containment; broader descendant discovery and integration acceptance remain
-outstanding, so Phase 3 is not complete.
+OS containment; broader descendant discovery remains a documented limitation
+of this execution checkpoint.
 
 Result finalization clears bounded timers and removes handlers after verified
 settlement. Unsettled runs retain the necessary late exit/close handlers and an
@@ -230,7 +232,7 @@ lists and final fixture registries were empty. Affected tests and shared command
 helpers were inspected before Vitest; only the focused core suite ran. Earlier
 verification counts above remain historical records.
 
-## Deferrals
+## Historical Phase 3.0 deferrals
 
 No diff, receipt, apply/merge, reflink/CoW, outside-project monitoring/recovery,
 dependency analysis, cancellation API, complete descendant discovery and acceptance,
@@ -238,6 +240,10 @@ AgentTX integration, CLI integration, scoring, normalized evidence, attempt
 protocol, retention/archive or A/B readiness integration. Crashes can leave roots;
 automatic scavenging is deferred. Absolute paths and command behavior can modify
 originals or other external state: a copy is not an OS sandbox.
+
+The list above records what was absent at the original Phase 3.0 checkpoint.
+The current minimal receipt, watch observations and CLI are described above;
+remaining gaps are identified below.
 
 ## Final Phase 3.0 verification
 
@@ -253,3 +259,39 @@ execution occurred. The core remains an early Phase 3.0 clone/run/inspect/discar
 slice, not an OS sandbox or completion of Phase 3. Existing verification history
 and limitations above remain applicable. These results are supplied history;
 no tests were rerun for this documentation update.
+
+## Planned Phase 3 core/CLI execution checkpoint — 2026-09-30
+
+This is the project-plan boundary for core/CLI execution, not a Phase 3
+acceptance checklist quoted from `SPEC.md`. The specification lists overall v1
+features without assigning them to Phase 3. The checks below cover the planned
+clone/run/inspect/discard and CLI execution work, including its documented
+stdio, signal, lifecycle, receipt-timing and cleanup boundaries.
+
+| Requirement | Implementation and test evidence | Result |
+| --- | --- | --- |
+| Clone a full ordinary directory, including ignored files, and support non-Git input | `createTwin` copies independent file bytes; core copy and session tests exercise Git and non-Git fixtures, mode preservation, rejection and source integrity. | Passed |
+| Run one admitted command in the copy and inspect before discard | Core snapshot/validation, launch and session tests cover argv, cwd, explicit environment, startup errors, one-attempt locking and synchronous `inspect`. CLI tests cover the public `run --` admission boundary. | Passed |
+| Capture bounded stdout/stderr and direct-child disposition | Core runner tests cover complete, truncated, binary, spawn-failed and timed-out results. CLI captured mode replays bounded bytes before its receipt. | Passed |
+| Deliver stdin and live output in interactive mode | `run --interactive --` inherits all three descriptors. The live CLI test observes output before exit and delivers stdin; a bounded Linux PTY-backed terminal smoke observed terminal input, live output and a receipt. Twin itself does not allocate a PTY. | Passed for inherited descriptors |
+| Forward SIGINT/SIGTERM, including startup and repeated signals | Core and live CLI tests cover both signals in captured and inherited modes, startup interruption, an uncooperative child, listener removal and nonzero interrupted exit. | Passed |
+| Bound timeout, escalation, ordinary descendants and inherited pipes | Core runner tests cover direct-child timeout, SIGKILL escalation, surviving ordinary descendants, open captured pipes and bounded shutdown. Group absence plus direct exit and pipe closure gate settlement. CLI now returns nonzero for a timed-out child even if that child exits zero. | Passed within the process-group boundary |
+| Generate the receipt after settlement observations and before cleanup | Core receipt tests cover post-run file/watch observations and unavailable evidence. CLI tests check stderr frame bytes and ordering before discard. | Passed for the minimal receipt |
+| Refuse cleanup without verified settlement or root authority | Core tests cover group/pipe uncertainty, late settlement and guarded discard; CLI tests cover refused discard. Live test actions are checked stopped before fixture removal. | Passed within the documented authority checks |
+| State supported-platform and process limits accurately | POSIX UID and private root checks reject native Windows. `detached:true` and negative-PID signaling are used for ordinary process groups. Tests ran on Linux; macOS was not exercised here. Escaped descendants and process-group ID reuse remain limits. | Passed as a documented boundary |
+
+**Decision:** the planned Phase 3 core/CLI execution checkpoint is **ready to
+close** on the verified evidence above. This does not complete all v1 features.
+Expanded receipt work belongs to Phase 4; apply and agent compatibility belong
+to Phase 5. Copy optimization remains future v1 work without a Phase 3
+assignment in `SPEC.md`. This checkpoint does not claim a process containment
+layer, termination of descendants that escape the group, Twin-allocated PTY
+support, or macOS test coverage.
+
+Verification for this checkpoint: core execution/copy/discard/session suite
+111/111; standalone receipt suite 32/32; CLI suite 24/24, including live
+stdin/output and signal cases. Strict production and test TypeScript checks and
+core/CLI builds passed. The bounded real-terminal smoke passed on Linux. All
+core fixture reports showed empty before/after root sets, empty remaining Twin
+allocations and empty fixture registries; live CLI tests verified their action
+PIDs stopped before fixture removal. No retained root was reported.
