@@ -70,6 +70,26 @@ describe("twin run", () => {
     expect(Buffer.concat(stderrChunks).toString()).toContain("TWIN-RECEIPT/1");
   });
 
+  it.each(["SIGINT", "SIGTERM"] as const)("handles %s during startup and restores listeners", async requested => {
+    let finishCreate!: (session: TwinSession) => void;
+    vi.mocked(createTwin).mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve; }));
+    const beforeInt = process.listeners("SIGINT");
+    const beforeTerm = process.listeners("SIGTERM");
+    const running = main(["run", "--", "tool"]);
+    await vi.waitFor(() => expect(createTwin).toHaveBeenCalledOnce());
+    const listener = process.listeners(requested).at(-1);
+    expect(listener).toBeDefined();
+    listener!();
+    listener!();
+    finishCreate({ run, inspect, discard } as unknown as TwinSession);
+    expect(await running).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(inspect).toHaveBeenCalledOnce();
+    expect(discard).toHaveBeenCalledOnce();
+    expect(process.listeners("SIGINT")).toEqual(beforeInt);
+    expect(process.listeners("SIGTERM")).toEqual(beforeTerm);
+  });
+
   it.each([["run"], ["run", "--"], ["run", "tool"], ["run", "--", ""]])(
     "rejects missing or malformed command usage: %j",
     async (...args: string[]) => {

@@ -13,27 +13,30 @@ export function validateRunOptions(options: RunOptions): RunOptions {
       const inputEnv = options.env;
       const timeoutMs = options.timeoutMs ?? 60000;
       const stdio = options.stdio;
+      const interruptSignal = options.interruptSignal;
       if (!Array.isArray(inputArgv) || !inputEnv || typeof inputEnv !== "object" || Array.isArray(inputEnv)) {
         throw new Error("Expected argv array and environment object");
       }
       const argv: unknown[] = [...inputArgv];
       const entries: [string, unknown][] = Object.entries(inputEnv);
-      return { executable, argv, entries, timeoutMs, stdio };
+      return { executable, argv, entries, timeoutMs, stdio, interruptSignal };
     } catch (error: unknown) {
       throw new Error("Cannot snapshot command options", { cause: error });
     }
   })();
-  const { executable, argv, entries, timeoutMs, stdio } = snapshot;
+  const { executable, argv, entries, timeoutMs, stdio, interruptSignal } = snapshot;
   if (typeof executable !== "string" || !isAbsolute(executable) || executable.includes("\0")) throw new Error("Invalid command options");
   if (!argv.every((arg): arg is string => typeof arg === "string" && !arg.includes("\0"))) throw new Error("Invalid command arguments");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000) throw new Error("Invalid timeout");
   if (stdio !== undefined && stdio !== "inherit") throw new Error("Invalid stdio mode");
+  if (interruptSignal !== undefined && !(interruptSignal instanceof AbortSignal)) throw new Error("Invalid interrupt signal");
   const env: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [key, value] of entries) {
     if (!key || /[=\0]/.test(key) || typeof value !== "string" || value.includes("\0")) throw new Error("Invalid environment");
     env[key] = value;
   }
-  return { executable, argv, env, timeoutMs, ...(stdio === "inherit" ? { stdio } : {}) };
+  return { executable, argv, env, timeoutMs, ...(stdio === "inherit" ? { stdio } : {}),
+    ...(interruptSignal ? { interruptSignal } : {}) };
 }
 function capture(stream: Readable): { result: (started: boolean) => CapturedOutput; dispose: () => void } {
   const bytes = Buffer.alloc(65536);
@@ -80,6 +83,7 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     let child: ChildProcess | undefined;
     let stdout: ReturnType<typeof capture> | undefined;
     let stderr: ReturnType<typeof capture> | undefined;
+    const interruptSignal = options.interruptSignal;
     const markSettled = (): void => {
       if (!settled) { settled = true; onSettled(); }
     };
@@ -91,6 +95,7 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
         child?.off("error", onError);
       }
     };
+    const clearTimers = (): void => { for (const timer of timers) clearTimeout(timer); };
     const onSpawn = (): void => { started = true; };
     const onError = (error: Error): void => {
       if (!started) { spawnError = error.message; markSettled(); finish(); }
@@ -100,7 +105,8 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
       exitCode = code;
       signal = exitSignal;
       markSettled();
-      for (const timer of timers) clearTimeout(timer);
+      clearTimers();
+      interruptSignal?.removeEventListener("abort", onAbort);
       if (!finished) timers.push(setTimeout(finish, 1000));
       else disposeChild();
     };
@@ -108,7 +114,8 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     const finish = (): void => {
       if (finished) return;
       finished = true;
-      for (const timer of timers) clearTimeout(timer);
+      clearTimers();
+      interruptSignal?.removeEventListener("abort", onAbort);
       const empty: CapturedOutput = { bytes: new Uint8Array(), complete: false, truncated: false, error: null };
       const result: RunResult = { schemaVersion: 1, outcome: timedOut ? "timed-out" : spawnError ? "spawn-failed" : "exited",
         started, directChildSettled: settled, exitCode, signal, spawnError,
@@ -126,6 +133,24 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
         if (!child?.kill(requested)) terminationError = `Could not deliver ${requested}`;
       } catch (error: unknown) { terminationError = message(error); }
     };
+    const beginTermination = (requested: NodeJS.Signals, timeout: boolean): void => {
+      if (settled || finished || timedOut) return;
+      timedOut = timeout;
+      clearTimers();
+      kill(requested);
+      timers.push(setTimeout(() => {
+        if (settled) return;
+        kill("SIGKILL");
+        timers.push(setTimeout(() => {
+          if (!settled) terminationError ??= "Direct child exit remains unconfirmed";
+          finish();
+        }, 5000));
+      }, 1000));
+    };
+    const onAbort = (): void => {
+      const requested = interruptSignal?.reason === "SIGINT" ? "SIGINT" : "SIGTERM";
+      beginTermination(requested, false);
+    };
     try {
       child = spawn(options.executable, [...options.argv], {
         cwd, env: { ...options.env }, shell: false, detached: false,
@@ -137,19 +162,9 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
       child.on("error", onError);
       child.once("exit", onExit);
       child.once("close", onClose);
-      timers.push(setTimeout(() => {
-        if (settled) return;
-        timedOut = true;
-        kill("SIGTERM");
-        timers.push(setTimeout(() => {
-          if (settled) return;
-          kill("SIGKILL");
-          timers.push(setTimeout(() => {
-            if (!settled) terminationError ??= "Direct child exit remains unconfirmed";
-            finish();
-          }, 5000));
-        }, 1000));
-      }, options.timeoutMs ?? 60000));
+      timers.push(setTimeout(() => beginTermination("SIGTERM", true), options.timeoutMs ?? 60000));
+      interruptSignal?.addEventListener("abort", onAbort, { once: true });
+      if (interruptSignal?.aborted) onAbort();
     } catch (error: unknown) {
       spawnError = message(error);
       markSettled();

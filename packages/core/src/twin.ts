@@ -17,6 +17,8 @@ export interface RunOptions {
   readonly argv: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
+  /** Abort with SIGINT or SIGTERM to interrupt the direct child. */
+  readonly interruptSignal?: AbortSignal;
   /** Inherit the caller's three stdio descriptors; output is not captured. */
   readonly stdio?: "inherit";
 }
@@ -85,6 +87,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       try {
         command = validateRunOptions(options);
         await assertRootAuthority(root);
+        if (command.interruptSignal?.aborted) throw new Error("Interrupted before command launch");
       }
       catch (error: unknown) { state = "ready"; throw error; }
       childSettled = false;

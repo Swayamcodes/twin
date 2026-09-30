@@ -71,45 +71,61 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   let session: Awaited<ReturnType<typeof createTwin>> | undefined;
   let scratchParent: string | undefined;
   let exitCode = 1;
+  const interruption = new AbortController();
+  const interrupt = (signal: "SIGINT" | "SIGTERM"): void => {
+    if (!interruption.signal.aborted) interruption.abort(signal);
+  };
+  const onSigint = (): void => interrupt("SIGINT");
+  const onSigterm = (): void => interrupt("SIGTERM");
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
 
   try {
-    scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
-    session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
-    const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-    const result = await session.run({ executable: argv[separator + 1]!, argv: argv.slice(separator + 2), env,
-      ...(interactive ? { stdio: "inherit" as const } : {}) });
-    if (!interactive) {
-      await write(process.stdout, result.stdout.bytes);
-      await write(process.stderr, result.stderr.bytes);
-    }
-    exitCode = result.exitCode === 0 ? 0 : 1;
-  } catch (error) {
-    await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
-  } finally {
-    if (session) {
-      try {
-        await writeReceipt(session.inspect().receipt ?? unavailableReceipt("no-run"));
-      } catch {
-        exitCode = 1;
+    try {
+      scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
+      session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
+      const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+      if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
+      const result = await session.run({ executable: argv[separator + 1]!, argv: argv.slice(separator + 2), env,
+        interruptSignal: interruption.signal,
+        ...(interactive ? { stdio: "inherit" as const } : {}) });
+      if (!interactive) {
+        await write(process.stdout, result.stdout.bytes);
+        await write(process.stderr, result.stderr.bytes);
       }
-      try {
-        const discarded = await session.discard();
-        if (discarded.status === "refused" || discarded.status === "failed") {
+      exitCode = !interruption.signal.aborted && result.exitCode === 0 ? 0 : 1;
+    } catch (error) {
+      await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+    } finally {
+      if (session) {
+        try {
+          await writeReceipt(session.inspect().receipt ?? unavailableReceipt("no-run"));
+        } catch {
           exitCode = 1;
-          await write(process.stderr, `Twin discard ${discarded.status}\n`);
         }
-      } catch (error) {
-        await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
-        exitCode = 1;
+        try {
+          const discarded = await session.discard();
+          if (discarded.status === "refused" || discarded.status === "failed") {
+            exitCode = 1;
+            await write(process.stderr, `Twin discard ${discarded.status}\n`);
+          }
+        } catch (error) {
+          await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+          exitCode = 1;
+        }
+      }
+      if (scratchParent) {
+        try { await rmdir(scratchParent); }
+        catch (error) {
+          await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+          exitCode = 1;
+        }
       }
     }
-    if (scratchParent) {
-      try { await rmdir(scratchParent); }
-      catch (error) {
-        await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
-        exitCode = 1;
-      }
-    }
+  } finally {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    if (interruption.signal.aborted) exitCode = 1;
   }
 
   return exitCode;

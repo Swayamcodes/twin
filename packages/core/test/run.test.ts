@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import childProcess, { ChildProcess } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
+import { getEventListeners } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { fixtureTest, nodeOptions } from "./support.js";
@@ -247,6 +248,103 @@ describe("direct execution", () => {
     } finally {
       child.emit("exit", 0, null); child.emit("close", 0, null);
       spawn.mockRestore(); syncBuiltinESMExports();
+    }
+  }));
+  it.each(["SIGINT", "SIGTERM"] as const)("forwards %s and releases the abort listener", async requested => fixtureTest(async f => {
+    const session = await f.create();
+    const controller = new AbortController();
+    const child = new ChildProcess();
+    const kill = vi.spyOn(child, "kill").mockReturnValue(true);
+    let launched!: () => void;
+    const launch = new Promise<void>(resolve => { launched = resolve; });
+    const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
+    syncBuiltinESMExports();
+    try {
+      const running = session.run({ ...nodeOptions("wait"), interruptSignal: controller.signal });
+      await launch;
+      child.emit("spawn");
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(1);
+      controller.abort(requested);
+      expect(kill).toHaveBeenCalledExactlyOnceWith(requested);
+      child.emit("exit", null, requested); child.emit("close", null, requested);
+      const result = await running;
+      expect(result.signal).toBe(requested);
+      expect(result.directChildSettled).toBe(true);
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+      expect((await session.discard()).status).toBe("removed");
+    } finally {
+      child.emit("exit", null, requested); child.emit("close", null, requested);
+      spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+    }
+  }));
+  it("does not launch a command interrupted before startup", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const controller = new AbortController();
+    controller.abort("SIGINT");
+    const spawn = vi.spyOn(childProcess, "spawn");
+    syncBuiltinESMExports();
+    try {
+      await expect(session.run({ ...nodeOptions("echo"), interruptSignal: controller.signal })).rejects.toThrow("Interrupted before command launch");
+      expect(spawn).not.toHaveBeenCalled();
+      expect(session.inspect().state).toBe("ready");
+    } finally { spawn.mockRestore(); syncBuiltinESMExports(); }
+  }));
+  it("escalates an uncooperative interrupted child once", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const controller = new AbortController();
+    const child = new ChildProcess();
+    const kill = vi.spyOn(child, "kill").mockReturnValue(true);
+    let launched!: () => void;
+    const launch = new Promise<void>(resolve => { launched = resolve; });
+    const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
+    syncBuiltinESMExports();
+    vi.useFakeTimers();
+    try {
+      const running = session.run({ ...nodeOptions("wait"), interruptSignal: controller.signal });
+      await launch;
+      child.emit("spawn");
+      controller.abort("SIGTERM");
+      controller.abort("SIGINT");
+      expect(kill.mock.calls).toEqual([["SIGTERM"]]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+      child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
+      expect((await running).directChildSettled).toBe(true);
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
+      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+    }
+  }));
+  it("refuses discard until interrupted child settlement is observed", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const controller = new AbortController();
+    const child = new ChildProcess();
+    const kill = vi.spyOn(child, "kill").mockReturnValue(true);
+    let launched!: () => void;
+    const launch = new Promise<void>(resolve => { launched = resolve; });
+    const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
+    syncBuiltinESMExports();
+    vi.useFakeTimers();
+    try {
+      const running = session.run({ ...nodeOptions("wait"), interruptSignal: controller.signal });
+      await launch;
+      child.emit("spawn");
+      controller.abort("SIGINT");
+      await vi.advanceTimersByTimeAsync(6000);
+      const result = await running;
+      expect(result.directChildSettled).toBe(false);
+      expect(result.terminationError).toBe("Direct child exit remains unconfirmed");
+      expect(session.inspect().state).toBe("child-unsettled");
+      expect((await session.discard()).status).toBe("refused");
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+      child.emit("exit", null, "SIGKILL");
+      expect(session.inspect().state).toBe("finished");
+      expect((await session.discard()).status).toBe("removed");
+    } finally {
+      child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
+      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it.each(["exit", "signal"] as const)("records %s", async behavior => fixtureTest(async f => {

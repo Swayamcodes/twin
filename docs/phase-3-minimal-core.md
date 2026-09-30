@@ -95,7 +95,7 @@ Hooks, filters, aliases and repository programs are not certified safe.
 ## Execution, output and timeout
 
 RunOptions requires an absolute executable, exact string argv, and an explicit
-complete string environment map; timeoutMs is optional. Each top-level option is
+complete string environment map; timeoutMs and interruptSignal are optional. Each top-level option is
 read once. Argv is materialized into an independent array and environment entries
 are captured before value validation; only that validated snapshot reaches spawn.
 Getter/iterator exceptions reject as snapshot failures, preserving their cause.
@@ -130,8 +130,20 @@ second after direct-child exit. If exit remains unconfirmed, the result says so,
 the session enters child-unsettled and discard is refused. A later observed exit
 permits discard; signal delivery alone does not. No descendants are discovered or
 terminated. They can outlive the direct child and keep writing after it exits.
-Forwarding caller signals and complete process-group/descendant lifecycle handling
-remain outstanding.
+
+The CLI listens for SIGINT and SIGTERM from before copy creation through receipt
+and cleanup. A signal before command launch prevents the run; the CLI waits for
+copy creation to finish, then discards through the ordinary session rules. During
+execution, the first signal is sent to the direct child. Repeated caller signals
+are ignored while settlement proceeds. If the child does not exit within one
+second, the existing termination path sends SIGKILL and waits up to five more
+seconds for observed exit. A previously started timeout keeps its own termination
+sequence. Signal listeners are removed after CLI cleanup. The CLI returns nonzero
+for an interrupted run even if the child handles the signal and exits zero.
+Receipt creation and discard use the same direct-child settlement checks as an
+ordinary run; if exit remains unconfirmed, discard is refused. This does not
+signal process groups or descendants, and a direct-child exit does not prove they
+have stopped. Complete process lifecycle handling remains outstanding.
 
 Result finalization clears timers and removes child spawn/close handlers. Settled
 children release exit/error handlers too; unsettled children retain only exit/error
