@@ -523,18 +523,22 @@ The dependency-free core now exposes `createTwin({ sourceDirectory, scratchParen
 which returns a fully copied session with `workspacePath`, `run`, `inspect` and
 explicit guarded `discard`. Five production modules implement ordinary independent
 file copies, lexically in-tree relative symlinks, conservative self-contained Git
-layout checks, bounded direct-child output/timeout, and in-memory cleanup authority.
+layout checks, bounded output/timeout, POSIX process-group settlement for ordinary
+descendants, and in-memory cleanup authority.
 The Git checks conservatively refuse root/nested bare inventories and noncanonical
 case variants of reserved metadata names; they are not a general Git parser or
 complete filesystem alias detector. Execution locks before caller-controlled input
 access and validates a single independent command snapshot. Invalid input, including
 sparse argv and throwing accessors, restores ready without consuming execution.
 Explicit listener disposal preserves only necessary late-settlement handlers.
-Copy failure returns no session. The marker lives outside the command workspace;
+Copy failure returns no session. A settled direct child alone no longer permits
+discard when its process group or captured pipes remain open. Process groups do
+not contain descendants that create a new session. The marker lives outside the
+command workspace;
 cleanup never traverses symlinks and refuses missing or replaced authority.
 
 This early slice does not implement the planned reflink, manifest/diff, receipt,
-apply, watch-list or descendant-process responsibilities above. It does not
+apply, watch-list or complete descendant-process responsibilities above. It does not
 integrate or change the frozen scenario/evidence contracts. A clone is not an OS
 sandbox. See [minimal core](docs/phase-3-minimal-core.md) for the public lifecycle,
 exact symlink/Git boundaries, timeout limits and focused verification history.

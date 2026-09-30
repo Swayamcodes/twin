@@ -17,7 +17,7 @@ export interface RunOptions {
   readonly argv: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
-  /** Abort with SIGINT or SIGTERM to interrupt the direct child. */
+  /** Abort with SIGINT or SIGTERM to interrupt the command process group. */
   readonly interruptSignal?: AbortSignal;
   /** Inherit the caller's three stdio descriptors; output is not captured. */
   readonly stdio?: "inherit";
@@ -39,6 +39,7 @@ export interface RunResult {
   readonly stdout: CapturedOutput;
   readonly stderr: CapturedOutput;
   readonly terminationError: string | null;
+  readonly lifecycleIssue?: string;
 }
 export type DiscardResult =
   | { readonly status: "removed" | "already-removed" }
@@ -65,6 +66,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
   }
   let state: TwinInspection["state"] = "ready";
   let childSettled = true;
+  let lifecycleIssue: string | null = null;
   let receipt: MinimalReceipt | undefined;
   const protectedRoots = [options.sourceDirectory, root.path, root.workspace];
   const captureBefore = await Promise.allSettled([
@@ -91,6 +93,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       }
       catch (error: unknown) { state = "ready"; throw error; }
       childSettled = false;
+      lifecycleIssue = null;
       let result: RunResult | undefined;
       let failure: unknown;
       let didThrow = false;
@@ -104,6 +107,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         didThrow = true;
       }
       state = childSettled ? "finished" : "child-unsettled";
+      lifecycleIssue = result?.lifecycleIssue ?? null;
       const captureAfter = childSettled ? await Promise.allSettled([
         captureManifest(root.workspace),
         captureGitCategories(root.workspace, protectedRoots),
@@ -132,7 +136,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
     discard: async (): Promise<DiscardResult> => {
       if (state === "discarded") return { status: "already-removed" };
       if (state === "running" || state === "discarding") throw new Error(`Cannot discard Twin in state ${state}`);
-      if (!childSettled || state === "discard-failed") return { status: "refused", reason: `Cannot discard Twin in state ${state}` };
+      if (!childSettled || state === "discard-failed") return { status: "refused", reason: lifecycleIssue ?? `Cannot discard Twin in state ${state}` };
       const previous = state;
       state = "discarding";
       const result = await discardRoot(root);

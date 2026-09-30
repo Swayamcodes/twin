@@ -1,10 +1,48 @@
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import childProcess, { ChildProcess } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { getEventListeners } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { fixtureTest, nodeOptions } from "./support.js";
+import { fixtureTest, nodeOptions, type Fixture } from "./support.js";
+
+async function waitForTestFile(path: string, limitMs = 2500): Promise<string> {
+  for (let elapsed = 0; elapsed < limitMs; elapsed += 25) {
+    try { return await readFile(path, "utf8"); }
+    catch (error: unknown) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+    await delay(25);
+  }
+  throw new Error(`Test process did not become ready: ${path}`);
+}
+
+async function waitForTestProcessStop(pid: number, limitMs = 8500): Promise<void> {
+  for (let elapsed = 0; elapsed < limitMs; elapsed += 25) {
+    try { process.kill(pid, 0); }
+    catch (error: unknown) {
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+      throw error;
+    }
+    await delay(25);
+  }
+  throw new Error(`Test process ${pid} did not stop; retaining its fixture`);
+}
+
+async function finishLifecycleTest(f: Fixture, session: Fixture["sessions"][number], running: Promise<unknown>): Promise<void> {
+  try {
+    await Promise.race([running, delay(9000, undefined, { ref: false }).then(() => { throw new Error("Runner did not settle"); })]);
+    const pid = Number(await readFile(join(session.workspacePath, "descendant.pid"), "utf8"));
+    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Descendant PID is missing or invalid");
+    await waitForTestProcessStop(pid);
+  } catch (error: unknown) {
+    const index = f.sessions.indexOf(session);
+    if (index >= 0) f.sessions.splice(index, 1); // Leave the Twin root for inspection when process settlement is uncertain.
+    throw new Error(`Lifecycle test cleanup could not verify stopped processes; retained fixture ${f.path}`, { cause: error });
+  }
+}
 
 describe("direct execution", () => {
   it.each(["env-mutation", "executable-getter", "argv-getter", "element-getter", "after-snapshot"] as const)("executes only the single-read snapshot: %s", async behavior => fixtureTest(async f => {
@@ -35,7 +73,7 @@ describe("direct execution", () => {
       }
       await launch;
       expect(spawn).toHaveBeenCalledExactlyOnceWith(process.execPath, expectedArgv, {
-        cwd: session.workspacePath, env: { VALUE: "original" }, shell: false, detached: false,
+        cwd: session.workspacePath, env: { VALUE: "original" }, shell: false, detached: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
       if (behavior !== "after-snapshot") expect(reads).toBe(1);
@@ -187,21 +225,31 @@ describe("direct execution", () => {
       }
       if (behavior === "drain-expiry" || behavior === "unsettled") await vi.advanceTimersByTimeAsync(behavior === "unsettled" ? 6100 : 1000);
       const result = await running;
-      await streamsClosed;
-      expect(vi.getTimerCount()).toBe(0);
+      if (behavior === "drain-expiry") {
+        expect((await session.discard()).status).toBe("refused");
+        stdout.end(); stderr.end();
+        await streamsClosed;
+        child.emit("close", 0, null);
+      }
+      if (behavior === "unsettled") {
+        stdout.end(); stderr.end();
+        await streamsClosed;
+      }
+      if (behavior === "normal" || behavior === "failed-spawn") await streamsClosed;
       for (const stream of [stdout, stderr]) {
         for (const event of ["data", "end", "error", "close"]) expect(stream.listenerCount(event)).toBe(0);
       }
       expect(result.stdout.complete).toBe(behavior === "normal");
       expect(result.directChildSettled).toBe(behavior !== "unsettled");
       expect(child.listenerCount("spawn")).toBe(0);
-      expect(child.listenerCount("close")).toBe(0);
+      expect(child.listenerCount("close")).toBe(behavior === "unsettled" ? 1 : 0);
       if (behavior === "unsettled") {
         expect(child.listenerCount("exit")).toBe(1);
         expect(child.listenerCount("error")).toBe(1);
         expect((await session.discard()).status).toBe("refused");
         child.emit("error", new Error("late termination error"));
         child.emit("exit", null, "SIGKILL");
+        child.emit("close", null, "SIGKILL");
         expect(session.inspect().state).toBe("finished");
         expect(result.directChildSettled).toBe(false);
       }
@@ -210,7 +258,8 @@ describe("direct execution", () => {
       expect(vi.getTimerCount()).toBe(0);
       expect((await session.discard()).status).toBe("removed");
     } finally {
-      child.emit("exit", null, "SIGKILL");
+      stdout.end(); stderr.end();
+      child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
       stdout.destroy(); stderr.destroy();
       vi.useRealTimers();
       spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
@@ -227,6 +276,146 @@ describe("direct execution", () => {
     expect(result.stdout.complete).toBe(true);
     expect(JSON.parse(Buffer.from(result.stdout.bytes).toString())).toEqual({ argv, cwd: session.workspacePath, env: { TWIN_VALUE: "explicit" } });
   }));
+  it.each(["cooperative", "stubborn"] as const)("settles an ordinary %s descendant holding captured pipes", async behavior => fixtureTest(async f => {
+    const session = await f.create();
+    const descendantScript = [
+      'const fs=require("node:fs");',
+      ...(behavior === "stubborn" ? ['process.on("SIGTERM",()=>fs.writeFileSync("descendant.term","1"));'] : []),
+      'setTimeout(()=>{fs.writeFileSync("descendant.self-exit","1");process.exit(3)},7000);',
+      'fs.writeFileSync("descendant.ready",String(process.pid));',
+    ].join("");
+    const script = [
+      'const fs=require("node:fs");const {spawn}=require("node:child_process");',
+      `const descendant=spawn(process.execPath,["-e",${JSON.stringify(descendantScript)}],{stdio:["ignore","inherit","inherit"]});`,
+      'fs.writeFileSync("descendant.pid",String(descendant.pid));',
+      'descendant.unref();const deadline=Date.now()+2000;',
+      'const ready=()=>{if(fs.existsSync("descendant.ready")){process.stdout.write("direct\\n");return}',
+      'if(Date.now()>deadline)process.exit(4);else setTimeout(ready,10)};ready();',
+    ].join("");
+    const running = session.run({ executable: process.execPath, argv: ["-e", script], env: {}, timeoutMs: 4000 });
+    try {
+      const pid = Number(await waitForTestFile(join(session.workspacePath, "descendant.ready")));
+      const result = await running;
+      expect(result.directChildSettled).toBe(true);
+      expect(result.lifecycleIssue).toBeUndefined();
+      expect(result.stdout.complete).toBe(true);
+      expect(Buffer.from(result.stdout.bytes).toString()).toBe("direct\n");
+      if (behavior === "stubborn") {
+        expect(await readFile(join(session.workspacePath, "descendant.term"), "utf8")).toBe("1");
+        await expect(readFile(join(session.workspacePath, "descendant.self-exit"))).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      await waitForTestProcessStop(pid);
+    } finally {
+      await finishLifecycleTest(f, session, running);
+    }
+  }), 25000);
+  it.each(["timeout", "interrupt"] as const)("escalates %s across an ordinary process group", async behavior => fixtureTest(async f => {
+    const session = await f.create();
+    const controller = new AbortController();
+    const stubborn = [
+      'const fs=require("node:fs");',
+      'process.on("SIGTERM",()=>fs.writeFileSync("descendant.term","1"));',
+      'setTimeout(()=>{fs.writeFileSync("descendant.self-exit","1");process.exit(3)},7000);',
+      'fs.writeFileSync("descendant.ready",String(process.pid));',
+    ].join("");
+    const script = [
+      'const fs=require("node:fs");const {spawn}=require("node:child_process");',
+      `const descendant=spawn(process.execPath,["-e",${JSON.stringify(stubborn)}],{stdio:["ignore","inherit","inherit"]});`,
+      'fs.writeFileSync("descendant.pid",String(descendant.pid));descendant.unref();',
+      'process.on("SIGTERM",()=>fs.writeFileSync("parent.term","1"));',
+      'setTimeout(()=>{fs.writeFileSync("parent.self-exit","1");process.exit(3)},7000);',
+      'const deadline=Date.now()+2000;',
+      'const ready=()=>{if(fs.existsSync("descendant.ready")){fs.writeFileSync("parent.ready","1");return}',
+      'if(Date.now()>deadline)process.exit(4);else setTimeout(ready,10)};ready();',
+    ].join("");
+    const running = session.run({ executable: process.execPath, argv: ["-e", script], env: {}, timeoutMs: behavior === "timeout" ? 1500 : 5000,
+      interruptSignal: controller.signal });
+    try {
+      await waitForTestFile(join(session.workspacePath, "descendant.ready"));
+      await waitForTestFile(join(session.workspacePath, "parent.ready"));
+      if (behavior === "interrupt") controller.abort("SIGTERM");
+      const result = await running;
+      const pid = Number(await readFile(join(session.workspacePath, "descendant.pid"), "utf8"));
+      expect(result.outcome).toBe(behavior === "timeout" ? "timed-out" : "exited");
+      expect(result.directChildSettled).toBe(true);
+      expect(result.signal).toBe("SIGKILL");
+      expect(result.exitCode).toBeNull();
+      expect(result.lifecycleIssue).toBeUndefined();
+      expect(result.stdout.complete).toBe(true);
+      expect(await readFile(join(session.workspacePath, "parent.term"), "utf8")).toBe("1");
+      expect(await readFile(join(session.workspacePath, "descendant.term"), "utf8")).toBe("1");
+      await expect(readFile(join(session.workspacePath, "parent.self-exit"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(join(session.workspacePath, "descendant.self-exit"))).rejects.toMatchObject({ code: "ENOENT" });
+      await waitForTestProcessStop(pid);
+    } finally {
+      controller.abort("SIGTERM");
+      await finishLifecycleTest(f, session, running);
+    }
+  }), 25000);
+  it("retains an escaped writer's workspace until its captured pipe closes", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const script = [
+      'const fs=require("node:fs");const {spawn}=require("node:child_process");',
+      'const descendant=spawn(process.execPath,["-e","setTimeout(()=>process.exit(0),2500)"],',
+      '{detached:true,stdio:["ignore","inherit","inherit"]});',
+      'fs.writeFileSync("descendant.pid",String(descendant.pid));descendant.unref();',
+      'process.stdout.write("direct\\n");',
+    ].join("");
+    const result = await session.run({ executable: process.execPath, argv: ["-e", script], env: {}, timeoutMs: 5000 });
+    const pid = Number(await readFile(join(session.workspacePath, "descendant.pid"), "utf8"));
+    expect(result.directChildSettled).toBe(true);
+    expect(result.lifecycleIssue).toBe("stdio pipes remain open");
+    expect(result.stdout.complete).toBe(false);
+    expect(session.inspect().state).toBe("child-unsettled");
+    expect((await session.discard()).status).toBe("refused");
+    let stopped = false;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      try { process.kill(pid, 0); }
+      catch (error: unknown) {
+        if (error instanceof Error && "code" in error && error.code === "ESRCH") { stopped = true; break; }
+        throw error;
+      }
+      await delay(50);
+    }
+    expect(stopped).toBe(true);
+    for (let attempt = 0; attempt < 40 && session.inspect().state !== "finished"; attempt++) await delay(50);
+    expect(session.inspect().state).toBe("finished");
+    expect((await session.discard()).status).toBe("removed");
+  }));
+  it("retains the workspace while process-group settlement is unconfirmed", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const child = new ChildProcess();
+    Object.defineProperty(child, "pid", { value: 1000000 });
+    let groupPresent = true;
+    const probe = vi.spyOn(process, "kill").mockImplementation((pid, requested) => {
+      expect(pid).toBe(-1000000);
+      if (requested === 0 && !groupPresent) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+      return true;
+    });
+    let launched!: () => void;
+    const launch = new Promise<void>(resolve => { launched = resolve; });
+    const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
+    syncBuiltinESMExports();
+    vi.useFakeTimers();
+    try {
+      const running = session.run(nodeOptions("wait"));
+      await launch;
+      child.emit("spawn"); child.emit("exit", 0, null); child.emit("close", 0, null);
+      await vi.advanceTimersByTimeAsync(6000);
+      const result = await running;
+      expect(result.lifecycleIssue).toBe("process group present");
+      expect(session.inspect().state).toBe("child-unsettled");
+      expect((await session.discard()).status).toBe("refused");
+      groupPresent = false;
+      await vi.advanceTimersByTimeAsync(100);
+      expect(session.inspect().state).toBe("finished");
+      expect((await session.discard()).status).toBe("removed");
+    } finally {
+      groupPresent = false;
+      child.emit("exit", 0, null); child.emit("close", 0, null);
+      vi.useRealTimers(); spawn.mockRestore(); probe.mockRestore(); syncBuiltinESMExports();
+    }
+  }));
   it("inherits stdio when explicitly selected and reports no captured output", async () => fixtureTest(async f => {
     const session = await f.create();
     const child = new ChildProcess();
@@ -238,7 +427,7 @@ describe("direct execution", () => {
       const running = session.run({ ...nodeOptions("echo"), stdio: "inherit" });
       await launch;
       expect(spawn).toHaveBeenCalledWith(process.execPath, expect.any(Array), expect.objectContaining({
-        cwd: session.workspacePath, shell: false, detached: false, stdio: ["inherit", "inherit", "inherit"],
+        cwd: session.workspacePath, shell: false, detached: true, stdio: ["inherit", "inherit", "inherit"],
       }));
       child.emit("spawn"); child.emit("exit", 0, null); child.emit("close", 0, null);
       const result = await running;
@@ -401,8 +590,10 @@ describe("direct execution", () => {
     const session = await f.create();
     // No OS process: exercise impossible-to-force settlement/pipe event order.
     const child = new ChildProcess();
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    child.stdout = stdout;
+    child.stderr = stderr;
     const kill = vi.spyOn(child, "kill").mockReturnValue(true);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
@@ -422,15 +613,22 @@ describe("direct execution", () => {
         expect(result.directChildSettled).toBe(false);
         expect(session.inspect().state).toBe("child-unsettled");
         expect((await session.discard()).status).toBe("refused");
+        stdout.end(); stderr.end();
         child.emit("exit", null, "SIGKILL");
+        child.emit("close", null, "SIGKILL");
         expect(session.inspect().state).toBe("finished");
       } else {
         expect(result.directChildSettled).toBe(true);
         expect(result.exitCode).toBe(0);
         expect(kill).not.toHaveBeenCalled();
+        expect((await session.discard()).status).toBe("refused");
+        stdout.end(); stderr.end();
+        child.emit("close", 0, null);
+        expect(session.inspect().state).toBe("finished");
       }
     } finally {
-      child.emit("exit", null, "SIGKILL");
+      stdout.end(); stderr.end();
+      child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
       vi.useRealTimers();
       spawn.mockRestore();
       kill.mockRestore();

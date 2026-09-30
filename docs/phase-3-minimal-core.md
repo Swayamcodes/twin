@@ -38,7 +38,7 @@ getter, iterator or value is accessed. Reentrant run/discard calls reject during
 input access. Snapshot/validation failures restore ready and preserve the attempt.
 Sparse argv arrays are invalid input and are rejected before spawn without consuming
 the attempt. Concurrent run/discard operations reject. Explicit discard is allowed before run
-or after direct-child settlement. There are no finalizers or exit-time cleanup.
+or after verified run settlement. There are no finalizers or exit-time cleanup.
 
 ## Copy boundary
 
@@ -95,7 +95,8 @@ Hooks, filters, aliases and repository programs are not certified safe.
 ## Execution, output and timeout
 
 RunOptions requires an absolute executable, exact string argv, and an explicit
-complete string environment map; timeoutMs and interruptSignal are optional. Each top-level option is
+complete string environment map; timeoutMs and interruptSignal are optional. Each
+top-level option is
 read once. Argv is materialized into an independent array and environment entries
 are captured before value validation; only that validated snapshot reaches spawn.
 Getter/iterator exceptions reject as snapshot failures, preserving their cause.
@@ -104,7 +105,8 @@ values captured are validated, and caller-owned objects are neither frozen nor
 mutated. Later changes to caller input do not change the admitted command.
 No environment is inherited
 implicitly and no selected-executable PATH search occurs. Spawn uses shell:false,
-workspace cwd and detached:false. The default captured mode ignores stdin and
+workspace cwd and detached:true on supported macOS/Linux platforms, placing
+the direct child in a new process group. The default captured mode ignores stdin and
 pipes stdout/stderr into the bounded result. `stdio: "inherit"` explicitly passes
 the caller's stdin, stdout and stderr descriptors to the direct child. This lets
 an interactive command read input and emit output immediately; `RunResult` then
@@ -117,37 +119,50 @@ may still require a separate PTY implementation and verification. Callers remain
 responsible for executable trust, environment and command policy.
 
 RunResult schemaVersion 1 reports exited/spawn-failed/timed-out, actual launch,
-exit code, signal, spawn error, termination error and direct-child settlement.
+exit code, signal, spawn error, termination error, direct-child settlement and an
+optional lifecycle issue when group or pipe settlement is unconfirmed.
 Each output retains at most 65,536 raw bytes while excess bytes continue draining.
 Truncation, stream errors or missing stream end make capture incomplete. An empty
 stream from a command that never started is not complete output. Results are local
 and may contain secrets; they are not receipts or sanitized publication artifacts.
 
 The default timeout is 60 seconds, configurable from 1 ms through one hour.
-Timeout sends SIGTERM, then SIGKILL after one second if exit remains unobserved.
-After SIGKILL, settlement is bounded by five seconds. Pipes drain for at most one
-second after direct-child exit. If exit remains unconfirmed, the result says so,
-the session enters child-unsettled and discard is refused. A later observed exit
-permits discard; signal delivery alone does not. No descendants are discovered or
-terminated. They can outlive the direct child and keep writing after it exits.
+Timeout and caller interruption signal the new process group with SIGTERM or
+SIGINT, then SIGKILL after one second if members remain. A direct child that exits
+while its group remains active starts the same SIGTERM/SIGKILL shutdown. After
+SIGKILL, settlement is bounded by five seconds. Captured pipes drain for at most
+one second after the group is absent. Run completion is verified only when direct
+child exit, group absence, and captured pipe closure are observed. Otherwise the
+result names a lifecycle issue, the receipt uses unavailable post-run evidence,
+and discard is refused. A later observed exit or pipe/group closure may permit
+discard; signal delivery alone does not. The 65,536-byte capture bound remains.
 
 The CLI listens for SIGINT and SIGTERM from before copy creation through receipt
 and cleanup. A signal before command launch prevents the run; the CLI waits for
 copy creation to finish, then discards through the ordinary session rules. During
-execution, the first signal is sent to the direct child. Repeated caller signals
-are ignored while settlement proceeds. If the child does not exit within one
+execution, the first signal is sent to the command's process group. Repeated caller
+signals
+are ignored while settlement proceeds. If group members remain after one
 second, the existing termination path sends SIGKILL and waits up to five more
 seconds for observed exit. A previously started timeout keeps its own termination
 sequence. Signal listeners are removed after CLI cleanup. The CLI returns nonzero
 for an interrupted run even if the child handles the signal and exits zero.
-Receipt creation and discard use the same direct-child settlement checks as an
-ordinary run; if exit remains unconfirmed, discard is refused. This does not
-signal process groups or descendants, and a direct-child exit does not prove they
-have stopped. Complete process lifecycle handling remains outstanding.
+Receipt creation and discard use the same lifecycle checks as an ordinary run.
+Group signaling reaches ordinary descendants that stay in the group, including
+writers holding captured pipes open. A descendant can escape with `setsid` or
+similar calls; group absence cannot prove such a process stopped. An escaped
+process retaining a captured pipe makes capture incomplete and cleanup refuse,
+but one that closes its pipes may remain unseen. Process-group ID reuse and
+concurrent process mutation remain limits of a process-group check. This is not
+OS containment; broader descendant discovery and integration acceptance remain
+outstanding, so Phase 3 is not complete.
 
-Result finalization clears timers and removes child spawn/close handlers. Settled
-children release exit/error handlers too; unsettled children retain only exit/error
-handlers until an observed late exit releases them. Stream data/end handlers are
+Result finalization clears bounded timers and removes handlers after verified
+settlement. Unsettled runs retain the necessary late exit/close handlers and an
+unrefed group probe until settlement becomes observable. Open captured streams
+continue bounded draining with their parent read handles unrefed; destroying those
+read handles would make a later close event unreliable as proof of writer exit.
+Stream data/end handlers are
 removed at disposal; an error handler remains through pipe close to handle queued
 destruction errors, then all capture handlers are removed.
 
@@ -218,7 +233,7 @@ verification counts above remain historical records.
 ## Deferrals
 
 No diff, receipt, apply/merge, reflink/CoW, outside-project monitoring/recovery,
-dependency analysis, cancellation API, descendant management, agent adapter,
+dependency analysis, cancellation API, complete descendant discovery and acceptance,
 AgentTX integration, CLI integration, scoring, normalized evidence, attempt
 protocol, retention/archive or A/B readiness integration. Crashes can leave roots;
 automatic scavenging is deferred. Absolute paths and command behavior can modify

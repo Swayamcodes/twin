@@ -129,6 +129,7 @@ describe("twin run", () => {
     discard.mockResolvedValue({ status: "refused", reason: "guard" });
     expect(await main(["run", "--", "tool"])).toBe(1);
     expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(discard.mock.invocationCallOrder[0]);
+    expect(process.stderr.write).toHaveBeenCalledWith("Twin discard refused: guard\n", expect.any(Function));
   });
 
   it("appends its frame after child stderr that imitates a frame", async () => {

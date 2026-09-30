@@ -107,7 +107,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           const discarded = await session.discard();
           if (discarded.status === "refused" || discarded.status === "failed") {
             exitCode = 1;
-            await write(process.stderr, `Twin discard ${discarded.status}\n`);
+            await write(process.stderr, `Twin discard ${discarded.status}: ${discarded.reason}\n`);
           }
         } catch (error) {
           await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);

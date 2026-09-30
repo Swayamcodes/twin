@@ -38,7 +38,7 @@ export function validateRunOptions(options: RunOptions): RunOptions {
   return { executable, argv, env, timeoutMs, ...(stdio === "inherit" ? { stdio } : {}),
     ...(interruptSignal ? { interruptSignal } : {}) };
 }
-function capture(stream: Readable): { result: (started: boolean) => CapturedOutput; dispose: () => void } {
+function capture(stream: Readable): { result: (started: boolean) => CapturedOutput; dispose: () => void; unref: () => void } {
   const bytes = Buffer.alloc(65536);
   let used = 0;
   let truncated = false;
@@ -61,7 +61,9 @@ function capture(stream: Readable): { result: (started: boolean) => CapturedOutp
   stream.once("end", onEnd);
   stream.on("error", onError);
   stream.once("close", onClose);
-  return { dispose: () => {
+  return { unref: () => {
+    if ("unref" in stream && typeof stream.unref === "function") stream.unref();
+  }, dispose: () => {
     stream.off("data", onData);
     stream.off("end", onEnd);
     // Destruction can deliver an already queued error before close.
@@ -72,9 +74,11 @@ function capture(stream: Readable): { result: (started: boolean) => CapturedOutp
 export async function runCommand(cwd: string, options: RunOptions, onSettled: () => void): Promise<RunResult> {
   return await new Promise<RunResult>(resolve => {
     let started = false;
-    let settled = false;
+    let directSettled = false;
     let finished = false;
     let timedOut = false;
+    let terminating = false;
+    let pipesClosed = false;
     let exitCode: number | null = null;
     let signal: NodeJS.Signals | null = null;
     let spawnError: string | null = null;
@@ -84,68 +88,119 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     let stdout: ReturnType<typeof capture> | undefined;
     let stderr: ReturnType<typeof capture> | undefined;
     const interruptSignal = options.interruptSignal;
-    const markSettled = (): void => {
-      if (!settled) { settled = true; onSettled(); }
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let drainTimer: ReturnType<typeof setTimeout> | undefined;
+    let safeNotified = false;
+    const markSafe = (): void => {
+      if (!safeNotified) { safeNotified = true; onSettled(); }
     };
-    const disposeChild = (): void => {
+    const groupStatus = (): "absent" | "present" | "unknown" => {
+      if (!started || !child?.pid) return "absent";
+      try { process.kill(-child.pid, 0); return "present"; }
+      catch (error: unknown) {
+        if (error instanceof Error && "code" in error && error.code === "ESRCH") return "absent";
+        return "unknown";
+      }
+    };
+    const disposeChild = (retainLate = false): void => {
       child?.off("spawn", onSpawn);
-      child?.off("close", onClose);
-      if (settled) {
+      if (!retainLate) child?.off("close", onClose);
+      if (!retainLate) {
         child?.off("exit", onExit);
         child?.off("error", onError);
       }
     };
-    const clearTimers = (): void => { for (const timer of timers) clearTimeout(timer); };
+    const clearTimers = (): void => {
+      for (const timer of timers) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      if (drainTimer) clearTimeout(drainTimer);
+    };
     const onSpawn = (): void => { started = true; };
     const onError = (error: Error): void => {
-      if (!started) { spawnError = error.message; markSettled(); finish(); }
+      if (!started) { spawnError = error.message; directSettled = true; markSafe(); finish(); }
       else terminationError = error.message;
     };
     const onExit = (code: number | null, exitSignal: NodeJS.Signals | null): void => {
       exitCode = code;
       signal = exitSignal;
-      markSettled();
-      clearTimers();
-      interruptSignal?.removeEventListener("abort", onAbort);
-      if (!finished) timers.push(setTimeout(finish, 1000));
-      else disposeChild();
+      directSettled = true;
+      if (!finished) checkLifecycle();
+      else {
+        checkLate();
+      }
     };
-    const onClose = (): void => { if (settled) finish(); };
+    const onClose = (): void => {
+      pipesClosed = true;
+      if (finished) checkLate();
+      else checkLifecycle();
+    };
+    const checkLate = (): void => {
+      if (!finished || !directSettled || !pipesClosed || groupStatus() !== "absent") return;
+      markSafe();
+      if (poll) clearInterval(poll);
+      poll = undefined;
+      stdout?.dispose();
+      stderr?.dispose();
+      disposeChild();
+    };
     const finish = (): void => {
       if (finished) return;
       finished = true;
       clearTimers();
       interruptSignal?.removeEventListener("abort", onAbort);
+      const group = groupStatus();
+      const lifecycleIssue = !directSettled ? "direct child exit remains unconfirmed"
+        : group !== "absent" ? `process group ${group}`
+          : !pipesClosed && started ? "stdio pipes remain open" : null;
+      if (lifecycleIssue === null) markSafe();
       const empty: CapturedOutput = { bytes: new Uint8Array(), complete: false, truncated: false, error: null };
       const result: RunResult = { schemaVersion: 1, outcome: timedOut ? "timed-out" : spawnError ? "spawn-failed" : "exited",
-        started, directChildSettled: settled, exitCode, signal, spawnError,
-        stdout: stdout?.result(started) ?? empty, stderr: stderr?.result(started) ?? empty, terminationError };
-      stdout?.dispose();
-      stderr?.dispose();
-      disposeChild();
+        started, directChildSettled: directSettled, exitCode, signal, spawnError,
+        stdout: stdout?.result(started) ?? empty, stderr: stderr?.result(started) ?? empty, terminationError,
+        ...(lifecycleIssue ? { lifecycleIssue } : {}) };
+      if (lifecycleIssue === null) { stdout?.dispose(); stderr?.dispose(); }
+      else { stdout?.unref(); stderr?.unref(); }
+      disposeChild(lifecycleIssue !== null);
       // Keep the exit listener for late settlement; never claim an unobserved exit.
-      if (!settled) child?.unref();
+      if (!directSettled) child?.unref();
+      if (lifecycleIssue !== null) {
+        poll = setInterval(checkLate, 100);
+        poll.unref();
+      }
       resolve(result);
     };
     const kill = (requested: NodeJS.Signals): void => {
-      if (settled) return;
+      if (finished || groupStatus() === "absent" && directSettled) return;
       try {
-        if (!child?.kill(requested)) terminationError = `Could not deliver ${requested}`;
+        if (started && child?.pid) process.kill(-child.pid, requested);
+        else if (!child?.kill(requested)) terminationError = `Could not deliver ${requested}`;
       } catch (error: unknown) { terminationError = message(error); }
     };
     const beginTermination = (requested: NodeJS.Signals, timeout: boolean): void => {
-      if (settled || finished || timedOut) return;
+      if (finished || terminating) return;
+      terminating = true;
       timedOut = timeout;
-      clearTimers();
+      for (const timer of timers) clearTimeout(timer);
       kill(requested);
       timers.push(setTimeout(() => {
-        if (settled) return;
+        if (groupStatus() === "absent" && directSettled) return;
         kill("SIGKILL");
         timers.push(setTimeout(() => {
-          if (!settled) terminationError ??= "Direct child exit remains unconfirmed";
+          if (!directSettled) terminationError ??= "Direct child exit remains unconfirmed";
           finish();
         }, 5000));
       }, 1000));
+    };
+    const checkLifecycle = (): void => {
+      if (finished || !directSettled) return;
+      const group = groupStatus();
+      if (group !== "absent") {
+        if (!terminating) beginTermination("SIGTERM", false);
+        poll ??= setInterval(checkLifecycle, 50);
+        return;
+      }
+      if (pipesClosed || !started) { finish(); return; }
+      drainTimer ??= setTimeout(finish, 1000);
     };
     const onAbort = (): void => {
       const requested = interruptSignal?.reason === "SIGINT" ? "SIGINT" : "SIGTERM";
@@ -153,9 +208,10 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     };
     try {
       child = spawn(options.executable, [...options.argv], {
-        cwd, env: { ...options.env }, shell: false, detached: false,
+        cwd, env: { ...options.env }, shell: false, detached: true,
         stdio: options.stdio === "inherit" ? ["inherit", "inherit", "inherit"] : ["ignore", "pipe", "pipe"],
       });
+      pipesClosed = !child.stdout && !child.stderr;
       if (child.stdout) stdout = capture(child.stdout);
       if (child.stderr) stderr = capture(child.stderr);
       child.once("spawn", onSpawn);
@@ -167,7 +223,8 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
       if (interruptSignal?.aborted) onAbort();
     } catch (error: unknown) {
       spawnError = message(error);
-      markSettled();
+      directSettled = true;
+      markSafe();
       finish();
     }
   });
