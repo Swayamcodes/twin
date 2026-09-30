@@ -541,6 +541,26 @@ The initial Phase 3.0 slice has since gained a bounded file manifest, a minimal
 file/watch receipt, and a public CLI with captured and inherited stdio. Apply,
 reflink/CoW, full dependency and process reporting, and complete descendant
 discovery remain open. It does not change the frozen scenario/evidence contracts.
+The receipt now uses schema version 2 to add root-level project dependency
+observations. It compares `package.json` declaration strings in the four npm
+dependency fields and hashes supported lockfiles (`package-lock.json`,
+`npm-shrinkwrap.json`, `pnpm-lock.yaml`) separately. Each input is capped at
+1 MiB, with a 4 MiB aggregate cap; regular files are opened without following
+symlinks and checked for identity before and after reading. The existing root
+authority check runs before each dependency capture. The CLI's byte framing
+remains `TWIN-RECEIPT/1`; the JSON payload carries `schemaVersion: 2`. Missing
+or invalid `package.json`, malformed or unreadable lockfiles, and a lockfile
+removed during the run produce explicit incomplete coverage and issues. A
+missing lockfile on both sides is an ordinary absence. The pnpm check validates
+only its version header; lockfile changes are whole-file digests, not resolved
+package diffs. Installed packages are explicitly unobserved. Nested workspace
+manifests, Yarn/Bun/Python manifests, and global packages remain outside this
+checkpoint.
+Current S11 process testing now waits for an owned worker marker that records
+the action's process group, then checks that Twin settles and terminates that
+group before discard. Any later harness signal is cleanup only and earns no
+Twin recovery credit. The earlier published S11 measurement records its own
+observed attempt and is unchanged by this current test reconciliation.
 A clone is not an OS sandbox. See [minimal core](docs/phase-3-minimal-core.md) for
 the public lifecycle, exact symlink/Git boundaries, execution limits and current
 acceptance status.

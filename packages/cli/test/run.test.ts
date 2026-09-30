@@ -11,8 +11,10 @@ const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
 const receipt: MinimalReceipt = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   files: { coverage: "unavailable", issues: [{ reason: "λ" }], changes: [] },
+  dependencies: { declarations: { coverage: "incomplete", changes: [] }, lockfiles: { coverage: "complete", changes: [] },
+    installed: { coverage: "unavailable", reason: "not-observed" }, issues: [{ phase: "before", path: "package.json", reason: "missing" }] },
   watch: [],
 };
 
@@ -131,6 +133,9 @@ describe("twin run", () => {
     const commandBytes = output.encode("from stderr");
     expect(bytes.subarray(0, commandBytes.length)).toEqual(Buffer.from(commandBytes));
     const payload = Buffer.from(JSON.stringify(receipt), "utf8");
+    expect(JSON.parse(payload.toString("utf8"))).toMatchObject({ schemaVersion: 2,
+      dependencies: { declarations: { coverage: "incomplete" }, lockfiles: { coverage: "complete" },
+        installed: { coverage: "unavailable", reason: "not-observed" } } });
     expect(bytes.subarray(commandBytes.length)).toEqual(Buffer.concat([
       Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"), payload, Buffer.from("\n"),
     ]));

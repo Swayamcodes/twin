@@ -36,11 +36,12 @@ interface SpawnPolicy {
   readonly argv: readonly string[];
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
+  readonly requireDetached?: boolean;
 }
 interface AdmittedSpawn {
   executable: string;
   argv: string[];
-  options: { cwd: string; shell: false; env: Record<string, string>; detached: false;
+  options: { cwd: string; shell: false; env: Record<string, string>; detached: boolean;
     stdio: ["ignore", "pipe", "pipe"] };
 }
 /** Pure test seam: never launches. The real guard forwards only this owned snapshot. */
@@ -65,7 +66,8 @@ export function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptio
   assert(argv.every((arg): arg is string => typeof arg === "string"), "Expected dense string argv");
   assert(typeof cwd === "string", "Expected cwd string");
   assert(shell === false, "Explicit shell:false required");
-  assert(detached === undefined || detached === false, "Detached execution forbidden");
+  assert(policy.requireDetached ? detached === true : detached === undefined || detached === false,
+    "Unexpected detached setting");
   assert(stdio.every(value => typeof value === "string"), "Expected string stdio");
   assert.deepEqual(stdio, ["ignore", "pipe", "pipe"]);
   const env: Record<string, string> = {};
@@ -78,7 +80,8 @@ export function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptio
   assert.deepEqual(argv, policy.argv);
   assert.equal(cwd, policy.cwd);
   assert.deepEqual(env, policy.env);
-  return { executable, argv, options: { cwd, shell: false, env, detached: false, stdio: ["ignore", "pipe", "pipe"] } };
+  return { executable, argv, options: { cwd, shell: false, env, detached: policy.requireDetached === true,
+    stdio: ["ignore", "pipe", "pipe"] } };
 }
 
 /** Synchronous restorations are independent; even failed restores cannot skip synchronization. */
@@ -186,8 +189,11 @@ function makeReceiptExecFileGuard(
   }) as typeof childProcess.execFile;
 }
 function assertS12Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 1);
+  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 2);
+  assert.equal(receipt.dependencies.declarations.coverage, "incomplete");
+  assert.deepEqual(receipt.dependencies.declarations.changes, []);
+  assert.equal(receipt.dependencies.installed.coverage, "unavailable");
   assert.deepEqual(receipt.files, { coverage: "complete", issues: [], changes: [{
     path: { encoding: "utf8", value: "control-created.txt" }, change: "added",
     category: "untracked", categoryReason: null,
@@ -400,7 +406,7 @@ export async function proveTwinS12(fault: Fault = "none"): Promise<Proof> {
           assert(phase === "action", "Launch outside approved phase");
           assert(session && actionPath && support);
           admitted = admitSpawn(command, argv, options, { executable: nodeExecutable, argv: [actionPath],
-            cwd: session.workspacePath, env: actionEnv });
+            cwd: session.workspacePath, env: actionEnv, requireDetached: true });
           assert.equal(session.inspect().state, "running", "Action must be dispatched through session.run");
           assert.notEqual(admitted.options.cwd, workspace);
           assert.equal(realpathSync(session.workspacePath), session.workspacePath);

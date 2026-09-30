@@ -1,6 +1,7 @@
 import type { ManifestSnapshot } from "./manifest.js";
 import type { GitSnapshot } from "./git-classification.js";
 import type { WatchCapture } from "./watch.js";
+import { compareDependencies, type DependencyReceipt, type DependencySnapshot } from "./dependencies.js";
 
 export type ReceiptPath = { readonly encoding: "utf8" | "base64"; readonly value: string };
 export type FileCategory = "tracked" | "untracked" | "ignored" | "unclassified";
@@ -11,7 +12,8 @@ export type WatchObservation =
   | { readonly status: "present"; readonly size: string; readonly mode: number; readonly mtimeNs: string }
   | { readonly status: "refused" | "unavailable"; readonly reason: string };
 export interface MinimalReceipt {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  readonly dependencies: DependencyReceipt;
   readonly files: {
     readonly coverage: "complete" | "partial" | "unavailable";
     readonly issues: readonly { readonly reason: string; readonly path?: ReceiptPath }[];
@@ -48,6 +50,16 @@ function freezeReceipt(receipt: MinimalReceipt): MinimalReceipt {
   Object.freeze(receipt.files.changes);
   Object.freeze(receipt.files);
   Object.freeze(receipt.watch);
+  for (const item of receipt.dependencies.declarations.changes) Object.freeze(item);
+  for (const item of receipt.dependencies.lockfiles.changes) Object.freeze(item);
+  for (const item of receipt.dependencies.issues) Object.freeze(item);
+  Object.freeze(receipt.dependencies.declarations.changes);
+  Object.freeze(receipt.dependencies.lockfiles.changes);
+  Object.freeze(receipt.dependencies.issues);
+  Object.freeze(receipt.dependencies.declarations);
+  Object.freeze(receipt.dependencies.lockfiles);
+  Object.freeze(receipt.dependencies.installed);
+  Object.freeze(receipt.dependencies);
   return Object.freeze(receipt);
 }
 
@@ -72,6 +84,8 @@ export function buildReceipt(
   afterGit: GitSnapshot,
   beforeWatch: readonly WatchCapture[],
   afterWatch: readonly WatchCapture[],
+  beforeDependencies: DependencySnapshot,
+  afterDependencies: DependencySnapshot,
 ): MinimalReceipt {
   const coverage = before.coverage === "complete" && after.coverage === "complete"
     ? "complete" : before.coverage === "unavailable" || after.coverage === "unavailable"
@@ -102,8 +116,9 @@ export function buildReceipt(
     return { id: first.id, before: first.observation, after: last.observation, comparison } as const;
   });
   return freezeReceipt({
-    schemaVersion: 1,
+    schemaVersion: 2,
     files: { coverage, issues: [...before.issues, ...after.issues], changes },
     watch,
+    dependencies: compareDependencies(beforeDependencies, afterDependencies),
   });
 }

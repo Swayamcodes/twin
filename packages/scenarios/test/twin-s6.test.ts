@@ -130,7 +130,7 @@ describe("2.5R-2 fixed Twin S6 product proof", () => {
     accounted(rejected.proof, 1, 0, 1);
     expect(rejected.errors).toHaveLength(2);
     expect(rejected.proof.result).toMatchObject({ outcome: "timed-out", started: true, directChildSettled: false });
-    expect(rejected.proof.twinCleanup[0]).toEqual({ status: "refused", reason: "Cannot discard Twin in state child-unsettled" });
+    expect(rejected.proof.twinCleanup[0]).toEqual({ status: "refused", reason: "direct child exit remains unconfirmed" });
     ordered(rejected.proof, "twin-observation-deferred-unsettled", "discardTwin", "original-removed",
       "injected-twin-retention-accounted", "synthetic-late-settlement", "twin-removed", "cleanupSupport");
   }, 30_000);
@@ -171,7 +171,7 @@ function syntheticGuard() {
   const policy = Object.freeze({ executable: "/synthetic/git", argv: Object.freeze(["clean", "-fdx"]),
     cwd: "/synthetic/twin/workspace", env: Object.freeze(gitEnvironment("/synthetic")) });
   const input = { command: policy.executable as unknown, argv: [...policy.argv], options: {
-    cwd: policy.cwd as string, shell: false, env: { ...policy.env }, detached: false, stdio: ["ignore", "pipe", "pipe"] } };
+    cwd: policy.cwd as string, shell: false, env: { ...policy.env }, detached: true, stdio: ["ignore", "pipe", "pipe"] } };
   const state: ActionGateState = { installed: true, phase: "action", dispatched: true, preStateComplete: true, sessionState: "running" };
   const gate = new S6ActionGate();
   const native = vi.fn<(command: string, argv: string[], options: ReturnType<typeof admitSpawn>["options"]) => void>();
@@ -202,7 +202,7 @@ describe("S6 synthetic admission, no native execution", () => {
     expect(() => s.forward()).toThrow();
     expect(s.native).not.toHaveBeenCalled();
   });
-  it.each(["flag", "pathspec", "-C", "alternate", "bare-git", "shell", "detached", "stdio", "extra-option", "sparse"])("rejects %s", kind => {
+  it.each(["flag", "pathspec", "-C", "alternate", "bare-git", "shell", "detached", "missing-detached", "stdio", "extra-option", "sparse"])("rejects %s", kind => {
     const s = syntheticGuard();
     if (kind === "flag") s.input.argv.push("-n");
     if (kind === "pathspec") s.input.argv.push("scratch.txt");
@@ -210,7 +210,8 @@ describe("S6 synthetic admission, no native execution", () => {
     if (kind === "alternate") s.input.command = "/other/git";
     if (kind === "bare-git") s.input.command = "git";
     if (kind === "shell") s.input.options.shell = true;
-    if (kind === "detached") s.input.options.detached = true;
+    if (kind === "detached") s.input.options.detached = false;
+    if (kind === "missing-detached") Reflect.deleteProperty(s.input.options, "detached");
     if (kind === "stdio") s.input.options.stdio[0] = "inherit";
     if (kind === "extra-option") Object.defineProperty(s.input.options, "uid", { value: 0 });
     if (kind === "sparse") s.input.argv = new Array<string>(2);

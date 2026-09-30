@@ -21,8 +21,10 @@ const WATCH_IDS: readonly WatchId[] = [
 
 function unavailableReceipt(reason: string): MinimalReceipt {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     files: { coverage: "unavailable", issues: [{ reason }], changes: [] },
+    dependencies: { declarations: { coverage: "unavailable", changes: [] }, lockfiles: { coverage: "unavailable", changes: [] },
+      installed: { coverage: "unavailable", reason: "not-observed" }, issues: [{ phase: "after", path: "package.json", reason }] },
     watch: WATCH_IDS.map(id => ({
       id,
       before: { status: "unavailable", reason },
@@ -41,7 +43,8 @@ function write(stream: NodeJS.WriteStream, chunk: string | Uint8Array): Promise<
 async function writeReceipt(receipt: MinimalReceipt): Promise<void> {
   const limit = 8 * 1024 * 1024;
   let estimatedBytes = 2048;
-  for (const collection of [receipt.files.issues, receipt.files.changes, receipt.watch]) {
+  for (const collection of [receipt.files.issues, receipt.files.changes, receipt.watch,
+    receipt.dependencies.declarations.changes, receipt.dependencies.lockfiles.changes, receipt.dependencies.issues]) {
     for (const item of collection) {
       estimatedBytes += Buffer.byteLength(JSON.stringify(item), "utf8") + 1;
       if (estimatedBytes > limit) break;

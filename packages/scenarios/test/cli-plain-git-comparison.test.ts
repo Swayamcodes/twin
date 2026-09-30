@@ -17,7 +17,9 @@ interface Entry { path: string; kind: Kind; mode: number; sha256?: string; bytes
 interface Result { stdout: Buffer; stderr: Buffer; exitCode: number | null; signal: NodeJS.Signals | null;
   timedOut: boolean; spawnError: string | null }
 interface Root { path: string; dev: number; ino: number; token: string; removed: boolean }
-interface Receipt { schemaVersion: number; files: { coverage: string; issues: unknown[];
+interface Receipt { schemaVersion: number; dependencies: { declarations: { coverage: string; changes: unknown[] };
+  lockfiles: { coverage: string; changes: unknown[] }; installed: { coverage: string; reason: string }; issues: unknown[] };
+  files: { coverage: string; issues: unknown[];
   changes: { path: { encoding: string; value: string }; change: string; category: string }[] };
   watch: { id: string; comparison: string }[] }
 interface Comparison { scenario: Scenario; originalBefore: Entry[]; originalAfter: Entry[];
@@ -52,20 +54,36 @@ const s7Action = Buffer.from('import { writeFileSync } from "node:fs";\n'
   + 'writeFileSync(".env", "SECRET=oops");\n');
 const s10Name = "twin-s10-offline-probe";
 const s10Package = Buffer.from(JSON.stringify({ name: s10Name, version: "1.0.0", main: "index.js" }) + "\n");
-const s11Worker = Buffer.from('import { writeFileSync } from "node:fs";\n'
+const s11Worker = Buffer.from('import { readFileSync, writeFileSync } from "node:fs";\n'
   + 'if (process.argv.length !== 4) process.exit(2);\n'
-  + 'writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, token: process.argv[3] }) + "\\n", '
+  + 'const stat = readFileSync("/proc/self/stat", "utf8");\n'
+  + 'const fields = stat.slice(stat.lastIndexOf(") ") + 2).trim().split(/\\s+/);\n'
+  + 'const groupLeaderPid = Number(fields[2]), startTime = fields[19];\n'
+  + 'if (groupLeaderPid !== process.ppid || !/^\\d+$/.test(startTime)) process.exit(3);\n'
+  + 'writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, token: process.argv[3], '
+  + 'groupLeaderPid, startTime }) + "\\n", '
   + '{ flag: "wx", mode: 0o600 });\n'
   + 'setTimeout(() => process.exit(0), 20000).unref();\n'
   + 'setInterval(() => {}, 250);\n');
 const s11Action = Buffer.from('import { spawn } from "node:child_process";\n'
+  + 'import { readFile } from "node:fs/promises";\n'
+  + 'import { setTimeout as delay } from "node:timers/promises";\n'
   + 'import { fileURLToPath } from "node:url";\n'
   + 'const marker = process.env.TWIN_S11_MARKER, token = process.env.TWIN_S11_TOKEN;\n'
   + 'if (process.argv.length !== 2 || !marker || !token) process.exit(2);\n'
   + 'const worker = fileURLToPath(new URL("./s11-worker.mjs", import.meta.url));\n'
   + 'const child = spawn(process.execPath, [worker, marker, token], '
   + '{ detached: false, shell: false, stdio: "ignore", env: { HOME: process.env.HOME ?? "" } });\n'
-  + 'child.unref();\n');
+  + 'child.unref();\n'
+  + 'let ready = false;\n'
+  + 'for (let attempt = 0; attempt < 100; attempt++) {\n'
+  + '  try {\n'
+  + '    const value = JSON.parse(await readFile(marker, "utf8"));\n'
+  + '    if (value.pid === child.pid && value.token === token && value.groupLeaderPid === process.pid) { ready = true; break; }\n'
+  + '  } catch (error) { if (error.code !== "ENOENT") throw error; }\n'
+  + '  await delay(25);\n'
+  + '}\n'
+  + 'if (!ready) throw new Error("S11 worker did not join the action process group");\n');
 
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
@@ -218,18 +236,22 @@ function npmEnvironment(home: string, prefixPath: string, cache: string, tempora
     NPM_CONFIG_OFFLINE: "true", NPM_CONFIG_IGNORE_SCRIPTS: "true", NPM_CONFIG_AUDIT: "false",
     NPM_CONFIG_FUND: "false", NPM_CONFIG_UPDATE_NOTIFIER: "false", NPM_CONFIG_LOGLEVEL: "error" };
 }
-interface WorkerIdentity { pid: number; token: string; startTime: string }
+interface WorkerIdentity { pid: number; token: string; startTime: string; groupLeaderPid: number }
 function processGone(error: unknown): boolean {
   return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ESRCH");
 }
-async function waitForWorkerMarker(path: string, token: string): Promise<number> {
+async function waitForWorkerMarker(path: string, token: string): Promise<WorkerIdentity> {
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
       const value: unknown = JSON.parse(await fs.readFile(path, "utf8"));
-      assert(value && typeof value === "object" && "pid" in value && "token" in value);
+      assert(value && typeof value === "object" && "pid" in value && "token" in value
+        && "groupLeaderPid" in value && "startTime" in value);
       assert.equal(value.token, token);
       assert(typeof value.pid === "number" && Number.isSafeInteger(value.pid) && value.pid > 1);
-      return value.pid;
+      assert(typeof value.groupLeaderPid === "number" && Number.isSafeInteger(value.groupLeaderPid)
+        && value.groupLeaderPid > 1 && value.groupLeaderPid !== value.pid);
+      assert(typeof value.startTime === "string" && /^\d+$/.test(value.startTime));
+      return { pid: value.pid, token, groupLeaderPid: value.groupLeaderPid, startTime: value.startTime };
     } catch (error: unknown) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
       await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
@@ -263,10 +285,12 @@ async function workerState(pid: number, worker: string, markerPath: string, toke
   assert.equal(owner.uid, process.getuid?.(), "S11 worker owner changed");
   return { running: true, startTime };
 }
-async function stopWorker(identity: WorkerIdentity, worker: string, markerPath: string): Promise<void> {
+async function stopWorker(identity: WorkerIdentity, worker: string, markerPath: string,
+  onSignal: (signal: NodeJS.Signals) => void): Promise<void> {
   const observe = async (): Promise<boolean> =>
     (await workerState(identity.pid, worker, markerPath, identity.token, identity.startTime))?.running ?? false;
   if (!await observe()) return;
+  onSignal("SIGTERM");
   try { process.kill(identity.pid, "SIGTERM"); }
   catch (error: unknown) { if (processGone(error)) return; throw error; }
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -274,6 +298,7 @@ async function stopWorker(identity: WorkerIdentity, worker: string, markerPath: 
     await new Promise(resolveDelay => setTimeout(resolveDelay, 25));
   }
   if (await observe()) {
+    onSignal("SIGKILL");
     try { process.kill(identity.pid, "SIGKILL"); }
     catch (error: unknown) { if (processGone(error)) return; throw error; }
   }
@@ -306,8 +331,10 @@ function framed(stderr: Buffer, actionStderr: Buffer): Receipt {
   const receipt: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
   assert(receipt && typeof receipt === "object");
   const typed = receipt as Receipt;
-  assert.equal(typed.schemaVersion, 1);
+  assert.equal(typed.schemaVersion, 2);
   assert(Array.isArray(typed.files?.changes) && Array.isArray(typed.files.issues));
+  assert(typed.dependencies && Array.isArray(typed.dependencies.declarations?.changes)
+    && Array.isArray(typed.dependencies.lockfiles?.changes) && Array.isArray(typed.dependencies.issues));
   assert(Array.isArray(typed.watch));
   assert.deepEqual(typed.watch.map(value => value.id), watchIds);
   return typed;
@@ -569,14 +596,18 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
     const home: Entry[] = [...base, { path: ".s9-note", kind: "file", mode: 0o600,
       bytes: Buffer.from(initialNote).toString("base64") }];
     expect(() => assertS9HomeEffect(home, home)).toThrow();
-    const claimed: Receipt = { schemaVersion: 1, files: { coverage: "complete", issues: [], changes: [] },
+    const claimed: Receipt = { schemaVersion: 2, dependencies: { declarations: { coverage: "complete", changes: [] },
+      lockfiles: { coverage: "complete", changes: [] }, installed: { coverage: "unavailable", reason: "not-observed" }, issues: [] },
+      files: { coverage: "complete", issues: [], changes: [] },
       watch: [...watchIds.map(id => ({ id, comparison: "unchanged" })), { id: ".s9-note", comparison: "changed" }] };
     expect(() => assertS9Omission(claimed)).toThrow();
     expect(() => assertS9Omission({ ...claimed, watch: watchIds.map(id => ({ id,
       comparison: id === ".npmrc" ? "changed" : "unchanged" })) })).toThrow();
   });
   it("rejects malformed, truncated, extra and unframed receipt bytes", () => {
-    const payload = Buffer.from(JSON.stringify({ schemaVersion: 1, files: { coverage: "complete", issues: [], changes: [] },
+    const payload = Buffer.from(JSON.stringify({ schemaVersion: 2, dependencies: { declarations: { coverage: "complete", changes: [] },
+      lockfiles: { coverage: "complete", changes: [] }, installed: { coverage: "unavailable", reason: "not-observed" }, issues: [] },
+      files: { coverage: "complete", issues: [], changes: [] },
       watch: watchIds.map(id => ({ id, comparison: "unchanged" })) }));
     const good = Buffer.concat([Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`), payload, Buffer.from("\n")]);
     expect(framed(good, Buffer.alloc(0)).files.changes).toEqual([]);
@@ -685,7 +716,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.deepEqual(await inventory(workspace), projectBefore);
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
+      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);
@@ -721,7 +752,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
     expect(teardownCalled).toBe(false);
   });
 
-  it("measures S11 worker survival, receipt and harness termination", async () => {
+  it("measures S11 process-group termination, receipt and owned cleanup", async () => {
     assert.equal(process.platform, "linux", "S11 process identity review requires /proc");
     const base = await fs.realpath(tmpdir());
     assert(forbidden.every(path => !within(path, base) && !within(base, path)));
@@ -729,6 +760,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
     const roots: Root[] = [];
     let session: TwinSession | undefined, workerIdentity: WorkerIdentity | undefined;
     let workerPath: string | undefined, markerPath: string | undefined, token: string | undefined;
+    const harnessSignals: NodeJS.Signals[] = [];
     let launched = false, primary: unknown;
     try {
       const support = await allocate(base, roots), original = await allocate(base, roots);
@@ -758,22 +790,25 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.deepEqual(argv, [join(actions, "s11-launch.mjs")]);
       launched = true;
       const result = await session.run({ executable: process.execPath, argv, env, timeoutMs: 8_000 });
-      assert.equal(result.outcome, "exited"); assert.equal(result.directChildSettled, true);
+      assert.equal(result.outcome, "exited"); assert.equal(result.started, true);
+      assert.equal(result.directChildSettled, true); assert.equal(result.lifecycleIssue, undefined);
       assert.equal(result.exitCode, 0); assert.equal(result.signal, null);
+      assert.equal(result.spawnError, null); assert.equal(result.terminationError, null);
       assert.deepEqual(Buffer.from(result.stdout.bytes), Buffer.alloc(0));
-      const pid = await waitForWorkerMarker(markerPath, token);
-      const afterAction = await workerState(pid, workerPath, markerPath, token);
-      assert(afterAction?.running, "S11 worker stopped before action observation");
-      workerIdentity = { pid, token, startTime: afterAction.startTime };
+      workerIdentity = await waitForWorkerMarker(markerPath, token);
+      const afterAction = await workerState(workerIdentity.pid, workerPath, markerPath, token, workerIdentity.startTime);
+      assert(!afterAction?.running, "S11 worker remained after Twin process-group settlement");
+      assert.throws(() => process.kill(-workerIdentity!.groupLeaderPid, 0), { code: "ESRCH" });
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
+      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);
       assert.deepEqual(await inventory(workspace), projectBefore);
       assert.deepEqual(await session.discard(), { status: "removed" });
-      assert.equal((await workerState(pid, workerPath, markerPath, token, workerIdentity.startTime))?.running, true);
+      assert.equal((await workerState(workerIdentity.pid, workerPath, markerPath, token, workerIdentity.startTime))?.running ?? false, false);
+      assert.throws(() => process.kill(-workerIdentity!.groupLeaderPid, 0), { code: "ESRCH" });
       assert.deepEqual(await fs.readdir(scratch.path), [marker]);
       assert.deepEqual(await inventory(workspace), projectBefore);
     } catch (error: unknown) { primary = error; }
@@ -782,13 +817,9 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       await finishS11Cleanup(async () => {
         if (!launched) return;
         assert(workerPath && markerPath && token, "S11 worker cleanup identity is incomplete");
-        if (!workerIdentity) {
-          const pid = await waitForWorkerMarker(markerPath, token);
-          const observed = await workerState(pid, workerPath, markerPath, token);
-          if (observed?.running) workerIdentity = { pid, token, startTime: observed.startTime };
-        }
+        workerIdentity ??= await waitForWorkerMarker(markerPath, token);
         assert(workerIdentity, "S11 worker identity could not be verified");
-        await stopWorker(workerIdentity, workerPath, markerPath);
+        await stopWorker(workerIdentity, workerPath, markerPath, signal => harnessSignals.push(signal));
       }, async () => {
         if (session && session.inspect().state !== "discarded") {
           try { assert.deepEqual(await session.discard(), { status: "removed" }); }
@@ -799,6 +830,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
           catch (error: unknown) { cleanupErrors.push(error); }
         }
       });
+      assert.deepEqual(harnessSignals, [], "Harness signals cannot count as Twin process termination");
     } catch (error: unknown) { cleanupErrors.push(error); }
     const afterNames = (await fs.readdir(base)).filter(name => name.startsWith(prefix)).sort();
     if (primary || cleanupErrors.length || roots.some(root => !root.removed)

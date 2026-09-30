@@ -144,10 +144,10 @@ describe("2.5R-1 real Twin S12 product proof", () => {
 // synthetic destination; none of these placeholder paths is opened or executed.
 function syntheticGuard() {
   const policy = { executable: "/synthetic/node", argv: ["/synthetic/action.mjs"], cwd: "/synthetic/workspace",
-    env: { LANG: "C", LC_ALL: "C", TZ: "UTC" } };
+    env: { LANG: "C", LC_ALL: "C", TZ: "UTC" }, requireDetached: true };
   const input = { command: policy.executable as unknown, argv: [...policy.argv],
     options: { cwd: policy.cwd, shell: false, env: { ...policy.env } as Record<string, string>,
-      detached: false, stdio: ["ignore", "pipe", "pipe"] } };
+      detached: true, stdio: ["ignore", "pipe", "pipe"] } };
   const native = vi.fn<(command: string, argv: string[], options: ReturnType<typeof admitSpawn>["options"]) => void>();
   const forward = (afterCapture: () => void = () => {}): ReturnType<typeof admitSpawn> => {
     const captured = admitSpawn(input.command, input.argv, input.options, policy);
@@ -163,7 +163,7 @@ describe("S12 guard snapshots without native execution", () => {
     const s = syntheticGuard();
     const captured = s.forward();
     expect(s.native).toHaveBeenCalledExactlyOnceWith(s.policy.executable, s.policy.argv,
-      { cwd: s.policy.cwd, shell: false, env: s.policy.env, detached: false, stdio: ["ignore", "pipe", "pipe"] });
+      { cwd: s.policy.cwd, shell: false, env: s.policy.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     expect(captured.argv).not.toBe(s.input.argv);
     expect(captured.options).not.toBe(s.input.options);
     expect(captured.options.env).not.toBe(s.input.options.env);
@@ -198,7 +198,7 @@ describe("S12 guard snapshots without native execution", () => {
     const captured = s.forward();
     expect(reads).toBe(1);
     expect(captured.options).toEqual({ cwd: s.policy.cwd, shell: false, env: s.policy.env,
-      detached: false, stdio: ["ignore", "pipe", "pipe"] });
+      detached: true, stdio: ["ignore", "pipe", "pipe"] });
     expect(s.native).toHaveBeenCalledTimes(1);
   });
 
@@ -237,7 +237,7 @@ describe("S12 guard snapshots without native execution", () => {
       s.input.options.stdio[0] = "inherit";
     });
     expect(s.native).toHaveBeenCalledExactlyOnceWith(s.policy.executable, s.policy.argv,
-      { cwd: s.policy.cwd, shell: false, env: s.policy.env, detached: false, stdio: ["ignore", "pipe", "pipe"] });
+      { cwd: s.policy.cwd, shell: false, env: s.policy.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     expect(captured.argv).toEqual(s.policy.argv);
   });
 
@@ -253,7 +253,7 @@ describe("S12 guard snapshots without native execution", () => {
     expect(s.native).not.toHaveBeenCalled();
   });
 
-  it.each(["command", "argv", "cwd", "shell", "env", "extra", "sparse"] as const)("rejects invalid captured %s without forwarding", site => {
+  it.each(["command", "argv", "cwd", "shell", "env", "detached", "missing-detached", "extra", "sparse"] as const)("rejects invalid captured %s without forwarding", site => {
     const s = syntheticGuard();
     let coerced = 0;
     if (site === "command") s.input.command = { toString: () => { coerced++; return s.policy.executable; } };
@@ -261,6 +261,8 @@ describe("S12 guard snapshots without native execution", () => {
     else if (site === "cwd") s.input.options.cwd = "/synthetic/changed";
     else if (site === "shell") s.input.options.shell = true;
     else if (site === "env") s.input.options.env.NODE_OPTIONS = "changed";
+    else if (site === "detached") s.input.options.detached = false;
+    else if (site === "missing-detached") Reflect.deleteProperty(s.input.options, "detached");
     else if (site === "extra") Object.defineProperty(s.input.options, "uid", { value: 0 });
     else s.input.argv = new Array<string>(1);
     expect(() => s.forward()).toThrow();

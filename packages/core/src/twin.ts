@@ -7,6 +7,7 @@ import { captureManifest, unavailableManifest, type ManifestSnapshot } from "./m
 import { captureGitCategories, unavailableGit, type GitSnapshot } from "./git-classification.js";
 import { captureWatches, unavailableWatches, type WatchCapture } from "./watch.js";
 import { buildReceipt, type MinimalReceipt } from "./receipt.js";
+import { captureDependencies, unavailableDependencies, type DependencySnapshot } from "./dependencies.js";
 
 export interface CreateTwinOptions {
   readonly sourceDirectory: string;
@@ -69,14 +70,20 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
   let lifecycleIssue: string | null = null;
   let receipt: MinimalReceipt | undefined;
   const protectedRoots = [options.sourceDirectory, root.path, root.workspace];
+  const captureProjectDependencies = async (): Promise<DependencySnapshot> => {
+    await assertRootAuthority(root);
+    return captureDependencies(root.workspace);
+  };
   const captureBefore = await Promise.allSettled([
     captureManifest(root.workspace),
     captureGitCategories(root.workspace, protectedRoots),
     captureWatches(home, protectedRoots),
+    captureProjectDependencies(),
   ]);
   const before: ManifestSnapshot = captureBefore[0].status === "fulfilled" ? captureBefore[0].value : unavailableManifest("scan-unavailable");
   const beforeGit: GitSnapshot = captureBefore[1].status === "fulfilled" ? captureBefore[1].value : unavailableGit("git-incomplete");
   let beforeWatch: WatchCapture[] = captureBefore[2].status === "fulfilled" ? captureBefore[2].value : unavailableWatches("observation-failed");
+  const beforeDependencies: DependencySnapshot = captureBefore[3].status === "fulfilled" ? captureBefore[3].value : unavailableDependencies("observation-failed");
   return Object.freeze({
     workspacePath: root.workspace,
     inspect: (): TwinInspection => Object.freeze(receipt
@@ -112,6 +119,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         captureManifest(root.workspace),
         captureGitCategories(root.workspace, protectedRoots),
         captureWatches(home, protectedRoots),
+        captureProjectDependencies(),
       ]) : null;
       const after: ManifestSnapshot = captureAfter?.[0].status === "fulfilled"
         ? captureAfter[0].value : unavailableManifest(childSettled ? "scan-unavailable" : "child-unsettled");
@@ -119,13 +127,16 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         ? captureAfter[1].value : unavailableGit("git-incomplete");
       const afterWatch: WatchCapture[] = captureAfter?.[2].status === "fulfilled"
         ? captureAfter[2].value : unavailableWatches(childSettled ? "observation-failed" : "child-unsettled");
+      const afterDependencies: DependencySnapshot = captureAfter?.[3].status === "fulfilled"
+        ? captureAfter[3].value : unavailableDependencies(childSettled ? "observation-failed" : "child-unsettled");
       try {
-        receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch);
+        receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch, beforeDependencies, afterDependencies);
       } catch {
         receipt = buildReceipt(
           unavailableManifest("receipt-unavailable"), unavailableManifest("receipt-unavailable"),
           unavailableGit("git-incomplete"), unavailableGit("git-incomplete"),
           unavailableWatches("receipt-unavailable"), unavailableWatches("receipt-unavailable"),
+          unavailableDependencies("receipt-unavailable"), unavailableDependencies("receipt-unavailable"),
         );
       } finally {
         beforeWatch = unavailableWatches("consumed");

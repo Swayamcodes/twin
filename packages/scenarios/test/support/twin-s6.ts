@@ -43,7 +43,7 @@ interface SpawnPolicy {
 interface AdmittedSpawn {
   executable: string;
   argv: string[];
-  options: { cwd: string; shell: false; env: Record<string, string>; detached: false;
+  options: { cwd: string; shell: false; env: Record<string, string>; detached: boolean;
     stdio: ["ignore", "pipe", "pipe"] };
 }
 /** Pure test seam: never launches. The real guard forwards only this owned snapshot. */
@@ -68,7 +68,8 @@ export function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptio
   assert(argv.every((arg): arg is string => typeof arg === "string"), "Expected dense string argv");
   assert(typeof cwd === "string", "Expected cwd string");
   assert(shell === false, "Explicit shell:false required");
-  assert(policy.requireDetached ? detached === false : detached === undefined || detached === false, "Detached execution forbidden");
+  assert(policy.requireDetached ? detached === true : detached === undefined || detached === false,
+    "Unexpected detached setting");
   assert(stdio.every(value => typeof value === "string"), "Expected string stdio");
   assert.deepEqual(stdio, ["ignore", "pipe", "pipe"]);
   const env: Record<string, string> = {};
@@ -81,7 +82,8 @@ export function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptio
   assert.deepEqual(argv, policy.argv);
   assert.equal(cwd, policy.cwd);
   assert.deepEqual(env, policy.env);
-  return { executable, argv, options: { cwd, shell: false, env, detached: false, stdio: ["ignore", "pipe", "pipe"] } };
+  return { executable, argv, options: { cwd, shell: false, env, detached: policy.requireDetached === true,
+    stdio: ["ignore", "pipe", "pipe"] } };
 }
 
 /** Synchronous restorations are independent; even failed restores cannot skip synchronization. */
@@ -116,8 +118,11 @@ const removedPaths = Object.freeze([".env", "scratch.txt", "node_modules/lib.txt
 const actionArgv = Object.freeze(["clean", "-fdx"]);
 
 function assertS6Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["files", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 1);
+  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 2);
+  assert.equal(receipt.dependencies.declarations.coverage, "incomplete");
+  assert.deepEqual(receipt.dependencies.declarations.changes, []);
+  assert.equal(receipt.dependencies.installed.coverage, "unavailable");
   assert.deepEqual(Object.keys(receipt.files).sort(), ["changes", "coverage", "issues"]);
   assert.equal(receipt.files.coverage, "complete");
   assert.deepEqual(receipt.files.issues, []);
@@ -643,7 +648,7 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
         twinRefusal = fault === "twin-refusal" && result.status === "refused"
           && result.reason === `Directory authority mismatch: ${scratch}`;
         unsettledRefusal = fault === "unsettled" && result.status === "refused"
-          && result.reason === "Cannot discard Twin in state child-unsettled";
+          && result.reason === "direct child exit remains unconfirmed";
         assert.equal(result.status, "removed", JSON.stringify(result));
         await confirmDiscard();
       },
