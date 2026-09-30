@@ -20,7 +20,7 @@ type Stage = S8S13Incomplete["stage"];
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const repository = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const coreModules = ["index.js", "twin.js", "copy.js", "run.js", "safety.js", "manifest.js",
-  "git-classification.js", "watch.js", "receipt.js"] as const;
+  "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"] as const;
 const adapterModules = ["s8-s13-fixtures.js", "s8-s13-score-producer.js", "s8-s13-score-entry.js",
   "contract/s8-s13-score.js", "fixture.js", "runner.js", "scenarios.js"] as const;
 async function fingerprint(base: string, names: readonly string[]): Promise<string> {

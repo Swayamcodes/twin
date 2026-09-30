@@ -21,7 +21,6 @@ export interface LockfileChange { readonly path: typeof LOCKFILES[number]; reado
 export interface DependencyReceipt {
   readonly declarations: { readonly coverage: DependencyCoverage; readonly changes: readonly DependencyChange[] };
   readonly lockfiles: { readonly coverage: DependencyCoverage; readonly changes: readonly LockfileChange[] };
-  readonly installed: { readonly coverage: "unavailable"; readonly reason: "not-observed" };
   readonly issues: readonly DependencyIssue[];
 }
 type ReadResult = { readonly status: "missing" } | { readonly status: "available"; readonly text: string; readonly digest: string } | { readonly status: "unavailable"; readonly reason: string };
@@ -35,7 +34,7 @@ export interface DependencySnapshot {
 function same(a: import("node:fs").BigIntStats, b: import("node:fs").BigIntStats): boolean {
   return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
-async function readBounded(root: string, name: string, budget: { remaining: number }): Promise<ReadResult> {
+export async function readBounded(root: string, name: string, budget: { remaining: number }): Promise<ReadResult> {
   const path = join(root, name);
   let first: import("node:fs").BigIntStats;
   try { first = await lstat(path, { bigint: true }); }
@@ -148,6 +147,6 @@ export function compareDependencies(before: DependencySnapshot, after: Dependenc
   return {
     declarations: { coverage: coverage(!before.declarations || !after.declarations), changes: declarationChanges },
     lockfiles: { coverage: coverage(issues.some(issue => LOCKFILES.some(name => name === issue.path))), changes: lockChanges },
-    installed: { coverage: "unavailable", reason: "not-observed" }, issues,
+    issues,
   };
 }

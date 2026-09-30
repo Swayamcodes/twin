@@ -54,7 +54,7 @@ describe("project dependency receipt", () => {
     const result = await session.run({ executable: process.execPath, argv: ["-e", script], env: {} });
     expect(result.exitCode).toBe(0);
     const receipt = session.inspect().receipt!;
-    expect(receipt.schemaVersion).toBe(2);
+    expect(receipt.schemaVersion).toBe(3);
     expect(receipt.dependencies.declarations.changes).toEqual([
       { field: "dependencies", name: "next", change: "added", before: null, after: "2" },
       { field: "dependencies", name: "old", change: "removed", before: "1", after: null },
@@ -75,7 +75,7 @@ describe("project dependency receipt", () => {
       { field: "dependencies", name: "removed", change: "removed", before: "1", after: null },
     ] });
     expect(receipt.lockfiles).toEqual({ coverage: "complete", changes: [] });
-    expect(receipt.installed).toEqual({ coverage: "unavailable", reason: "not-observed" });
+    expect("installed" in receipt).toBe(false);
   }));
 
   it("separates lockfile-only changes from declarations and unchanged inputs", async () => fixtureTest(async f => {

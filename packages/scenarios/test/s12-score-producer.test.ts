@@ -146,7 +146,7 @@ describe("2.6R-1 fixed producer", () => {
   });
   it("uses independent exact compiled-module fingerprints", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "receipt.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint("core"));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint("adapter"));

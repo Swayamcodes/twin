@@ -2,6 +2,7 @@ import type { ManifestSnapshot } from "./manifest.js";
 import type { GitSnapshot } from "./git-classification.js";
 import type { WatchCapture } from "./watch.js";
 import { compareDependencies, type DependencyReceipt, type DependencySnapshot } from "./dependencies.js";
+import { compareGlobalNpm, type GlobalNpmReceipt, type GlobalNpmSelection, type GlobalNpmSnapshot } from "./global-npm.js";
 
 export type ReceiptPath = { readonly encoding: "utf8" | "base64"; readonly value: string };
 export type FileCategory = "tracked" | "untracked" | "ignored" | "unclassified";
@@ -12,8 +13,9 @@ export type WatchObservation =
   | { readonly status: "present"; readonly size: string; readonly mode: number; readonly mtimeNs: string }
   | { readonly status: "refused" | "unavailable"; readonly reason: string };
 export interface MinimalReceipt {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly dependencies: DependencyReceipt;
+  readonly globalNpm: GlobalNpmReceipt;
   readonly files: {
     readonly coverage: "complete" | "partial" | "unavailable";
     readonly issues: readonly { readonly reason: string; readonly path?: ReceiptPath }[];
@@ -58,8 +60,12 @@ function freezeReceipt(receipt: MinimalReceipt): MinimalReceipt {
   Object.freeze(receipt.dependencies.issues);
   Object.freeze(receipt.dependencies.declarations);
   Object.freeze(receipt.dependencies.lockfiles);
-  Object.freeze(receipt.dependencies.installed);
   Object.freeze(receipt.dependencies);
+  for (const item of receipt.globalNpm.changes) Object.freeze(item);
+  for (const item of receipt.globalNpm.issues) Object.freeze(item);
+  Object.freeze(receipt.globalNpm.changes);
+  Object.freeze(receipt.globalNpm.issues);
+  Object.freeze(receipt.globalNpm);
   return Object.freeze(receipt);
 }
 
@@ -86,6 +92,9 @@ export function buildReceipt(
   afterWatch: readonly WatchCapture[],
   beforeDependencies: DependencySnapshot,
   afterDependencies: DependencySnapshot,
+  globalSelection: GlobalNpmSelection,
+  beforeGlobal: GlobalNpmSnapshot,
+  afterGlobal: GlobalNpmSnapshot,
 ): MinimalReceipt {
   const coverage = before.coverage === "complete" && after.coverage === "complete"
     ? "complete" : before.coverage === "unavailable" || after.coverage === "unavailable"
@@ -116,9 +125,10 @@ export function buildReceipt(
     return { id: first.id, before: first.observation, after: last.observation, comparison } as const;
   });
   return freezeReceipt({
-    schemaVersion: 2,
+    schemaVersion: 3,
     files: { coverage, issues: [...before.issues, ...after.issues], changes },
     watch,
     dependencies: compareDependencies(beforeDependencies, afterDependencies),
+    globalNpm: compareGlobalNpm(globalSelection, beforeGlobal, afterGlobal),
   });
 }

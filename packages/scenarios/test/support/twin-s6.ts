@@ -118,11 +118,11 @@ const removedPaths = Object.freeze([".env", "scratch.txt", "node_modules/lib.txt
 const actionArgv = Object.freeze(["clean", "-fdx"]);
 
 function assertS6Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 2);
+  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 3);
   assert.equal(receipt.dependencies.declarations.coverage, "incomplete");
   assert.deepEqual(receipt.dependencies.declarations.changes, []);
-  assert.equal(receipt.dependencies.installed.coverage, "unavailable");
+  assert.equal(receipt.globalNpm.coverage, "unavailable");
   assert.deepEqual(Object.keys(receipt.files).sort(), ["changes", "coverage", "issues"]);
   assert.equal(receipt.files.coverage, "complete");
   assert.deepEqual(receipt.files.issues, []);

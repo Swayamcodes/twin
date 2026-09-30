@@ -19,6 +19,7 @@ interface Result { stdout: Buffer; stderr: Buffer; exitCode: number | null; sign
 interface Root { path: string; dev: number; ino: number; token: string; removed: boolean }
 interface Receipt { schemaVersion: number; dependencies: { declarations: { coverage: string; changes: unknown[] };
   lockfiles: { coverage: string; changes: unknown[] }; installed: { coverage: string; reason: string }; issues: unknown[] };
+  globalNpm?: { coverage: string; source: string; changes: unknown[]; issues: unknown[] };
   files: { coverage: string; issues: unknown[];
   changes: { path: { encoding: string; value: string }; change: string; category: string }[] };
   watch: { id: string; comparison: string }[] }
@@ -331,10 +332,11 @@ function framed(stderr: Buffer, actionStderr: Buffer): Receipt {
   const receipt: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
   assert(receipt && typeof receipt === "object");
   const typed = receipt as Receipt;
-  assert.equal(typed.schemaVersion, 2);
+  assert.equal(typed.schemaVersion, 3);
   assert(Array.isArray(typed.files?.changes) && Array.isArray(typed.files.issues));
   assert(typed.dependencies && Array.isArray(typed.dependencies.declarations?.changes)
     && Array.isArray(typed.dependencies.lockfiles?.changes) && Array.isArray(typed.dependencies.issues));
+  assert(typed.globalNpm && Array.isArray(typed.globalNpm.changes) && Array.isArray(typed.globalNpm.issues));
   assert(Array.isArray(typed.watch));
   assert.deepEqual(typed.watch.map(value => value.id), watchIds);
   return typed;
@@ -605,8 +607,9 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       comparison: id === ".npmrc" ? "changed" : "unchanged" })) })).toThrow();
   });
   it("rejects malformed, truncated, extra and unframed receipt bytes", () => {
-    const payload = Buffer.from(JSON.stringify({ schemaVersion: 2, dependencies: { declarations: { coverage: "complete", changes: [] },
-      lockfiles: { coverage: "complete", changes: [] }, installed: { coverage: "unavailable", reason: "not-observed" }, issues: [] },
+    const payload = Buffer.from(JSON.stringify({ schemaVersion: 3, dependencies: { declarations: { coverage: "complete", changes: [] },
+      lockfiles: { coverage: "complete", changes: [] }, issues: [] },
+      globalNpm: { coverage: "unavailable", source: "unavailable", changes: [], issues: [] },
       files: { coverage: "complete", issues: [], changes: [] },
       watch: watchIds.map(id => ({ id, comparison: "unchanged" })) }));
     const good = Buffer.concat([Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`), payload, Buffer.from("\n")]);
@@ -716,7 +719,10 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.deepEqual(await inventory(workspace), projectBefore);
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
+      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
+      assert.equal(receipt.schemaVersion, 3);
+      assert.deepEqual(receipt.globalNpm, { coverage: "complete", source: "env-prefix",
+        changes: [{ name: s10Name, change: "added", before: null, after: "1.0.0" }], issues: [] });
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);
@@ -801,7 +807,7 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.throws(() => process.kill(-workerIdentity!.groupLeaderPid, 0), { code: "ESRCH" });
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
+      assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);

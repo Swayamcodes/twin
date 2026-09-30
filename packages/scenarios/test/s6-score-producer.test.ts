@@ -43,7 +43,7 @@ describe("2.6R-2 fixed S6 producer", () => {
   });
   it("uses fixed compiled labels and independently reconstructed bytes", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "receipt.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint(coreBase, CORE_FINGERPRINT_MODULES));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint(moduleBase, ADAPTER_FINGERPRINT_MODULES));

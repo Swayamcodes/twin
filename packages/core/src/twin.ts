@@ -8,6 +8,7 @@ import { captureGitCategories, unavailableGit, type GitSnapshot } from "./git-cl
 import { captureWatches, unavailableWatches, type WatchCapture } from "./watch.js";
 import { buildReceipt, type MinimalReceipt } from "./receipt.js";
 import { captureDependencies, unavailableDependencies, type DependencySnapshot } from "./dependencies.js";
+import { captureGlobalNpm, selectGlobalNpmRoot, unavailableGlobalNpm } from "./global-npm.js";
 
 export interface CreateTwinOptions {
   readonly sourceDirectory: string;
@@ -101,6 +102,10 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       catch (error: unknown) { state = "ready"; throw error; }
       childSettled = false;
       lifecycleIssue = null;
+      const globalSelection = selectGlobalNpmRoot(command.env, command.argv, protectedRoots);
+      const beforeGlobal = globalSelection.root
+        ? await captureGlobalNpm(globalSelection.root).catch(() => unavailableGlobalNpm("observation-failed"))
+        : unavailableGlobalNpm(globalSelection.reason ?? "prefix-unavailable");
       let result: RunResult | undefined;
       let failure: unknown;
       let didThrow = false;
@@ -129,14 +134,19 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         ? captureAfter[2].value : unavailableWatches(childSettled ? "observation-failed" : "child-unsettled");
       const afterDependencies: DependencySnapshot = captureAfter?.[3].status === "fulfilled"
         ? captureAfter[3].value : unavailableDependencies(childSettled ? "observation-failed" : "child-unsettled");
+      const afterGlobal = childSettled && globalSelection.root
+        ? await assertRootAuthority(root).then(() => captureGlobalNpm(globalSelection.root!)).catch(() => unavailableGlobalNpm("observation-failed"))
+        : unavailableGlobalNpm(childSettled ? globalSelection.reason ?? "prefix-unavailable" : "child-unsettled");
       try {
-        receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch, beforeDependencies, afterDependencies);
+        receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch, beforeDependencies, afterDependencies,
+          globalSelection, beforeGlobal, afterGlobal);
       } catch {
         receipt = buildReceipt(
           unavailableManifest("receipt-unavailable"), unavailableManifest("receipt-unavailable"),
           unavailableGit("git-incomplete"), unavailableGit("git-incomplete"),
           unavailableWatches("receipt-unavailable"), unavailableWatches("receipt-unavailable"),
           unavailableDependencies("receipt-unavailable"), unavailableDependencies("receipt-unavailable"),
+          { reason: "receipt-unavailable" }, unavailableGlobalNpm("receipt-unavailable"), unavailableGlobalNpm("receipt-unavailable"),
         );
       } finally {
         beforeWatch = unavailableWatches("consumed");

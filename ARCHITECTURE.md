@@ -556,6 +556,16 @@ only its version header; lockfile changes are whole-file digests, not resolved
 package diffs. Installed packages are explicitly unobserved. Nested workspace
 manifests, Yarn/Bun/Python manifests, and global packages remain outside this
 checkpoint.
+
+Phase 4 adds `globalNpm` to receipt schema version 3, leaving the CLI's
+`TWIN-RECEIPT/1` byte frame intact. The observation uses the admitted command's
+explicit `NPM_CONFIG_PREFIX` or `npm_config_prefix` and reads only
+`<prefix>/lib/node_modules` on POSIX. It captures package `name` and `version`
+metadata, separate from project declarations and lockfile digests. Missing,
+conflicting or overridden prefixes yield unavailable coverage; incomplete
+inventory never yields an empty clean comparison. See
+[global npm observation](docs/phase-4-global-npm.md) for limits. Frozen Phase 2
+results remain historical measurements and are not rescored by this receipt.
 Current S11 process testing now waits for an owned worker marker that records
 the action's process group, then checks that Twin settles and terminates that
 group before discard. Any later harness signal is cleanup only and earns no

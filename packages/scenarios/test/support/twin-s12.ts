@@ -189,11 +189,11 @@ function makeReceiptExecFileGuard(
   }) as typeof childProcess.execFile;
 }
 function assertS12Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 2);
+  assert.deepEqual(Object.keys(receipt).sort(), ["dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 3);
   assert.equal(receipt.dependencies.declarations.coverage, "incomplete");
   assert.deepEqual(receipt.dependencies.declarations.changes, []);
-  assert.equal(receipt.dependencies.installed.coverage, "unavailable");
+  assert.equal(receipt.globalNpm.coverage, "unavailable");
   assert.deepEqual(receipt.files, { coverage: "complete", issues: [], changes: [{
     path: { encoding: "utf8", value: "control-created.txt" }, change: "added",
     category: "untracked", categoryReason: null,
