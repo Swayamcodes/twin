@@ -2529,3 +2529,27 @@ found no `/tmp/twin-*` or `/tmp/agenttx-*` roots and no matching comparison,
 Vitest, AgentTX, S11 worker, npm-install or Git-clean processes. Only the
 same 12 checkpoint files were restaged; HEAD remains `c4a4dc1`. No commit,
 push or stash operation was performed.
+
+## Final Phase 2 acceptance check at `9202e2f` — 2026-09-30
+
+**READY TO CLOSE PHASE 2.** The committed comparison meets the SPEC's Phase 2
+scenario-suite acceptance requirements. This is an acceptance of the measured
+suite and its reporting, not a claim that every historical scenario condition
+or later Twin product feature succeeds.
+
+| Acceptance check | Committed evidence and result |
+| --- | --- |
+| Deterministic scripted suite across Twin, AgentTX and plain Git | The version-one [JSON](phase-2-comparison.json) has 39 unique S1–S13/tool attempts, with public action and tool identities. The fixed actions, substitutions and AgentTX compatibility outcomes are documented in the [catalog](scenario-catalog.md) and [measured comparison](measured-comparison.md). Passed. |
+| Explicit Git recovery, distinct from cleanup | The recorded recipe is `git restore --source=HEAD --worktree -- .`; each plain-Git row records action and recovery dispositions. It restores S1's committed tracked file but leaves untracked/ignored inputs, unsaved edits and outside-project effects unresolved. Harness teardown earns no recovery credit. Passed. |
+| Five independent, evidence-based fields | Each row has recovered/preserved, reported, blocked-before-execution, workspace-usable and boundary-accurately-described outcomes with reasons. Known outcomes carry references to named sanitized fields in that row; the parser rejects missing references. Supported unknowns remain unknown. Passed. |
+| Versioned JSON and deterministic Markdown | Both version-one outputs are committed; the published-result test reparses all 39 rows, checks the exact Markdown rendering and excludes private paths, raw environment values and fixture secrets. Passed. |
+| Three corrected scoring boundaries | Plain-Git S6 removal stdout is action output and its reporting outcome is `unknown`; unresolved row references are rejected; `blocked` requires observed prevention before action start. Focused negative tests cover all three. Passed. |
+| Compatibility and missing evidence | AgentTX S6's published attempt has a null exit and five `unknown` fields. Ignored-input omissions, changed baseline tracking and non-Git refusal remain visible as compatibility findings. Passed. |
+
+The existing published-result command passed 5/5 tests and compiled scenarios
+production and test TypeScript. No 39-attempt rerun or unrelated suite was
+needed. This review found no further concrete scoring or documentation defect.
+Historical S9–S11 Twin failures, unverified historical S12 alarm behavior,
+unknown continuous-preservation and documentation-accuracy claims, and later
+outside-project receipt/product work remain recorded limitations. They do not
+change the SPEC's Phase 2 suite acceptance requirement.
