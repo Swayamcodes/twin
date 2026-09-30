@@ -104,7 +104,16 @@ values captured are validated, and caller-owned objects are neither frozen nor
 mutated. Later changes to caller input do not change the admitted command.
 No environment is inherited
 implicitly and no selected-executable PATH search occurs. Spawn uses shell:false,
-workspace cwd, detached:false, ignored stdin and piped stdout/stderr. Callers remain
+workspace cwd and detached:false. The default captured mode ignores stdin and
+pipes stdout/stderr into the bounded result. `stdio: "inherit"` explicitly passes
+the caller's stdin, stdout and stderr descriptors to the direct child. This lets
+an interactive command read input and emit output immediately; `RunResult` then
+contains empty, incomplete stdout/stderr captures. The CLI selects this mode with
+`twin run --interactive -- <absolute-executable> [args...]`; ordinary `twin run --`
+keeps captured mode and prints its bounded output after completion. The receipt
+is still generated after the command and framed on CLI stderr. Inherited stdio
+does not allocate a PTY or establish terminal compatibility; terminal-only agents
+may still require a separate PTY implementation and verification. Callers remain
 responsible for executable trust, environment and command policy.
 
 RunResult schemaVersion 1 reports exited/spawn-failed/timed-out, actual launch,
@@ -121,6 +130,8 @@ second after direct-child exit. If exit remains unconfirmed, the result says so,
 the session enters child-unsettled and discard is refused. A later observed exit
 permits discard; signal delivery alone does not. No descendants are discovered or
 terminated. They can outlive the direct child and keep writing after it exits.
+Forwarding caller signals and complete process-group/descendant lifecycle handling
+remain outstanding.
 
 Result finalization clears timers and removes child spawn/close handlers. Settled
 children release exit/error handlers too; unsettled children retain only exit/error

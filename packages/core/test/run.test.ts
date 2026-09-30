@@ -226,6 +226,29 @@ describe("direct execution", () => {
     expect(result.stdout.complete).toBe(true);
     expect(JSON.parse(Buffer.from(result.stdout.bytes).toString())).toEqual({ argv, cwd: session.workspacePath, env: { TWIN_VALUE: "explicit" } });
   }));
+  it("inherits stdio when explicitly selected and reports no captured output", async () => fixtureTest(async f => {
+    const session = await f.create();
+    const child = new ChildProcess();
+    let launched!: () => void;
+    const launch = new Promise<void>(resolve => { launched = resolve; });
+    const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
+    syncBuiltinESMExports();
+    try {
+      const running = session.run({ ...nodeOptions("echo"), stdio: "inherit" });
+      await launch;
+      expect(spawn).toHaveBeenCalledWith(process.execPath, expect.any(Array), expect.objectContaining({
+        cwd: session.workspacePath, shell: false, detached: false, stdio: ["inherit", "inherit", "inherit"],
+      }));
+      child.emit("spawn"); child.emit("exit", 0, null); child.emit("close", 0, null);
+      const result = await running;
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toEqual({ bytes: new Uint8Array(), complete: false, truncated: false, error: null });
+      expect(result.stderr).toEqual({ bytes: new Uint8Array(), complete: false, truncated: false, error: null });
+    } finally {
+      child.emit("exit", 0, null); child.emit("close", 0, null);
+      spawn.mockRestore(); syncBuiltinESMExports();
+    }
+  }));
   it.each(["exit", "signal"] as const)("records %s", async behavior => fixtureTest(async f => {
     const result = await (await f.create()).run(nodeOptions(behavior));
     expect(result.outcome).toBe("exited");

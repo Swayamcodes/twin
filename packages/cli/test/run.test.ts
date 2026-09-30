@@ -60,12 +60,22 @@ describe("twin run", () => {
     expect(run.mock.calls[0][0].argv).toEqual(args);
   });
 
+  it("selects inherited stdio without replaying captured bytes", async () => {
+    expect(await main(["run", "--interactive", "--", "tool", "two words"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({
+      executable: "tool", argv: ["two words"], stdio: "inherit",
+    }));
+    expect(process.stdout.write).not.toHaveBeenCalled();
+    const stderrChunks = vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array));
+    expect(Buffer.concat(stderrChunks).toString()).toContain("TWIN-RECEIPT/1");
+  });
+
   it.each([["run"], ["run", "--"], ["run", "tool"], ["run", "--", ""]])(
     "rejects missing or malformed command usage: %j",
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run --"));
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] --"));
     },
   );
 

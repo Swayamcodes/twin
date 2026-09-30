@@ -3,12 +3,15 @@
 
 import { tmpdir } from "node:os";
 import { realpathSync } from "node:fs";
+import { mkdtemp, rmdir } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTwin, type MinimalReceipt, type WatchId } from "@twin-cli/core";
 
-const help = `Usage: twin run -- <executable> [args...]
+const help = `Usage: twin run [--interactive] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
+--interactive inherits stdin, stdout and stderr; command output is not captured.
 `;
 
 const WATCH_IDS: readonly WatchId[] = [
@@ -58,20 +61,27 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 0;
   }
 
-  if (argv[0] !== "run" || argv[1] !== "--" || argv.length < 3 || !argv[2]) {
+  const interactive = argv[1] === "--interactive";
+  const separator = interactive ? 2 : 1;
+  if (argv[0] !== "run" || argv[separator] !== "--" || argv.length < separator + 2 || !argv[separator + 1]) {
     process.stderr.write(help);
     return 2;
   }
 
   let session: Awaited<ReturnType<typeof createTwin>> | undefined;
+  let scratchParent: string | undefined;
   let exitCode = 1;
 
   try {
-    session = await createTwin({ sourceDirectory: process.cwd(), scratchParent: tmpdir() });
+    scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
+    session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-    const result = await session.run({ executable: argv[2], argv: argv.slice(3), env });
-    await write(process.stdout, result.stdout.bytes);
-    await write(process.stderr, result.stderr.bytes);
+    const result = await session.run({ executable: argv[separator + 1]!, argv: argv.slice(separator + 2), env,
+      ...(interactive ? { stdio: "inherit" as const } : {}) });
+    if (!interactive) {
+      await write(process.stdout, result.stdout.bytes);
+      await write(process.stderr, result.stderr.bytes);
+    }
     exitCode = result.exitCode === 0 ? 0 : 1;
   } catch (error) {
     await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
@@ -89,6 +99,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           await write(process.stderr, `Twin discard ${discarded.status}\n`);
         }
       } catch (error) {
+        await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+        exitCode = 1;
+      }
+    }
+    if (scratchParent) {
+      try { await rmdir(scratchParent); }
+      catch (error) {
         await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
         exitCode = 1;
       }

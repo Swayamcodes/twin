@@ -12,26 +12,28 @@ export function validateRunOptions(options: RunOptions): RunOptions {
       const inputArgv = options.argv;
       const inputEnv = options.env;
       const timeoutMs = options.timeoutMs ?? 60000;
+      const stdio = options.stdio;
       if (!Array.isArray(inputArgv) || !inputEnv || typeof inputEnv !== "object" || Array.isArray(inputEnv)) {
         throw new Error("Expected argv array and environment object");
       }
       const argv: unknown[] = [...inputArgv];
       const entries: [string, unknown][] = Object.entries(inputEnv);
-      return { executable, argv, entries, timeoutMs };
+      return { executable, argv, entries, timeoutMs, stdio };
     } catch (error: unknown) {
       throw new Error("Cannot snapshot command options", { cause: error });
     }
   })();
-  const { executable, argv, entries, timeoutMs } = snapshot;
+  const { executable, argv, entries, timeoutMs, stdio } = snapshot;
   if (typeof executable !== "string" || !isAbsolute(executable) || executable.includes("\0")) throw new Error("Invalid command options");
   if (!argv.every((arg): arg is string => typeof arg === "string" && !arg.includes("\0"))) throw new Error("Invalid command arguments");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000) throw new Error("Invalid timeout");
+  if (stdio !== undefined && stdio !== "inherit") throw new Error("Invalid stdio mode");
   const env: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [key, value] of entries) {
     if (!key || /[=\0]/.test(key) || typeof value !== "string" || value.includes("\0")) throw new Error("Invalid environment");
     env[key] = value;
   }
-  return { executable, argv, env, timeoutMs };
+  return { executable, argv, env, timeoutMs, ...(stdio === "inherit" ? { stdio } : {}) };
 }
 function capture(stream: Readable): { result: (started: boolean) => CapturedOutput; dispose: () => void } {
   const bytes = Buffer.alloc(65536);
@@ -126,7 +128,8 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     };
     try {
       child = spawn(options.executable, [...options.argv], {
-        cwd, env: { ...options.env }, shell: false, detached: false, stdio: ["ignore", "pipe", "pipe"],
+        cwd, env: { ...options.env }, shell: false, detached: false,
+        stdio: options.stdio === "inherit" ? ["inherit", "inherit", "inherit"] : ["ignore", "pipe", "pipe"],
       });
       if (child.stdout) stdout = capture(child.stdout);
       if (child.stderr) stderr = capture(child.stderr);

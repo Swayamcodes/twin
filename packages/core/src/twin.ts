@@ -17,6 +17,8 @@ export interface RunOptions {
   readonly argv: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
+  /** Inherit the caller's three stdio descriptors; output is not captured. */
+  readonly stdio?: "inherit";
 }
 export interface CapturedOutput {
   readonly bytes: Uint8Array;
