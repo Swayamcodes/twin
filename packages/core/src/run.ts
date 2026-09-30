@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path";
 import type { Readable } from "node:stream";
 import { message } from "./safety.js";
 import type { CapturedOutput, RunOptions, RunResult } from "./twin.js";
+import type { ProcessReceipt } from "./receipt.js";
 
 export function validateRunOptions(options: RunOptions): RunOptions {
   const snapshot = (() => {
@@ -71,7 +72,8 @@ function capture(stream: Readable): { result: (started: boolean) => CapturedOutp
   }, result: started => ({ bytes: Uint8Array.from(bytes.subarray(0, used)), truncated,
     complete: started && ended && !truncated && error === null, error }) };
 }
-export async function runCommand(cwd: string, options: RunOptions, onSettled: () => void): Promise<RunResult> {
+export async function runCommand(cwd: string, options: RunOptions, onSettled: () => void,
+  onObserved: (observation: ProcessReceipt) => void): Promise<RunResult> {
   return await new Promise<RunResult>(resolve => {
     let started = false;
     let directSettled = false;
@@ -91,11 +93,14 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     let poll: ReturnType<typeof setInterval> | undefined;
     let drainTimer: ReturnType<typeof setTimeout> | undefined;
     let safeNotified = false;
+    let groupAfterDirectExit: ProcessReceipt["groupAfterDirectExit"] = "not-observed";
+    const termination: ProcessReceipt["termination"][number][] = [];
     const markSafe = (): void => {
       if (!safeNotified) { safeNotified = true; onSettled(); }
     };
     const groupStatus = (): "absent" | "present" | "unknown" => {
-      if (!started || !child?.pid) return "absent";
+      if (!started) return "absent";
+      if (!child?.pid) return "unknown";
       try { process.kill(-child.pid, 0); return "present"; }
       catch (error: unknown) {
         if (error instanceof Error && "code" in error && error.code === "ESRCH") return "absent";
@@ -149,6 +154,15 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
       clearTimers();
       interruptSignal?.removeEventListener("abort", onAbort);
       const group = groupStatus();
+      const observation: ProcessReceipt = {
+        coverage: "top-level-process-group", escapedDescendants: "not-observed",
+        directChild: { start: started ? "confirmed" : "not-confirmed",
+          settlement: !started ? "not-applicable" : directSettled ? "observed" : "unconfirmed" },
+        groupAfterDirectExit, termination: [...termination],
+        finalGroup: started ? group : "not-applicable",
+        capturedPipes: !started ? "not-applicable" : options.stdio === "inherit" ? "not-captured"
+          : pipesClosed ? "closed" : "open",
+      };
       const lifecycleIssue = !directSettled ? "direct child exit remains unconfirmed"
         : group !== "absent" ? `process group ${group}`
           : !pipesClosed && started ? "stdio pipes remain open" : null;
@@ -167,14 +181,24 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
         poll = setInterval(checkLate, 100);
         poll.unref();
       }
+      onObserved(observation);
       resolve(result);
     };
     const kill = (requested: NodeJS.Signals): void => {
       if (finished || groupStatus() === "absent" && directSettled) return;
+      const target = started && child?.pid ? "process-group" : "direct-child";
       try {
-        if (started && child?.pid) process.kill(-child.pid, requested);
-        else if (!child?.kill(requested)) terminationError = `Could not deliver ${requested}`;
-      } catch (error: unknown) { terminationError = message(error); }
+        if (target === "process-group") process.kill(-child!.pid!, requested);
+        else if (!child?.kill(requested)) {
+          terminationError = `Could not deliver ${requested}`;
+          termination.push({ signal: requested, target, delivery: "failed" });
+          return;
+        }
+        termination.push({ signal: requested, target, delivery: "sent" });
+      } catch (error: unknown) {
+        terminationError = message(error);
+        termination.push({ signal: requested, target, delivery: "failed" });
+      }
     };
     const beginTermination = (requested: NodeJS.Signals, timeout: boolean): void => {
       if (finished || terminating) return;
@@ -194,6 +218,7 @@ export async function runCommand(cwd: string, options: RunOptions, onSettled: ()
     const checkLifecycle = (): void => {
       if (finished || !directSettled) return;
       const group = groupStatus();
+      if (groupAfterDirectExit === "not-observed" && started) groupAfterDirectExit = group;
       if (group !== "absent") {
         if (!terminating) beginTermination("SIGTERM", false);
         poll ??= setInterval(checkLifecycle, 50);

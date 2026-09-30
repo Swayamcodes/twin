@@ -574,6 +574,14 @@ allowlisted basename; arguments and environment values are omitted. The report
 states that nested commands are unobserved. The CLI frame remains
 `TWIN-RECEIPT/1`; historical Phase 2 results and frozen score contracts are
 unchanged. See [command report](docs/phase-4-commands.md).
+
+Receipt schema version 5 adds bounded lifecycle observations from the same
+runner launch, group probes and termination path. It records direct-child
+settlement, group presence after direct-child exit, attempted signal delivery,
+final group status and captured pipe status. Group absence covers only the
+original process group; unreadable checks remain unknown. The CLI frame and
+existing discard gates remain unchanged. See [process report](docs/phase-4-processes.md).
+
 Current S11 process testing now waits for an owned worker marker that records
 the action's process group, then checks that Twin settles and terminates that
 group before discard. Any later harness signal is cleanup only and earns no

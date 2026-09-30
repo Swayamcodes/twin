@@ -4,18 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { main } from "../src/index.js";
 
-vi.mock("@twin-cli/core", () => ({ createTwin: vi.fn() }));
+vi.mock("@twin-cli/core", async importOriginal => ({ ...await importOriginal<typeof import("@twin-cli/core")>(), createTwin: vi.fn() }));
 
 const output = new TextEncoder();
 const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
 const receipt: MinimalReceipt = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   command: { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
     processStart: "confirmed", executable: { status: "allowlisted-basename", value: "node" },
     arguments: { status: "omitted", count: 2, capped: false }, disposition: "exited",
     timeoutObserved: false, directChildSettled: true, exitCode: 0, signal: null },
+  process: { coverage: "top-level-process-group", escapedDescendants: "not-observed",
+    directChild: { start: "confirmed", settlement: "observed" }, groupAfterDirectExit: "absent",
+    termination: [], finalGroup: "absent", capturedPipes: "closed" },
   files: { coverage: "unavailable", issues: [{ reason: "λ" }], changes: [] },
   dependencies: { declarations: { coverage: "incomplete", changes: [] }, lockfiles: { coverage: "complete", changes: [] },
     issues: [{ phase: "before", path: "package.json", reason: "missing" }] },
@@ -142,8 +145,10 @@ describe("twin run", () => {
     const headerEnd = frame.indexOf(10);
     const length = Number(frame.subarray(16, headerEnd).toString("ascii"));
     const payload = JSON.parse(frame.subarray(headerEnd + 1, headerEnd + 1 + length).toString("utf8")) as MinimalReceipt;
-    expect(payload).toMatchObject({ schemaVersion: 4, command: { admitted: false,
-      processStart: "not-confirmed", disposition: "not-attempted", nestedCommands: "not-observed" } });
+    expect(payload).toMatchObject({ schemaVersion: 5, command: { admitted: false,
+      processStart: "not-confirmed", disposition: "not-attempted", nestedCommands: "not-observed" },
+    process: { directChild: { start: "not-confirmed", settlement: "not-applicable" }, finalGroup: "not-applicable",
+      termination: [] } });
     expect(frame.length).toBe(headerEnd + 1 + length + 1);
     expect(JSON.stringify(payload)).not.toContain("secret-argument");
   });
@@ -161,6 +166,7 @@ describe("twin run", () => {
       processStart: "unknown", executable: { status: "omitted" },
       arguments: { status: "omitted", count: null, capped: false }, disposition: "observation-unavailable",
       timeoutObserved: null, directChildSettled: null, exitCode: null, signal: null });
+    expect(payload.process).toMatchObject({ directChild: { start: "unknown", settlement: "unknown" }, finalGroup: "unknown" });
   });
 
   it("frames exact UTF-8 receipt bytes on stderr before discard", async () => {
@@ -170,8 +176,9 @@ describe("twin run", () => {
     const commandBytes = output.encode("from stderr");
     expect(bytes.subarray(0, commandBytes.length)).toEqual(Buffer.from(commandBytes));
     const payload = Buffer.from(JSON.stringify(receipt), "utf8");
-    expect(JSON.parse(payload.toString("utf8"))).toMatchObject({ schemaVersion: 4,
+    expect(JSON.parse(payload.toString("utf8"))).toMatchObject({ schemaVersion: 5,
       command: { coverage: "top-level-only", nestedCommands: "not-observed", disposition: "exited" },
+      process: { directChild: { start: "confirmed", settlement: "observed" }, finalGroup: "absent" },
       dependencies: { declarations: { coverage: "incomplete" }, lockfiles: { coverage: "complete" } },
       globalNpm: { coverage: "complete", changes: [{ name: "probe", change: "added" }] } });
     expect(bytes.subarray(commandBytes.length)).toEqual(Buffer.concat([
@@ -215,6 +222,7 @@ describe("twin run", () => {
     const payload = JSON.parse(frame.subarray(headerEnd + 1, headerEnd + 1 + length).toString("utf8")) as MinimalReceipt;
     expect(payload.files).toMatchObject({ coverage: "unavailable", issues: [{ reason: "receipt-limit" }] });
     expect(payload.command).toEqual(receipt.command);
+    expect(payload.process).toEqual(receipt.process);
     expect(payload.command).toMatchObject({ admitted: true, processStart: "confirmed", disposition: "exited", exitCode: 0 });
     expect(discard).toHaveBeenCalledOnce();
   });

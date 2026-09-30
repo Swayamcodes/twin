@@ -118,8 +118,8 @@ const removedPaths = Object.freeze([".env", "scratch.txt", "node_modules/lib.txt
 const actionArgv = Object.freeze(["clean", "-fdx"]);
 
 function assertS6Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 4);
+  assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "process", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 5);
   assert.equal(receipt.command.coverage, "top-level-only");
   assert.equal(receipt.command.nestedCommands, "not-observed");
   assert.equal(receipt.dependencies.declarations.coverage, "incomplete");
@@ -482,6 +482,15 @@ export async function proveTwinS6(fault: Fault = "none"): Promise<Proof> {
         if (synthetic) {
           // This object has no OS child and never invokes a spawn method.
           const child = new childProcess.ChildProcess();
+          const syntheticPid = 1000000;
+          Object.defineProperty(child, "pid", { value: syntheticPid });
+          const nativeKill = process.kill;
+          const groupProbe = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+            if (pid !== -syntheticPid) return nativeKill(pid, signal);
+            if (signal === 0) throw Object.assign(new Error("synthetic group absent"), { code: "ESRCH" });
+            return true;
+          });
+          restores.push(() => groupProbe.mockRestore());
           const stdout = new PassThrough(), stderr = new PassThrough();
           Object.defineProperties(child, { stdout: { value: stdout }, stderr: { value: stderr },
             kill: { value: () => true }, unref: { value: () => {} } });

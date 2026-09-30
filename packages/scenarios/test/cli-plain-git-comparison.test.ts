@@ -21,6 +21,9 @@ interface Receipt { schemaVersion: number; dependencies: { declarations: { cover
   lockfiles: { coverage: string; changes: unknown[] }; installed?: { coverage: string; reason: string }; issues: unknown[] };
   command?: { coverage: string; nestedCommands: string; admitted: boolean; processStart: string;
     disposition: string; executable: { status: string; value?: string }; arguments: { status: string; count: number | null } };
+  process?: { coverage: string; escapedDescendants: string; directChild: { start: string; settlement: string };
+    groupAfterDirectExit: string; termination: { signal: string; target: string; delivery: string }[];
+    finalGroup: string; capturedPipes: string };
   globalNpm?: { coverage: string; source: string; changes: unknown[]; issues: unknown[] };
   files: { coverage: string; issues: unknown[];
   changes: { path: { encoding: string; value: string }; change: string; category: string }[] };
@@ -334,10 +337,13 @@ function framed(stderr: Buffer, actionStderr: Buffer): Receipt {
   const receipt: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
   assert(receipt && typeof receipt === "object");
   const typed = receipt as Receipt;
-  assert.equal(typed.schemaVersion, 4);
+  assert.equal(typed.schemaVersion, 5);
   assert(typed.command);
   assert.equal(typed.command.coverage, "top-level-only");
   assert.equal(typed.command.nestedCommands, "not-observed");
+  assert(typed.process);
+  assert.equal(typed.process.coverage, "top-level-process-group");
+  assert.equal(typed.process.escapedDescendants, "not-observed");
   assert(Array.isArray(typed.files?.changes) && Array.isArray(typed.files.issues));
   assert(typed.dependencies && Array.isArray(typed.dependencies.declarations?.changes)
     && Array.isArray(typed.dependencies.lockfiles?.changes) && Array.isArray(typed.dependencies.issues));
@@ -612,11 +618,14 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       comparison: id === ".npmrc" ? "changed" : "unchanged" })) })).toThrow();
   });
   it("rejects malformed, truncated, extra and unframed receipt bytes", () => {
-    const payload = Buffer.from(JSON.stringify({ schemaVersion: 4,
+    const payload = Buffer.from(JSON.stringify({ schemaVersion: 5,
       command: { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
         processStart: "confirmed", executable: { status: "allowlisted-basename", value: "node" },
         arguments: { status: "omitted", count: 0, capped: false }, disposition: "exited",
         timeoutObserved: false, directChildSettled: true, exitCode: 0, signal: null },
+      process: { coverage: "top-level-process-group", escapedDescendants: "not-observed",
+        directChild: { start: "confirmed", settlement: "observed" }, groupAfterDirectExit: "absent",
+        termination: [], finalGroup: "absent", capturedPipes: "closed" },
       dependencies: { declarations: { coverage: "complete", changes: [] },
       lockfiles: { coverage: "complete", changes: [] }, issues: [] },
       globalNpm: { coverage: "unavailable", source: "unavailable", changes: [], issues: [] },
@@ -729,8 +738,8 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.deepEqual(await inventory(workspace), projectBefore);
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
-      assert.equal(receipt.schemaVersion, 4);
+      assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "process", "schemaVersion", "watch"]);
+      assert.equal(receipt.schemaVersion, 5);
       assert.deepEqual(receipt.command, { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
         processStart: "confirmed", executable: { status: "allowlisted-basename", value: "node" },
         arguments: { status: "omitted", count: installArgv.length, capped: false }, disposition: "exited",
@@ -821,7 +830,11 @@ describe("public Twin CLI against independent plain-Git fixtures", () => {
       assert.throws(() => process.kill(-workerIdentity!.groupLeaderPid, 0), { code: "ESRCH" });
       const receipt = session.inspect().receipt;
       assert(receipt);
-      assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
+      assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "process", "schemaVersion", "watch"]);
+      assert.deepEqual(receipt.process, { coverage: "top-level-process-group", escapedDescendants: "not-observed",
+        directChild: { start: "confirmed", settlement: "observed" }, groupAfterDirectExit: "present",
+        termination: [{ signal: "SIGTERM", target: "process-group", delivery: "sent" }],
+        finalGroup: "absent", capturedPipes: "closed" });
       assert.equal(receipt.files.coverage, "complete");
       assert.deepEqual(receipt.files.changes, []);
       assert.deepEqual(receipt.watch.map(item => item.id), watchIds);

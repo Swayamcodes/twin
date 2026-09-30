@@ -189,8 +189,8 @@ function makeReceiptExecFileGuard(
   }) as typeof childProcess.execFile;
 }
 function assertS12Receipt(receipt: MinimalReceipt): void {
-  assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "schemaVersion", "watch"]);
-  assert.equal(receipt.schemaVersion, 4);
+  assert.deepEqual(Object.keys(receipt).sort(), ["command", "dependencies", "files", "globalNpm", "process", "schemaVersion", "watch"]);
+  assert.equal(receipt.schemaVersion, 5);
   assert.equal(receipt.command.coverage, "top-level-only");
   assert.equal(receipt.command.nestedCommands, "not-observed");
   assert.equal(receipt.dependencies.declarations.coverage, "incomplete");

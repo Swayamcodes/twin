@@ -44,6 +44,15 @@ async function finishLifecycleTest(f: Fixture, session: Fixture["sessions"][numb
   }
 }
 
+function mockAbsentGroup(child: ChildProcess): ReturnType<typeof vi.spyOn> {
+  Object.defineProperty(child, "pid", { value: 1000000 });
+  return vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+    expect(pid).toBe(-1000000);
+    if (signal === 0) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+    return true;
+  });
+}
+
 describe("direct execution", () => {
   it.each(["env-mutation", "executable-getter", "argv-getter", "element-getter", "after-snapshot"] as const)("executes only the single-read snapshot: %s", async behavior => fixtureTest(async f => {
     const session = await f.create();
@@ -58,6 +67,7 @@ describe("direct execution", () => {
     if (behavior === "argv-getter") Object.defineProperty(options, "argv", { get: () => ++reads === 1 ? expectedArgv : "replacement" });
     if (behavior === "element-getter") Object.defineProperty(options.argv, "0", { get: () => ++reads === 1 ? expectedArgv[0] : "replacement" });
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
     const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
@@ -82,10 +92,13 @@ describe("direct execution", () => {
       expect(session.inspect().receipt?.command).toMatchObject({ admitted: true, processStart: "confirmed",
         executable: { status: "allowlisted-basename", value: "node" },
         arguments: { status: "omitted", count: expectedArgv.length, capped: false } });
+      expect(session.inspect().receipt?.process).toEqual({ coverage: "top-level-process-group", escapedDescendants: "not-observed",
+        directChild: { start: "confirmed", settlement: "observed" }, groupAfterDirectExit: "absent",
+        termination: [], finalGroup: "absent", capturedPipes: "closed" });
       await expect(session.run(nodeOptions("echo"))).rejects.toThrow("Cannot run");
     } finally {
       child.emit("exit", 0, null); child.emit("close", 0, null);
-      spawn.mockRestore(); syncBuiltinESMExports();
+      spawn.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it("reads every top-level property once without freezing caller input", async () => fixtureTest(async f => {
@@ -140,6 +153,7 @@ describe("direct execution", () => {
   ] as const)("locks before reentrant %s; throwing getter=%s", async (operation, throws) => fixtureTest(async f => {
     const session = await f.create();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const kill = vi.spyOn(child, "kill").mockReturnValue(true);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
@@ -182,7 +196,7 @@ describe("direct execution", () => {
       expect((await session.discard()).status).toBe("removed");
     } finally {
       child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
-      vi.useRealTimers(); kill.mockRestore(); spawn.mockRestore(); syncBuiltinESMExports();
+      vi.useRealTimers(); kill.mockRestore(); spawn.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it("rejects sparse argv before spawn without consuming the attempt", async () => fixtureTest(async f => {
@@ -200,6 +214,7 @@ describe("direct execution", () => {
   it.each(["normal", "failed-spawn", "drain-expiry", "unsettled"] as const)("disposes listeners and timers: %s", async behavior => fixtureTest(async f => {
     const session = await f.create();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     child.stdout = stdout;
@@ -265,7 +280,7 @@ describe("direct execution", () => {
       child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
       stdout.destroy(); stderr.destroy();
       vi.useRealTimers();
-      spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+      spawn.mockRestore(); kill.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it("passes exact argv, clone cwd and only explicit environment", async () => fixtureTest(async f => {
@@ -307,6 +322,14 @@ describe("direct execution", () => {
         expect(await readFile(join(session.workspacePath, "descendant.term"), "utf8")).toBe("1");
         await expect(readFile(join(session.workspacePath, "descendant.self-exit"))).rejects.toMatchObject({ code: "ENOENT" });
       }
+      expect(session.inspect().receipt?.process).toMatchObject({
+        directChild: { start: "confirmed", settlement: "observed" }, groupAfterDirectExit: "present",
+        finalGroup: "absent", capturedPipes: "closed",
+        termination: behavior === "stubborn"
+          ? [{ signal: "SIGTERM", target: "process-group", delivery: "sent" },
+            { signal: "SIGKILL", target: "process-group", delivery: "sent" }]
+          : [{ signal: "SIGTERM", target: "process-group", delivery: "sent" }],
+      });
       await waitForTestProcessStop(pid);
     } finally {
       await finishLifecycleTest(f, session, running);
@@ -344,6 +367,11 @@ describe("direct execution", () => {
       expect(result.signal).toBe("SIGKILL");
       expect(result.exitCode).toBeNull();
       expect(result.lifecycleIssue).toBeUndefined();
+      expect(session.inspect().receipt?.process).toMatchObject({
+        directChild: { start: "confirmed", settlement: "observed" }, finalGroup: "absent",
+        termination: [{ signal: "SIGTERM", target: "process-group", delivery: "sent" },
+          { signal: "SIGKILL", target: "process-group", delivery: "sent" }],
+      });
       expect(result.stdout.complete).toBe(true);
       expect(await readFile(join(session.workspacePath, "parent.term"), "utf8")).toBe("1");
       expect(await readFile(join(session.workspacePath, "descendant.term"), "utf8")).toBe("1");
@@ -368,6 +396,8 @@ describe("direct execution", () => {
     const pid = Number(await readFile(join(session.workspacePath, "descendant.pid"), "utf8"));
     expect(result.directChildSettled).toBe(true);
     expect(result.lifecycleIssue).toBe("stdio pipes remain open");
+    expect(session.inspect().receipt?.process).toMatchObject({ groupAfterDirectExit: "absent",
+      finalGroup: "absent", capturedPipes: "open", termination: [] });
     expect(result.stdout.complete).toBe(false);
     expect(session.inspect().state).toBe("child-unsettled");
     expect((await session.discard()).status).toBe("refused");
@@ -385,7 +415,7 @@ describe("direct execution", () => {
     expect(session.inspect().state).toBe("finished");
     expect((await session.discard()).status).toBe("removed");
   }));
-  it("retains the workspace while process-group settlement is unconfirmed", async () => fixtureTest(async f => {
+  it.each(["present", "unknown", "failed-delivery"] as const)("retains the workspace while process-group check is %s", async groupCheck => fixtureTest(async f => {
     const session = await f.create();
     const child = new ChildProcess();
     Object.defineProperty(child, "pid", { value: 1000000 });
@@ -393,6 +423,8 @@ describe("direct execution", () => {
     const probe = vi.spyOn(process, "kill").mockImplementation((pid, requested) => {
       expect(pid).toBe(-1000000);
       if (requested === 0 && !groupPresent) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+      if (requested === 0 && groupCheck === "unknown") throw Object.assign(new Error("unreadable"), { code: "EPERM" });
+      if (requested !== 0 && groupCheck === "failed-delivery") throw Object.assign(new Error("refused signal"), { code: "EPERM" });
       return true;
     });
     let launched!: () => void;
@@ -406,9 +438,15 @@ describe("direct execution", () => {
       child.emit("spawn"); child.emit("exit", 0, null); child.emit("close", 0, null);
       await vi.advanceTimersByTimeAsync(6000);
       const result = await running;
-      expect(result.lifecycleIssue).toBe("process group present");
+      expect(result.lifecycleIssue).toBe(`process group ${groupCheck === "failed-delivery" ? "present" : groupCheck}`);
+      if (groupCheck === "failed-delivery") expect(result.terminationError).toBe("refused signal");
       expect(session.inspect().receipt?.command).toMatchObject({ admitted: true, processStart: "confirmed",
         disposition: "settlement-uncertain", directChildSettled: true, exitCode: 0 });
+      expect(session.inspect().receipt?.process).toMatchObject({
+        groupAfterDirectExit: groupCheck === "failed-delivery" ? "present" : groupCheck,
+        finalGroup: groupCheck === "failed-delivery" ? "present" : groupCheck,
+        termination: [{ signal: "SIGTERM", target: "process-group", delivery: groupCheck === "failed-delivery" ? "failed" : "sent" },
+          { signal: "SIGKILL", target: "process-group", delivery: groupCheck === "failed-delivery" ? "failed" : "sent" }] });
       expect(session.inspect().state).toBe("child-unsettled");
       expect((await session.discard()).status).toBe("refused");
       groupPresent = false;
@@ -424,6 +462,7 @@ describe("direct execution", () => {
   it("inherits stdio when explicitly selected and reports no captured output", async () => fixtureTest(async f => {
     const session = await f.create();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
     const spawn = vi.spyOn(childProcess, "spawn").mockImplementation(() => { launched(); return child; });
@@ -439,15 +478,17 @@ describe("direct execution", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toEqual({ bytes: new Uint8Array(), complete: false, truncated: false, error: null });
       expect(result.stderr).toEqual({ bytes: new Uint8Array(), complete: false, truncated: false, error: null });
+      expect(session.inspect().receipt?.process.capturedPipes).toBe("not-captured");
     } finally {
       child.emit("exit", 0, null); child.emit("close", 0, null);
-      spawn.mockRestore(); syncBuiltinESMExports();
+      spawn.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it.each(["SIGINT", "SIGTERM"] as const)("forwards %s and releases the abort listener", async requested => fixtureTest(async f => {
     const session = await f.create();
     const controller = new AbortController();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const kill = vi.spyOn(child, "kill").mockReturnValue(true);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
@@ -459,7 +500,7 @@ describe("direct execution", () => {
       child.emit("spawn");
       expect(getEventListeners(controller.signal, "abort")).toHaveLength(1);
       controller.abort(requested);
-      expect(kill).toHaveBeenCalledExactlyOnceWith(requested);
+      expect(group.mock.calls.filter((call: [number, number | NodeJS.Signals]) => call[1] !== 0)).toEqual([[-1000000, requested]]);
       child.emit("exit", null, requested); child.emit("close", null, requested);
       const result = await running;
       expect(result.signal).toBe(requested);
@@ -468,7 +509,7 @@ describe("direct execution", () => {
       expect((await session.discard()).status).toBe("removed");
     } finally {
       child.emit("exit", null, requested); child.emit("close", null, requested);
-      spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+      spawn.mockRestore(); kill.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it("does not launch a command interrupted before startup", async () => fixtureTest(async f => {
@@ -487,6 +528,7 @@ describe("direct execution", () => {
     const session = await f.create();
     const controller = new AbortController();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const kill = vi.spyOn(child, "kill").mockReturnValue(true);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
@@ -499,22 +541,23 @@ describe("direct execution", () => {
       child.emit("spawn");
       controller.abort("SIGTERM");
       controller.abort("SIGINT");
-      expect(kill.mock.calls).toEqual([["SIGTERM"]]);
+      expect(group.mock.calls.filter((call: [number, number | NodeJS.Signals]) => call[1] !== 0)).toEqual([[-1000000, "SIGTERM"]]);
       await vi.advanceTimersByTimeAsync(1000);
-      expect(kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+      expect(group.mock.calls.filter((call: [number, number | NodeJS.Signals]) => call[1] !== 0)).toEqual([[-1000000, "SIGTERM"], [-1000000, "SIGKILL"]]);
       child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
       expect((await running).directChildSettled).toBe(true);
       expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
-      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it("refuses discard until interrupted child settlement is observed", async () => fixtureTest(async f => {
     const session = await f.create();
     const controller = new AbortController();
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const kill = vi.spyOn(child, "kill").mockReturnValue(true);
     let launched!: () => void;
     const launch = new Promise<void>(resolve => { launched = resolve; });
@@ -538,7 +581,7 @@ describe("direct execution", () => {
       expect((await session.discard()).status).toBe("removed");
     } finally {
       child.emit("exit", null, "SIGKILL"); child.emit("close", null, "SIGKILL");
-      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); syncBuiltinESMExports();
+      vi.useRealTimers(); spawn.mockRestore(); kill.mockRestore(); group.mockRestore(); syncBuiltinESMExports();
     }
   }));
   it.each(["exit", "signal"] as const)("records %s", async behavior => fixtureTest(async f => {
@@ -556,6 +599,8 @@ describe("direct execution", () => {
     expect(result.spawnError).toContain("ENOENT");
     expect(result.stdout.complete).toBe(false);
     expect(result.directChildSettled).toBe(true);
+    expect(session.inspect().receipt?.process).toMatchObject({ directChild: { start: "not-confirmed", settlement: "not-applicable" },
+      groupAfterDirectExit: "not-observed", termination: [], finalGroup: "not-applicable", capturedPipes: "not-applicable" });
     await expect(session.run(nodeOptions("echo"))).rejects.toThrow("Cannot run");
   }));
   it("bounds binary output while draining; exact cap is complete", async () => fixtureTest(async f => {
@@ -595,6 +640,7 @@ describe("direct execution", () => {
     const session = await f.create();
     // No OS process: exercise impossible-to-force settlement/pipe event order.
     const child = new ChildProcess();
+    const group = mockAbsentGroup(child);
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     child.stdout = stdout;
@@ -614,9 +660,13 @@ describe("direct execution", () => {
       const result = await running;
       expect(result.stdout.complete).toBe(false);
       if (behavior === "unsettled") {
+        expect(session.inspect().receipt?.process).toMatchObject({ directChild: { start: "confirmed", settlement: "unconfirmed" },
+          groupAfterDirectExit: "not-observed", finalGroup: "absent", capturedPipes: "open",
+          termination: [{ signal: "SIGTERM", target: "process-group", delivery: "sent" },
+            { signal: "SIGKILL", target: "process-group", delivery: "sent" }] });
         expect(session.inspect().receipt?.command).toMatchObject({ disposition: "settlement-uncertain",
           processStart: "confirmed", directChildSettled: false, timeoutObserved: true });
-        expect(kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+        expect(group.mock.calls.filter((call: [number, number | NodeJS.Signals]) => call[1] !== 0)).toEqual([[-1000000, "SIGTERM"], [-1000000, "SIGKILL"]]);
         expect(result.directChildSettled).toBe(false);
         expect(session.inspect().state).toBe("child-unsettled");
         expect((await session.discard()).status).toBe("refused");
@@ -625,6 +675,8 @@ describe("direct execution", () => {
         child.emit("close", null, "SIGKILL");
         expect(session.inspect().state).toBe("finished");
       } else {
+        expect(session.inspect().receipt?.process).toMatchObject({ groupAfterDirectExit: "absent",
+          finalGroup: "absent", capturedPipes: "open", termination: [] });
         expect(result.directChildSettled).toBe(true);
         expect(result.exitCode).toBe(0);
         expect(kill).not.toHaveBeenCalled();
@@ -639,6 +691,7 @@ describe("direct execution", () => {
       vi.useRealTimers();
       spawn.mockRestore();
       kill.mockRestore();
+      group.mockRestore();
       syncBuiltinESMExports();
     }
   }));

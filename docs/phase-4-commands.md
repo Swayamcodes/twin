@@ -9,8 +9,8 @@ spawn failure is therefore an admitted command without a confirmed start.
 An interruption before admission leaves the session ready and produces no core
 receipt; the CLI's `no-run` fallback says `not-attempted` only for a ready
 session. If a non-ready session has no receipt, admission and execution remain
-unknown. A size-limited fallback keeps the existing bounded command report
-while marking other receipt observations unavailable.
+unknown. A size-limited fallback keeps the existing bounded command and process
+reports while marking file, dependency, global npm and watch observations unavailable.
 
 `disposition` distinguishes normal exit, signal, timeout, spawn failure and
 uncertain settlement. A nonzero normal exit remains `exited` with its observed
@@ -32,5 +32,6 @@ not traced or counted.
 
 The CLI still emits the exact-byte `TWIN-RECEIPT/1` frame. File, watch,
 dependency and global npm observations retain their own coverage and meaning.
-Leftover-process reporting, receipt presentation and Phase 4 acceptance remain
-separate work. Frozen Phase 2 score results are not revised by this report.
+Receipt schema version 5 adds `process`; see [process report](phase-4-processes.md).
+Receipt presentation and Phase 4 acceptance remain separate work. Frozen
+Phase 2 score results are not revised by this report.

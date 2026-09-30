@@ -6,7 +6,7 @@ import { allocateRoot, assertRootAuthority, discardRoot } from "./safety.js";
 import { captureManifest, unavailableManifest, type ManifestSnapshot } from "./manifest.js";
 import { captureGitCategories, unavailableGit, type GitSnapshot } from "./git-classification.js";
 import { captureWatches, unavailableWatches, type WatchCapture } from "./watch.js";
-import { buildCommandReceipt, buildReceipt, type MinimalReceipt } from "./receipt.js";
+import { buildCommandReceipt, buildReceipt, unavailableProcessReceipt, type MinimalReceipt, type ProcessReceipt } from "./receipt.js";
 import { captureDependencies, unavailableDependencies, type DependencySnapshot } from "./dependencies.js";
 import { captureGlobalNpm, selectGlobalNpmRoot, unavailableGlobalNpm } from "./global-npm.js";
 
@@ -107,13 +107,14 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         ? await captureGlobalNpm(globalSelection.root).catch(() => unavailableGlobalNpm("observation-failed"))
         : unavailableGlobalNpm(globalSelection.reason ?? "prefix-unavailable");
       let result: RunResult | undefined;
+      let processReceipt: ProcessReceipt = unavailableProcessReceipt(false);
       let failure: unknown;
       let didThrow = false;
       try {
         result = await runCommand(root.workspace, command, () => {
           childSettled = true;
           if (state === "child-unsettled") state = "finished";
-        });
+        }, observation => { processReceipt = observation; });
       } catch (error: unknown) {
         failure = error;
         didThrow = true;
@@ -140,7 +141,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       const commandReceipt = buildCommandReceipt(command, result);
       try {
         receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch, beforeDependencies, afterDependencies,
-          globalSelection, beforeGlobal, afterGlobal, commandReceipt);
+          globalSelection, beforeGlobal, afterGlobal, commandReceipt, processReceipt);
       } catch {
         receipt = buildReceipt(
           unavailableManifest("receipt-unavailable"), unavailableManifest("receipt-unavailable"),
@@ -148,7 +149,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
           unavailableWatches("receipt-unavailable"), unavailableWatches("receipt-unavailable"),
           unavailableDependencies("receipt-unavailable"), unavailableDependencies("receipt-unavailable"),
           { reason: "receipt-unavailable" }, unavailableGlobalNpm("receipt-unavailable"), unavailableGlobalNpm("receipt-unavailable"),
-          commandReceipt,
+          commandReceipt, processReceipt,
         );
       } finally {
         beforeWatch = unavailableWatches("consumed");

@@ -27,6 +27,28 @@ export interface CommandReceipt {
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
 }
+export interface ProcessReceipt {
+  readonly coverage: "top-level-process-group";
+  readonly escapedDescendants: "not-observed";
+  readonly directChild: {
+    readonly start: "confirmed" | "not-confirmed" | "unknown";
+    readonly settlement: "observed" | "unconfirmed" | "not-applicable" | "unknown";
+  };
+  readonly groupAfterDirectExit: "present" | "absent" | "unknown" | "not-observed";
+  readonly termination: readonly {
+    readonly signal: NodeJS.Signals;
+    readonly target: "process-group" | "direct-child";
+    readonly delivery: "sent" | "failed";
+  }[];
+  readonly finalGroup: "present" | "absent" | "unknown" | "not-applicable";
+  readonly capturedPipes: "closed" | "open" | "not-captured" | "not-applicable" | "unknown";
+}
+export function unavailableProcessReceipt(ready: boolean): ProcessReceipt {
+  return { coverage: "top-level-process-group", escapedDescendants: "not-observed",
+    directChild: { start: ready ? "not-confirmed" : "unknown", settlement: ready ? "not-applicable" : "unknown" },
+    groupAfterDirectExit: "not-observed", termination: [], finalGroup: ready ? "not-applicable" : "unknown",
+    capturedPipes: ready ? "not-applicable" : "unknown" };
+}
 const DISPLAY_EXECUTABLES = new Set(["node", "npm", "git", "python", "python3", "bash", "sh",
   "codex", "claude", "gemini", "opencode", "aider"]);
 const MAX_ARGUMENT_COUNT = 256;
@@ -47,8 +69,9 @@ export function buildCommandReceipt(command: RunOptions, result: RunResult | und
   };
 }
 export interface MinimalReceipt {
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 5;
   readonly command: CommandReceipt;
+  readonly process: ProcessReceipt;
   readonly dependencies: DependencyReceipt;
   readonly globalNpm: GlobalNpmReceipt;
   readonly files: {
@@ -104,6 +127,10 @@ function freezeReceipt(receipt: MinimalReceipt): MinimalReceipt {
   Object.freeze(receipt.command.executable);
   Object.freeze(receipt.command.arguments);
   Object.freeze(receipt.command);
+  Object.freeze(receipt.process.directChild);
+  for (const item of receipt.process.termination) Object.freeze(item);
+  Object.freeze(receipt.process.termination);
+  Object.freeze(receipt.process);
   return Object.freeze(receipt);
 }
 
@@ -134,6 +161,7 @@ export function buildReceipt(
   beforeGlobal: GlobalNpmSnapshot,
   afterGlobal: GlobalNpmSnapshot,
   command: CommandReceipt,
+  process: ProcessReceipt,
 ): MinimalReceipt {
   const coverage = before.coverage === "complete" && after.coverage === "complete"
     ? "complete" : before.coverage === "unavailable" || after.coverage === "unavailable"
@@ -164,8 +192,9 @@ export function buildReceipt(
     return { id: first.id, before: first.observation, after: last.observation, comparison } as const;
   });
   return freezeReceipt({
-    schemaVersion: 4,
+    schemaVersion: 5,
     command,
+    process,
     files: { coverage, issues: [...before.issues, ...after.issues], changes },
     watch,
     dependencies: compareDependencies(beforeDependencies, afterDependencies),
