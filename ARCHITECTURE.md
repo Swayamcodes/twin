@@ -1,5 +1,26 @@
 # twin — ARCHITECTURE.md
 
+## Separate fixed-action Phase 2 comparison result
+
+`packages/scenarios/src/comparison-{actions,runner,result,entry}.ts` produce
+a separate version-one 39-row Twin/AgentTX/plain-Git comparison. It leaves
+the frozen retained `ToolScore`, S8/S9/S13 result and combined Twin S12/S6
+contracts unchanged. Each row carries a public scenario/tool identity,
+observed action/recovery/compatibility dispositions, closed target and report
+observations, and five independently reasoned fields with row-local evidence
+references to named sanitized fields; unresolved references are rejected.
+Action output is separate from tool reporting: plain Git S6 removal text
+does not earn reporting credit. A `blocked` score requires observed prevention
+before the fixed action starts; policy metadata and a null exit alone leave it
+unknown. AgentTX S6's five fields remain unknown without equivalent deletion
+preconditions. The producer runs only fixed scenario actions in freshly owned
+disposable roots; AgentTX 0.3.0 uses a fake HOME/store and documented commands.
+Plain Git's sole recovery recipe is `git restore --source=HEAD --worktree -- .`
+inside its disposable repository. Harness teardown is excluded from all
+recovery assessments. JSON and Markdown deliberately omit raw output, private
+paths, secret bytes and environment values. Documentation accuracy and
+continuous preservation remain unknown without supporting observations.
+
 ## Retained fixed Twin S8/S13 measurement (Phase 2)
 
 The scenarios package has a separate version-one S8/S13 result path. It uses the

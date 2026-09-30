@@ -2433,3 +2433,99 @@ Node, Vitest, Git or npm test workers remained. `git diff --check` passed;
 HEAD stayed at `5c165db` and only this review's three files were modified.
 The S11 harness still has an inherent observation-to-signal PID reuse window;
 its checks do not establish general process containment.
+
+## Batched Phase 2 cross-tool comparison at `c4a4dc1` — 2026-09-30
+
+The SPEC requires scripted, deterministic scenario actions evaluated against
+Twin, AgentTX and plain Git, five independent fields, and versioned JSON plus
+Markdown output. The preceding review found the missing comparable attempts,
+explicit Git recovery and complete public output. This checkpoint adds a
+separate 39-row comparison result without changing the frozen retained
+S12/S6 `ToolScore`, S8/S9/S13 or combined-report contracts.
+
+Tier A admission review before execution checked the fixed S1–S13 action
+vectors and assets, system Git path, installed AgentTX 0.3.0, owned temporary
+project/support/scratch/store/HOME/prefix roots, offline npm pack/install
+options, bounded child output and timeouts, exact Git recovery argv, and S11
+worker token/command-line checks before signaling. Each tool received a new
+equivalent fixture. S1–S3/S5 use fixed Node unlink actions, S12 copies the
+existing compiled action, S8/S9/S13 reuse committed proof action bytes, S10
+uses the local packed package through npm's real global-install command,
+and S11 uses the bounded worker. S9 has a disposable Git commit for AgentTX,
+matching its documented repository prerequisite. `agenttx run --`, explicit
+ID `inspect --json`, and `rollback` were used with fake HOME and AGENTTX_HOME.
+AgentTX refusal, missing inputs and changed baseline tracking were recorded
+as outcomes, not compensated with fixture changes.
+
+Plain Git's sole recovery operation was exactly
+`git restore --source=HEAD --worktree -- .` from the disposable project after
+the fixed action. It restored S1's committed tracked file. It did not restore
+S2/S3/S6 untracked or ignored inputs, S4/S5 unsaved edits, S7's ignored
+overwrite, S8's non-Git file, or S9–S11 external state. S12 left the harmless
+new file in place; its recovery field remains unknown rather than treating
+addition as loss. Harness teardown was observed separately and never credited
+as Git/tool recovery.
+
+The version-one [JSON result](phase-2-comparison.json) records one row for
+each scenario/tool pair, action and recovery dispositions, exit code where
+observed, compatibility observations, and five fields with closed reasons and
+row-local references. [Markdown](phase-2-comparison.md) is a deterministic
+rendering of that exact JSON. Both exclude private roots, raw output, secret
+bytes and environment values; neither has a total, ranking or winner.
+Reporting requires a target-specific tool receipt/inspect entry. Plain Git S6
+removal stdout is action output, so its reporting field is unknown. S6 AgentTX
+post-action state cannot alone prove pre-action ignored-input presence, so all
+five fields stay unknown.
+S4 AgentTX baseline-committed the unsaved edit; S6 baseline-committed scratch;
+S3/S13 failed with ignored inputs missing; S8 refused a non-Git project.
+No version-matched documentation claim or continuous-original observation
+was established, so those score fields remain unknown where appropriate.
+
+During review, one S11 worker-exit race surfaced when `/proc` returned an
+empty command line before final process disappearance. The adapter now retries
+that state for a bounded interval and retains the root if identity cannot be
+resolved. Multiple full comparison runs completed, and one observed AgentTX
+S6 run had no child exit code while another completed; the public result
+records the actual current attempt and never converts missing child evidence
+into a blocked/not-blocked judgment. This variability remains a comparison
+limitation, not a changed fixed action. AgentTX hand-test history was not used
+as evidence for a new row.
+
+Verification: production TypeScript builds for core, scenarios and CLI passed;
+scenario test TypeScript checking passed. The new published-result tests passed
+2/2, the existing public-CLI comparison passed 18/18, core passed 99/99, and
+CLI passed 12/12. The full 39-attempt producer was run on owned roots and the
+published JSON/Markdown passed structural, deterministic-rendering, privacy,
+five-field and selected factual assertions. Final root/process accounting and
+diff checks: no `/tmp/twin-*` or `/tmp/agenttx-*` disposable directories and
+no Node, Git, npm or Vitest workers remained. `git diff --check` passed. HEAD
+remained `c4a4dc1`; only the listed source, test, package-script, documentation
+and generated-result files were modified or added. No index, commit, remote
+or stash operation was performed. This closes the review's concrete Phase 2
+comparison/output gaps; historical conditions that the measured tools fail,
+unknown boundary-accuracy and continuous-preservation fields, and later
+core/receipt features remain explicit limits rather than silent passes.
+
+### Correction to the staged comparison checkpoint — 2026-09-30
+
+Review found three evidence and scoring errors in this checkpoint. Plain Git
+S6 `git clean -fdx` removal stdout is now a separate sanitized action-output
+observation; it earns no reporting credit, and the reporting outcome is
+`unknown`. Evidence references now name actual sanitized fields in the same
+row, and the result parser rejects unresolved references. A `blocked` outcome
+now requires observed prevention before the fixed action started. A policy
+flag with a null exit leaves blocking `unknown` without that observation.
+AgentTX S6 retains five `unknown` scores because equivalent deletion
+preconditions were not established. No retained score contract changed.
+
+The 39-attempt JSON and deterministic Markdown were regenerated on owned
+disposable roots. Focused comparison tests passed 5/5, including negative
+tests for unresolved references, Git S6 stdout reporting credit, and
+unsupported blocking. Core and CLI production TypeScript builds, scenarios
+production build, and scenario test TypeScript checking passed. The sandbox
+producer stopped at its system-Git ownership check; the approved host run
+completed. `git diff --check` and cached diff checks passed. Final inspection
+found no `/tmp/twin-*` or `/tmp/agenttx-*` roots and no matching comparison,
+Vitest, AgentTX, S11 worker, npm-install or Git-clean processes. Only the
+same 12 checkpoint files were restaged; HEAD remains `c4a4dc1`. No commit,
+push or stash operation was performed.

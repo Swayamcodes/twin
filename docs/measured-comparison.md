@@ -1,5 +1,53 @@
 # Current measured comparison
 
+The [complete versioned Phase 2 result](phase-2-comparison.json) and its
+[deterministic Markdown rendering](phase-2-comparison.md) contain 39 fresh
+Twin/AgentTX/plain-Git attempts, one for every S1–S13/tool pair, at the
+`c4a4dc1` core baseline. The earlier C/T/R tables below are preserved as
+separate checkpoint evidence; they do not supply the new rows' scores.
+
+## Complete fixed-action comparison
+
+Each tool received a fresh equivalent disposable original. Twin used a direct
+copy/run/inspect/discard session; AgentTX 0.3.0 used documented `run --`,
+explicit-ID `inspect --json`, and `rollback` in owned projects with fake HOME
+and store; plain Git ran the fixed action directly and then exactly
+`git restore --source=HEAD --worktree -- .` in its disposable project. That
+recipe restores committed tracked bytes only. It restored S1's deleted
+`notes.txt`; it did not recover S2/S3/S6 untracked or ignored inputs, S4/S5
+unsaved edits, S7's ignored overwrite, S8's non-Git deletion, or S9–S11
+outside-project state. S12's added file remained, but was harmless control
+work, so its recovery field is `unknown`, not a loss claim. S13 was read-only.
+Harness teardown never counts as Git, Twin or AgentTX recovery.
+
+The report uses fixed Node deletion actions for S1–S3/S5, the existing
+compiled S12 control action, the existing S8/S9/S13 actions, an offline local
+tarball through real `npm install -g` for S10, and the bounded worker for S11.
+AgentTX S4's baseline commit included the unsaved edit, so `git reset --hard`
+did not reproduce the direct/Twin effect. Its S6 baseline committed
+`scratch.txt`; the ignored inputs were absent in the post-action clone, but
+their pre-action presence was not independently captured in this attempt.
+S6 workspace usability is therefore `unknown`. The S3/S13 fixed actions
+failed with required ignored inputs missing, and S8 refused the non-Git
+project. No fixture was modified to compensate for those outcomes.
+
+Plain Git S6's `git clean -fdx` removal text is recorded as action output,
+not a separate tool report, so its reporting field is `unknown`. All five
+AgentTX S6 fields remain `unknown` because this attempt did not establish
+equivalent deletion preconditions.
+
+Each of the five fields is evaluated separately from its row's action,
+workspace, before/after, report and recovery observations. Endpoint equality
+alone leaves Twin/AgentTX preservation `unknown`. Blocking requires observed
+prevention before the fixed action started; a policy flag and missing exit code
+alone leave it `unknown`. S13 read reporting and all documentation
+accuracy fields remain `unknown` because the attempts did not establish a
+version-matched documentation claim. The JSON contains only public scenario
+and tool identities, closed observations, reasons and evidence references to
+named sanitized fields in the same row. Unresolved references are rejected.
+It contains no private roots, raw environment or fixture secrets.
+There are no totals, rankings or winner claims.
+
 ## Scope and evidence
 
 This partial Phase 2 comparison was assembled through checkpoint
@@ -46,7 +94,8 @@ The columns use the independent [rubric dimensions](../SPEC.md#scoring-five-inde
 public-CLI assertions; `T` evaluates test-local direct Twin-session
 assertions. C/T rows are current evaluations, not newly retained
 `ToolScore` artifacts, and do not change R rows. Plain Git/direct action
-and AgentTX remain unscored.
+and AgentTX were unscored at this earlier checkpoint; the complete result
+above is a separate comparison contract.
 
 | Twin attempt | Recovered or preserved | Reported | Blocked before execution | Workspace usable | Boundary accurately described | Attempt assertions |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -90,17 +139,17 @@ condition lacks a complete independent assessment. S13's read-only action
 does not establish read reporting. No version-matched documentation claim
 was reviewed for any attempt, leaving boundary accuracy `unknown`.
 
-Direct/plain-Git fixtures show action effects without an explicit Git
-recovery operation, a tool receipt, or complete five-dimension attempt
-evidence. AgentTX's S6 clone lacked the ignored targets and its
+At the earlier checkpoint, direct/plain-Git fixtures showed action effects
+without an explicit Git recovery operation or complete five-dimension
+attempt evidence. AgentTX's S6 clone lacked the ignored targets and its
 baseline-committed scratch file survived, preventing equivalent deletion
 preconditions. Its S9/S12 hand tests lack complete attempt-local
 workspace, report-channel and documentation evidence. These observations
-remain unscored. S9's outside-project change persisted and was omitted
+remained unscored in that checkpoint. S9's outside-project change persisted and was omitted
 from Twin's report. S10's package and S11's worker persisted after discard;
 S11's later harness termination is excluded from Twin behavior.
 
 Retained artifacts provide bounded local integrity, not authenticated
 provenance or continuous preservation. C/T evaluations cannot replace the
-frozen S6/S12 score artifacts. Comparable cross-tool attempts, broader
-report and documentation review, and other Phase 2 evidence remain open.
+frozen S6/S12 score artifacts. The new comparison closes the cross-tool
+attempt and output-format gap while retaining its explicit unknown fields.

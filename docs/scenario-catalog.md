@@ -84,4 +84,17 @@ The historical definitions remain unchanged even where SPEC v1 intentionally pro
 
 The fixed measurements here do not establish general action adapters or broader scenario coverage.
 
+The [complete fixed-action comparison](phase-2-comparison.md) now records a
+fresh Twin, AgentTX 0.3.0 and plain-Git attempt for every S1–S13 row. Its
+[versioned JSON](phase-2-comparison.json) keeps the five fields independent
+and names its exact Git recovery recipe. This newer result is separate from
+the retained Twin S6/S12 scores and from the earlier AgentTX hand tests above.
+It records AgentTX's missing S3/S13 ignored inputs, S4 baseline-committed
+unsaved edit, S6 baseline-committed scratch file and S8 non-Git refusal as
+compatibility observations. The historical fixed conditions and predictions
+in the first two tables remain unchanged.
+Plain Git S6 removal stdout is an action observation and earns no reporting
+credit in this result. AgentTX S6 retains five unknown fields because its
+deletion preconditions were not independently established.
+
 Current-implementation sources: [scenario definitions](../packages/scenarios/src/scenarios.ts), [runner](../packages/scenarios/src/runner.ts), and [oracle](../packages/scenarios/src/oracle.ts). Product boundary: [SPEC.md](../SPEC.md). Scenario priorities: [scope audit](phase-2-scope-audit.md).
