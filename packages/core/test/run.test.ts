@@ -79,6 +79,9 @@ describe("direct execution", () => {
       if (behavior !== "after-snapshot") expect(reads).toBe(1);
       child.emit("spawn"); child.emit("exit", 0, null); child.emit("close", 0, null);
       expect((await running).directChildSettled).toBe(true);
+      expect(session.inspect().receipt?.command).toMatchObject({ admitted: true, processStart: "confirmed",
+        executable: { status: "allowlisted-basename", value: "node" },
+        arguments: { status: "omitted", count: expectedArgv.length, capped: false } });
       await expect(session.run(nodeOptions("echo"))).rejects.toThrow("Cannot run");
     } finally {
       child.emit("exit", 0, null); child.emit("close", 0, null);
@@ -404,6 +407,8 @@ describe("direct execution", () => {
       await vi.advanceTimersByTimeAsync(6000);
       const result = await running;
       expect(result.lifecycleIssue).toBe("process group present");
+      expect(session.inspect().receipt?.command).toMatchObject({ admitted: true, processStart: "confirmed",
+        disposition: "settlement-uncertain", directChildSettled: true, exitCode: 0 });
       expect(session.inspect().state).toBe("child-unsettled");
       expect((await session.discard()).status).toBe("refused");
       groupPresent = false;
@@ -609,6 +614,8 @@ describe("direct execution", () => {
       const result = await running;
       expect(result.stdout.complete).toBe(false);
       if (behavior === "unsettled") {
+        expect(session.inspect().receipt?.command).toMatchObject({ disposition: "settlement-uncertain",
+          processStart: "confirmed", directChildSettled: false, timeoutObserved: true });
         expect(kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
         expect(result.directChildSettled).toBe(false);
         expect(session.inspect().state).toBe("child-unsettled");

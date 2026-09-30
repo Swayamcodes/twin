@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs";
 import { mkdtemp, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTwin, type MinimalReceipt, type WatchId } from "@twin-cli/core";
+import { createTwin, type CommandReceipt, type MinimalReceipt, type WatchId } from "@twin-cli/core";
 
 const help = `Usage: twin run [--interactive] -- <executable> [args...]
 
@@ -19,9 +19,18 @@ const WATCH_IDS: readonly WatchId[] = [
   ".codex/config.toml", ".claude/settings.json", ".gemini/settings.json",
 ];
 
-function unavailableReceipt(reason: string): MinimalReceipt {
+function fallbackCommand(ready: boolean): CommandReceipt {
+  return { coverage: "top-level-only", nestedCommands: "not-observed", admitted: ready ? false : null,
+    processStart: ready ? "not-confirmed" : "unknown", executable: { status: "omitted" },
+    arguments: { status: "omitted", count: null, capped: false },
+    disposition: ready ? "not-attempted" : "observation-unavailable",
+    timeoutObserved: ready ? false : null, directChildSettled: null, exitCode: null, signal: null };
+}
+
+function unavailableReceipt(reason: string, command: CommandReceipt): MinimalReceipt {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    command,
     files: { coverage: "unavailable", issues: [{ reason }], changes: [] },
     dependencies: { declarations: { coverage: "unavailable", changes: [] }, lockfiles: { coverage: "unavailable", changes: [] },
       issues: [{ phase: "after", path: "package.json", reason }] },
@@ -53,8 +62,8 @@ async function writeReceipt(receipt: MinimalReceipt): Promise<void> {
     }
     if (estimatedBytes > limit) break;
   }
-  let payload = Buffer.from(JSON.stringify(estimatedBytes > limit ? unavailableReceipt("receipt-limit") : receipt), "utf8");
-  if (payload.length > limit) payload = Buffer.from(JSON.stringify(unavailableReceipt("receipt-limit")), "utf8");
+  let payload = Buffer.from(JSON.stringify(estimatedBytes > limit ? unavailableReceipt("receipt-limit", receipt.command) : receipt), "utf8");
+  if (payload.length > limit) payload = Buffer.from(JSON.stringify(unavailableReceipt("receipt-limit", receipt.command)), "utf8");
   await write(process.stderr, Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"));
   await write(process.stderr, payload);
   await write(process.stderr, "\n");
@@ -106,7 +115,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     } finally {
       if (session) {
         try {
-          await writeReceipt(session.inspect().receipt ?? unavailableReceipt("no-run"));
+          const inspection = session.inspect();
+          await writeReceipt(inspection.receipt ?? unavailableReceipt("no-run", fallbackCommand(inspection.state === "ready")));
         } catch {
           exitCode = 1;
         }

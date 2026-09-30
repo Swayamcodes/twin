@@ -11,7 +11,11 @@ const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
 const receipt: MinimalReceipt = {
-  schemaVersion: 3,
+  schemaVersion: 4,
+  command: { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
+    processStart: "confirmed", executable: { status: "allowlisted-basename", value: "node" },
+    arguments: { status: "omitted", count: 2, capped: false }, disposition: "exited",
+    timeoutObserved: false, directChildSettled: true, exitCode: 0, signal: null },
   files: { coverage: "unavailable", issues: [{ reason: "λ" }], changes: [] },
   dependencies: { declarations: { coverage: "incomplete", changes: [] }, lockfiles: { coverage: "complete", changes: [] },
     issues: [{ phase: "before", path: "package.json", reason: "missing" }] },
@@ -127,6 +131,38 @@ describe("twin run", () => {
     expect(discard).toHaveBeenCalledOnce();
   });
 
+  it("frames an unattempted command when interrupted before launch", async () => {
+    run.mockRejectedValue(new Error("Interrupted before command launch"));
+    inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "ready" });
+    expect(await main(["run", "--", "tool", "secret-argument"])).toBe(1);
+    const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
+    const frameStart = bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
+    expect(frameStart).toBeGreaterThanOrEqual(0);
+    const frame = bytes.subarray(frameStart);
+    const headerEnd = frame.indexOf(10);
+    const length = Number(frame.subarray(16, headerEnd).toString("ascii"));
+    const payload = JSON.parse(frame.subarray(headerEnd + 1, headerEnd + 1 + length).toString("utf8")) as MinimalReceipt;
+    expect(payload).toMatchObject({ schemaVersion: 4, command: { admitted: false,
+      processStart: "not-confirmed", disposition: "not-attempted", nestedCommands: "not-observed" } });
+    expect(frame.length).toBe(headerEnd + 1 + length + 1);
+    expect(JSON.stringify(payload)).not.toContain("secret-argument");
+  });
+
+  it("reports unknown command state when a finished session has no receipt", async () => {
+    run.mockRejectedValue(new Error("receipt unavailable"));
+    inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished" });
+    expect(await main(["run", "--", "tool"])).toBe(1);
+    const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
+    const frame = bytes.subarray(bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 ")));
+    const headerEnd = frame.indexOf(10);
+    const length = Number(frame.subarray(16, headerEnd).toString("ascii"));
+    const payload = JSON.parse(frame.subarray(headerEnd + 1, headerEnd + 1 + length).toString("utf8")) as MinimalReceipt;
+    expect(payload.command).toEqual({ coverage: "top-level-only", nestedCommands: "not-observed", admitted: null,
+      processStart: "unknown", executable: { status: "omitted" },
+      arguments: { status: "omitted", count: null, capped: false }, disposition: "observation-unavailable",
+      timeoutObserved: null, directChildSettled: null, exitCode: null, signal: null });
+  });
+
   it("frames exact UTF-8 receipt bytes on stderr before discard", async () => {
     expect(await main(["run", "--", "tool"])).toBe(0);
     const chunks = vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array));
@@ -134,7 +170,8 @@ describe("twin run", () => {
     const commandBytes = output.encode("from stderr");
     expect(bytes.subarray(0, commandBytes.length)).toEqual(Buffer.from(commandBytes));
     const payload = Buffer.from(JSON.stringify(receipt), "utf8");
-    expect(JSON.parse(payload.toString("utf8"))).toMatchObject({ schemaVersion: 3,
+    expect(JSON.parse(payload.toString("utf8"))).toMatchObject({ schemaVersion: 4,
+      command: { coverage: "top-level-only", nestedCommands: "not-observed", disposition: "exited" },
       dependencies: { declarations: { coverage: "incomplete" }, lockfiles: { coverage: "complete" } },
       globalNpm: { coverage: "complete", changes: [{ name: "probe", change: "added" }] } });
     expect(bytes.subarray(commandBytes.length)).toEqual(Buffer.concat([
@@ -170,7 +207,15 @@ describe("twin run", () => {
     expect(await main(["run", "--", "tool"])).toBe(0);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     expect(bytes.length).toBeLessThan(8 * 1024 * 1024);
-    expect(bytes.toString("utf8")).toContain("receipt-limit");
+    const frameStart = bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
+    const frame = bytes.subarray(frameStart);
+    const headerEnd = frame.indexOf(10);
+    const length = Number(frame.subarray(16, headerEnd).toString("ascii"));
+    expect(frame.length).toBe(headerEnd + 1 + length + 1);
+    const payload = JSON.parse(frame.subarray(headerEnd + 1, headerEnd + 1 + length).toString("utf8")) as MinimalReceipt;
+    expect(payload.files).toMatchObject({ coverage: "unavailable", issues: [{ reason: "receipt-limit" }] });
+    expect(payload.command).toEqual(receipt.command);
+    expect(payload.command).toMatchObject({ admitted: true, processStart: "confirmed", disposition: "exited", exitCode: 0 });
     expect(discard).toHaveBeenCalledOnce();
   });
 });

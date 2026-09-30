@@ -3,6 +3,8 @@ import type { GitSnapshot } from "./git-classification.js";
 import type { WatchCapture } from "./watch.js";
 import { compareDependencies, type DependencyReceipt, type DependencySnapshot } from "./dependencies.js";
 import { compareGlobalNpm, type GlobalNpmReceipt, type GlobalNpmSelection, type GlobalNpmSnapshot } from "./global-npm.js";
+import { basename } from "node:path";
+import type { RunOptions, RunResult } from "./twin.js";
 
 export type ReceiptPath = { readonly encoding: "utf8" | "base64"; readonly value: string };
 export type FileCategory = "tracked" | "untracked" | "ignored" | "unclassified";
@@ -12,8 +14,41 @@ export type WatchObservation =
   | { readonly status: "missing" }
   | { readonly status: "present"; readonly size: string; readonly mode: number; readonly mtimeNs: string }
   | { readonly status: "refused" | "unavailable"; readonly reason: string };
+export interface CommandReceipt {
+  readonly coverage: "top-level-only";
+  readonly nestedCommands: "not-observed";
+  readonly admitted: boolean | null;
+  readonly processStart: "confirmed" | "not-confirmed" | "unknown";
+  readonly executable: { readonly status: "allowlisted-basename"; readonly value: string } | { readonly status: "omitted" };
+  readonly arguments: { readonly status: "omitted"; readonly count: number | null; readonly capped: boolean };
+  readonly disposition: "not-attempted" | "observation-unavailable" | "exited" | "signaled" | "timed-out" | "spawn-failed" | "settlement-uncertain";
+  readonly timeoutObserved: boolean | null;
+  readonly directChildSettled: boolean | null;
+  readonly exitCode: number | null;
+  readonly signal: NodeJS.Signals | null;
+}
+const DISPLAY_EXECUTABLES = new Set(["node", "npm", "git", "python", "python3", "bash", "sh",
+  "codex", "claude", "gemini", "opencode", "aider"]);
+const MAX_ARGUMENT_COUNT = 256;
+
+export function buildCommandReceipt(command: RunOptions, result: RunResult | undefined): CommandReceipt {
+  const name = basename(command.executable);
+  const disposition: CommandReceipt["disposition"] = !result || result.lifecycleIssue ? "settlement-uncertain"
+    : result.outcome === "timed-out" ? "timed-out" : result.outcome === "spawn-failed" ? "spawn-failed"
+      : result.signal ? "signaled" : result.started && result.exitCode !== null ? "exited" : "settlement-uncertain";
+  return {
+    coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
+    processStart: !result ? "unknown" : result.started ? "confirmed" : "not-confirmed",
+    executable: DISPLAY_EXECUTABLES.has(name) ? { status: "allowlisted-basename", value: name } : { status: "omitted" },
+    arguments: { status: "omitted", count: Math.min(command.argv.length, MAX_ARGUMENT_COUNT), capped: command.argv.length > MAX_ARGUMENT_COUNT },
+    disposition, timeoutObserved: result ? result.outcome === "timed-out" : null,
+    directChildSettled: result?.directChildSettled ?? null,
+    exitCode: result?.exitCode ?? null, signal: result?.signal ?? null,
+  };
+}
 export interface MinimalReceipt {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
+  readonly command: CommandReceipt;
   readonly dependencies: DependencyReceipt;
   readonly globalNpm: GlobalNpmReceipt;
   readonly files: {
@@ -66,6 +101,9 @@ function freezeReceipt(receipt: MinimalReceipt): MinimalReceipt {
   Object.freeze(receipt.globalNpm.changes);
   Object.freeze(receipt.globalNpm.issues);
   Object.freeze(receipt.globalNpm);
+  Object.freeze(receipt.command.executable);
+  Object.freeze(receipt.command.arguments);
+  Object.freeze(receipt.command);
   return Object.freeze(receipt);
 }
 
@@ -95,6 +133,7 @@ export function buildReceipt(
   globalSelection: GlobalNpmSelection,
   beforeGlobal: GlobalNpmSnapshot,
   afterGlobal: GlobalNpmSnapshot,
+  command: CommandReceipt,
 ): MinimalReceipt {
   const coverage = before.coverage === "complete" && after.coverage === "complete"
     ? "complete" : before.coverage === "unavailable" || after.coverage === "unavailable"
@@ -125,7 +164,8 @@ export function buildReceipt(
     return { id: first.id, before: first.observation, after: last.observation, comparison } as const;
   });
   return freezeReceipt({
-    schemaVersion: 3,
+    schemaVersion: 4,
+    command,
     files: { coverage, issues: [...before.issues, ...after.issues], changes },
     watch,
     dependencies: compareDependencies(beforeDependencies, afterDependencies),

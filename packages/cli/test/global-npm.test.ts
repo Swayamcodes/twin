@@ -105,8 +105,13 @@ it("transports a global npm addition in the public CLI receipt frame", async () 
     expect(frame.length).toBe(header + length + 1);
     expect(frame.at(-1)).toBe(10);
     const receipt: unknown = JSON.parse(frame.subarray(header, header + length).toString("utf8"));
-    expect(receipt).toMatchObject({ schemaVersion: 3, globalNpm: { coverage: "complete", source: "env-prefix",
+    expect(receipt).toMatchObject({ schemaVersion: 4,
+      command: { admitted: true, processStart: "confirmed", disposition: "exited", nestedCommands: "not-observed",
+        executable: { status: "allowlisted-basename", value: "node" }, arguments: { status: "omitted", count: 4 } },
+      globalNpm: { coverage: "complete", source: "env-prefix",
       changes: [{ name: "probe", change: "added", before: null, after: "1.0.0" }] } });
+    expect(JSON.stringify(receipt)).not.toContain(script);
+    expect(JSON.stringify(receipt)).not.toContain(marker);
   } catch (error) { failure = error; }
   let cleanupFailure: unknown = null;
   try {

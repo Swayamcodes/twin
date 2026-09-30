@@ -6,7 +6,7 @@ import { allocateRoot, assertRootAuthority, discardRoot } from "./safety.js";
 import { captureManifest, unavailableManifest, type ManifestSnapshot } from "./manifest.js";
 import { captureGitCategories, unavailableGit, type GitSnapshot } from "./git-classification.js";
 import { captureWatches, unavailableWatches, type WatchCapture } from "./watch.js";
-import { buildReceipt, type MinimalReceipt } from "./receipt.js";
+import { buildCommandReceipt, buildReceipt, type MinimalReceipt } from "./receipt.js";
 import { captureDependencies, unavailableDependencies, type DependencySnapshot } from "./dependencies.js";
 import { captureGlobalNpm, selectGlobalNpmRoot, unavailableGlobalNpm } from "./global-npm.js";
 
@@ -137,9 +137,10 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       const afterGlobal = childSettled && globalSelection.root
         ? await assertRootAuthority(root).then(() => captureGlobalNpm(globalSelection.root!)).catch(() => unavailableGlobalNpm("observation-failed"))
         : unavailableGlobalNpm(childSettled ? globalSelection.reason ?? "prefix-unavailable" : "child-unsettled");
+      const commandReceipt = buildCommandReceipt(command, result);
       try {
         receipt = buildReceipt(before, after, beforeGit, afterGit, beforeWatch, afterWatch, beforeDependencies, afterDependencies,
-          globalSelection, beforeGlobal, afterGlobal);
+          globalSelection, beforeGlobal, afterGlobal, commandReceipt);
       } catch {
         receipt = buildReceipt(
           unavailableManifest("receipt-unavailable"), unavailableManifest("receipt-unavailable"),
@@ -147,6 +148,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
           unavailableWatches("receipt-unavailable"), unavailableWatches("receipt-unavailable"),
           unavailableDependencies("receipt-unavailable"), unavailableDependencies("receipt-unavailable"),
           { reason: "receipt-unavailable" }, unavailableGlobalNpm("receipt-unavailable"), unavailableGlobalNpm("receipt-unavailable"),
+          commandReceipt,
         );
       } finally {
         beforeWatch = unavailableWatches("consumed");

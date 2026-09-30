@@ -566,6 +566,14 @@ conflicting or overridden prefixes yield unavailable coverage; incomplete
 inventory never yields an empty clean comparison. See
 [global npm observation](docs/phase-4-global-npm.md) for limits. Frozen Phase 2
 results remain historical measurements and are not rescored by this receipt.
+
+The next Phase 4 slice adds one top-level command report in receipt schema
+version 4. It derives admission from the validated command snapshot and process
+start/disposition from the existing runner result. Executable disclosure is an
+allowlisted basename; arguments and environment values are omitted. The report
+states that nested commands are unobserved. The CLI frame remains
+`TWIN-RECEIPT/1`; historical Phase 2 results and frozen score contracts are
+unchanged. See [command report](docs/phase-4-commands.md).
 Current S11 process testing now waits for an owned worker marker that records
 the action's process group, then checks that Twin settles and terminates that
 group before discard. Any later harness signal is cleanup only and earns no
