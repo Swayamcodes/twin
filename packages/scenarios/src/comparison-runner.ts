@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -9,7 +10,8 @@ import { createTwin, type TwinSession } from "@twin-cli/core";
 import { fixtureContents } from "./scenarios.js";
 import { s8Files, s9Files, s9InitialNote, s9AppendedLine } from "./s8-s13-fixtures.js";
 import { fixedAction, s11Worker } from "./comparison-actions.js";
-import { ComparisonResultSchema, type ComparisonResult, type ComparisonRow, type ScenarioId, type ToolId } from "./comparison-result.js";
+import { ComparisonExecutionMetadataSchema, ComparisonResultSchema,
+  type ComparisonExecutionMetadata, type ComparisonResult, type ComparisonRow, type ScenarioId, type ToolId } from "./comparison-result.js";
 
 const ids: readonly ScenarioId[] = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"];
 const tools: readonly ToolId[] = ["twin", "agenttx", "plain-git"];
@@ -17,6 +19,8 @@ const git = "/usr/bin/git";
 const marker = ".twin-phase2-comparison-owner";
 const recipe = ["restore", "--source=HEAD", "--worktree", "--", "."];
 const repo = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+const s10PackageJson = '{"name":"twin-s10-offline-probe","version":"1.0.0","main":"index.js"}\n';
+const s10Index = "module.exports = 10;\n";
 const within = (parent: string, child: string): boolean => {
   const tail = relative(parent, child);
   return tail === "" || (!isAbsolute(tail) && tail !== ".." && !tail.startsWith(`..${sep}`));
@@ -27,6 +31,75 @@ interface Root { path: string; token: string; dev: number; ino: number }
 export interface ComparisonRootAccounting { allocated: number; removed: number }
 interface State { readonly [name: string]: string | null }
 const hash = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+export const digestActionBytes = (bytes: Uint8Array): string => hash(bytes);
+export async function digestRegularFile(path: string, maxBytes = 256 * 1024 * 1024): Promise<string> {
+  const handle = await fs.open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await handle.stat();
+    assert(stat.isFile() && stat.size <= maxBytes, "Identity file is not an admitted regular file");
+    const digest = createHash("sha256");
+    let read = 0;
+    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+      read += chunk.length;
+      assert(read <= maxBytes, "Identity file exceeded its bound");
+      digest.update(chunk);
+    }
+    assert.equal(read, stat.size, "Identity file changed while read");
+    return digest.digest("hex");
+  } finally { await handle.close(); }
+}
+export async function digestBuildTree(root: string): Promise<{ sha256: string; fileCount: number }> {
+  const rootStat = await fs.lstat(root);
+  assert(rootStat.isDirectory() && !rootStat.isSymbolicLink(), "Build root is not an admitted directory");
+  const entries: { name: string; sha256: string }[] = [];
+  const visit = async (directory: string, prefix: string): Promise<void> => {
+    for (const item of await fs.readdir(directory, { withFileTypes: true })) {
+      if (!prefix && item.name === "test-harness") continue;
+      const name = prefix ? `${prefix}/${item.name}` : item.name;
+      const path = join(directory, item.name);
+      if (item.isDirectory()) await visit(path, name);
+      else if (item.isFile() && item.name.endsWith(".js")) {
+        assert(entries.length < 512, "Build identity file count exceeded its bound");
+        entries.push({ name, sha256: await digestRegularFile(path, 8 * 1024 * 1024) });
+      } else assert(!item.isSymbolicLink(), "Build identity contains a symlink");
+    }
+  };
+  await visit(root, "");
+  assert(entries.length > 0, "Build identity has no JavaScript files");
+  entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+  const digest = createHash("sha256");
+  for (const entry of entries) digest.update(`${entry.name}\0${entry.sha256}\n`);
+  return { sha256: digest.digest("hex"), fileCount: entries.length };
+}
+async function fixedActionDigests(): Promise<ComparisonExecutionMetadata["actions"]> {
+  const result: ComparisonExecutionMetadata["actions"] = [];
+  for (const id of ids) {
+    const commandBytes = id === "S4" ? Buffer.from("git\0reset\0--hard")
+      : id === "S6" ? Buffer.from("git\0clean\0-fdx")
+        : id === "S10" ? Buffer.from(`npm\0install\0-g\0--offline\0${s10PackageJson}\0${s10Index}`) : null;
+    const bytes = commandBytes ?? (id === "S12"
+      ? await fs.readFile(fileURLToPath(new URL("./actions/create-file.js", import.meta.url))) : fixedAction[id]?.bytes);
+    assert(bytes, "Fixed action bytes are unavailable");
+    result.push({ scenarioId: id, kind: commandBytes ? "command" : "script", sha256: digestActionBytes(bytes) });
+  }
+  return result;
+}
+async function collectExecutionMetadata(commit: string, status: string, gitVersion: string, agentVersion: string,
+  agenttxTarget: string): Promise<ComparisonExecutionMetadata> {
+  const scenariosDist = dirname(fileURLToPath(import.meta.url));
+  const npmEntry = await fs.realpath(join(dirname(process.execPath), "npm"));
+  const [nodeSha256, gitSha256, agenttxEntrySha256, npmEntrySha256, core, scenarios, agenttx, actions] = await Promise.all([
+    digestRegularFile(await fs.realpath(process.execPath)), digestRegularFile(git), digestRegularFile(agenttxTarget),
+    digestRegularFile(npmEntry), digestBuildTree(resolve(scenariosDist, "../../core/dist")),
+    digestBuildTree(scenariosDist), digestBuildTree(dirname(dirname(agenttxTarget))), fixedActionDigests(),
+  ]);
+  return ComparisonExecutionMetadataSchema.parse({ metadataVersion: 1,
+    source: { commit, workingTree: status.length === 0 ? "clean" : "dirty",
+      statusSha256: hash(Buffer.from(status)) },
+    versions: { node: process.version, git: gitVersion, agenttx: agentVersion },
+    executables: { nodeSha256, gitSha256, agenttxEntrySha256, npmEntrySha256 },
+    builds: { core, scenarios, agenttx }, actions, s11WorkerSha256: digestActionBytes(s11Worker) });
+}
 async function command(executable: string, argv: readonly string[], cwd: string, env: Record<string, string>,
   timeout = 20_000): Promise<CommandResult> {
   assert(isAbsolute(executable) && isAbsolute(cwd) && timeout <= 30_000);
@@ -141,8 +214,8 @@ async function setup(root: Root, id: ScenarioId, env: Record<string, string>): P
   if (id === "S10") {
     const packageDir = join(root.path, "support", "package");
     await fs.mkdir(packageDir, { mode: 0o700 });
-    await fs.writeFile(join(packageDir, "package.json"), '{"name":"twin-s10-offline-probe","version":"1.0.0","main":"index.js"}\n');
-    await fs.writeFile(join(packageDir, "index.js"), "module.exports = 10;\n");
+    await fs.writeFile(join(packageDir, "package.json"), s10PackageJson);
+    await fs.writeFile(join(packageDir, "index.js"), s10Index);
     const npm = await fs.realpath(join(dirname(process.execPath), "npm"));
     const packed = await command(process.execPath, [npm, "pack", packageDir, "--pack-destination", join(root.path, "support"),
       "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], packageDir, env);
@@ -516,12 +589,14 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
   }
 }
 export async function produceComparison(onRow?: (row: ComparisonRow) => void, onReady?: () => void,
-  accounting: ComparisonRootAccounting = { allocated: 0, removed: 0 }): Promise<ComparisonResult> {
+  accounting: ComparisonRootAccounting = { allocated: 0, removed: 0 },
+  onMetadata?: (metadata: ComparisonExecutionMetadata) => void): Promise<ComparisonResult> {
   const gitStat = await fs.lstat(git);
   assert(gitStat.isFile() && !gitStat.isSymbolicLink() && gitStat.uid === 0 && (gitStat.mode & 0o111) !== 0
     && (gitStat.mode & 0o022) === 0, "Git executable is not an admitted system file");
   const root = await allocate(accounting), env = config(root);
   let versions: Record<ToolId, string>;
+  let executionMetadata: ComparisonExecutionMetadata;
   let probeState: "not-started" | "settled" | "uncertain" = "not-started";
   try {
     for (const name of ["home", "store", "config", "cache", "tmp", "prefix"])
@@ -533,22 +608,27 @@ export async function produceComparison(onRow?: (row: ComparisonRow) => void, on
     if (!agenttxTarget.endsWith("/agenttx/dist/src/cli.js"))
       throw new ComparisonPrerequisiteFailure("agenttx-version-mismatch");
     probeState = "uncertain";
-    const [gitVersion, agentVersion, coreHead] = await Promise.all([
+    const [gitVersion, agentVersion, coreHead, workingTree] = await Promise.all([
       command(git, ["--version"], root.path, env), command(agenttx, ["--version"], root.path, env),
-      command(git, ["rev-parse", "--short=12", "HEAD"], repo, env),
+      command(git, ["rev-parse", "HEAD"], repo, env),
+      command(git, ["status", "--porcelain=v1", "--untracked-files=all"], repo, env),
     ]);
-    probeState = prerequisiteProbeState([gitVersion, agentVersion, coreHead]);
+    probeState = prerequisiteProbeState([gitVersion, agentVersion, coreHead, workingTree]);
     if (probeState === "uncertain")
       throw new ComparisonPrerequisiteFailure("probe-settlement-uncertain");
-    settled(gitVersion); settled(coreHead);
+    settled(gitVersion); settled(coreHead); settled(workingTree);
     assert.equal(gitVersion.code, 0);
     assert.equal(coreHead.code, 0);
-    assert(/^[0-9a-f]{12}$/.test(coreHead.stdout.trim()), "Core HEAD identity is unavailable");
+    assert.equal(workingTree.code, 0);
+    assert(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(coreHead.stdout.trim()), "Core HEAD identity is unavailable");
     if (agentVersion.code !== 0)
       throw new ComparisonPrerequisiteFailure("agenttx-unavailable");
     if (agentVersion.stdout.trim() !== "0.3.0")
       throw new ComparisonPrerequisiteFailure("agenttx-version-mismatch");
-    versions = { twin: `${coreHead.stdout.trim()}-core`, agenttx: "0.3.0", "plain-git": gitVersion.stdout.trim() };
+    executionMetadata = await collectExecutionMetadata(coreHead.stdout.trim(), workingTree.stdout,
+      gitVersion.stdout.trim(), agentVersion.stdout.trim(), agenttxTarget);
+    onMetadata?.(executionMetadata);
+    versions = { twin: `${coreHead.stdout.trim().slice(0, 12)}-core`, agenttx: "0.3.0", "plain-git": gitVersion.stdout.trim() };
   } finally { await finishPrerequisiteRoot(probeState, () => cleanup(root, accounting)); }
   onReady?.();
   const rows: ComparisonRow[] = [];
@@ -560,5 +640,5 @@ export async function produceComparison(onRow?: (row: ComparisonRow) => void, on
   return ComparisonResultSchema.parse({ schemaVersion: 1, comparisonVersion: 1,
     gitRecoveryRecipe: "git restore --source=HEAD --worktree -- .; no git clean or harness restoration",
     rootAccounting: { allocated: accounting.allocated, removed: accounting.removed,
-      retained: accounting.allocated - accounting.removed }, rows });
+      retained: accounting.allocated - accounting.removed }, executionMetadata, rows });
 }

@@ -39,3 +39,23 @@ publishes to the requested directory and does not overwrite them. A fresh
 run measures the current Twin implementation, so changed observations are
 new attempts rather than corrections to that history or to frozen retained
 score contracts. The suite uses fixed scripts and makes no AI or model calls.
+
+## Execution identity
+
+Fresh results include version-one execution metadata: the full source commit,
+clean or dirty working-tree state and a digest of its Git status, Node/Git/
+AgentTX versions, executable and entry-file digests, aggregate JavaScript
+build digests for Twin core, scenarios and AgentTX, and digests for every fixed
+action. Command actions use normalized recipes and fixed input bytes. The
+S11 worker has its own digest. File-system paths, raw status, command output,
+environment values and fixture contents are not published. The built-code
+digests bind the Twin result to compiled files inspected before the attempts;
+the commit alone does not identify those files.
+
+These identities support local reproduction. They do not authenticate the
+source or executables, prove that files could not change after inspection, or
+guarantee identical outcomes across runs. Historical Phase 2 artifacts have
+no execution metadata and retain their original Markdown rendering.
+
+The retained fresh result for this checkpoint is [JSON](phase-6-results-2297bf07/comparison.json)
+with its [deterministic Markdown](phase-6-results-2297bf07/comparison.md).

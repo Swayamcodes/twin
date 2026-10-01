@@ -80,10 +80,33 @@ const RootAccountingSchema = z.strictObject({
   if (value.allocated !== value.removed + value.retained)
     ctx.addIssue({ code: "custom", message: "Root accounting does not balance" });
 });
+const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const VersionSchema = z.string().min(1).max(100).regex(/^[A-Za-z0-9 .+_-]+$/);
+const BuildDigestSchema = z.strictObject({ sha256: DigestSchema, fileCount: z.number().int().positive() });
+export const ComparisonExecutionMetadataSchema = z.strictObject({
+  metadataVersion: z.literal(1),
+  source: z.strictObject({ commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    workingTree: z.enum(["clean", "dirty"]), statusSha256: DigestSchema }),
+  versions: z.strictObject({ node: VersionSchema, git: VersionSchema, agenttx: VersionSchema }),
+  executables: z.strictObject({ nodeSha256: DigestSchema, gitSha256: DigestSchema,
+    agenttxEntrySha256: DigestSchema, npmEntrySha256: DigestSchema }),
+  builds: z.strictObject({ core: BuildDigestSchema, scenarios: BuildDigestSchema, agenttx: BuildDigestSchema }),
+  actions: z.array(z.strictObject({ scenarioId: z.enum(["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"]),
+    kind: z.enum(["script", "command"]), sha256: DigestSchema })).length(13),
+  s11WorkerSha256: DigestSchema,
+}).superRefine((value, ctx) => {
+  value.actions.forEach((action, index) => {
+    const expected = `S${index + 1}`;
+    if (action.scenarioId !== expected || action.kind !== (["S4", "S6", "S10"].includes(expected) ? "command" : "script"))
+      ctx.addIssue({ code: "custom", path: ["actions", index], message: "Action identity is out of fixed order" });
+  });
+});
+export type ComparisonExecutionMetadata = z.infer<typeof ComparisonExecutionMetadataSchema>;
 export const ComparisonResultSchema = z.strictObject({
   schemaVersion: z.literal(1), comparisonVersion: z.literal(1),
   gitRecoveryRecipe: z.literal("git restore --source=HEAD --worktree -- .; no git clean or harness restoration"),
   rootAccounting: RootAccountingSchema.optional(),
+  executionMetadata: ComparisonExecutionMetadataSchema.optional(),
   rows: z.array(ComparisonRowSchema).length(39),
 }).superRefine((value, ctx) => {
   const ids = new Set(value.rows.map(row => `${row.scenarioId}:${row.tool}`));
@@ -105,6 +128,7 @@ export const IncompleteComparisonSchema = z.strictObject({
   prerequisiteCode: z.enum(["agenttx-unavailable", "agenttx-version-mismatch", "probe-settlement-uncertain", "other"]).nullable(),
   rootDisposition: z.enum(["not-allocated", "removed", "retained", "unknown"]),
   rootAccounting: RootAccountingSchema,
+  executionMetadata: ComparisonExecutionMetadataSchema.optional(),
   completedRows: z.array(ComparisonRowSchema).max(38),
   failedAttempt: z.strictObject({ scenarioId: scenario, tool }).nullable(),
 }).superRefine((value, ctx) => {
@@ -144,12 +168,15 @@ export function renderComparisonArtifact(result: ComparisonArtifact): string {
   if (!("status" in result)) return renderComparison(result);
   const parsed = IncompleteComparisonSchema.parse(result);
   const where = parsed.failedAttempt ? `${parsed.failedAttempt.scenarioId} / ${parsed.failedAttempt.tool}` : "prerequisites";
-  return `# Incomplete fixed-action comparison\n\nSchema version 1; comparison version 1. ${parsed.completedRows.length} of 39 attempts completed. Failure at ${where}: ${parsed.reason} (${parsed.prerequisiteCode ?? parsed.failureStage}); root ${parsed.rootDisposition}. Roots: ${parsed.rootAccounting.allocated} allocated, ${parsed.rootAccounting.removed} removed, ${parsed.rootAccounting.retained} retained. No complete-suite claim is made.\n\nCompleted rows are retained in the JSON artifact with row-local evidence. A failed attempt has no scored row.\n`;
+  const identity = parsed.executionMetadata
+    ? `\nSource commit: \`${parsed.executionMetadata.source.commit}\`; working tree: ${parsed.executionMetadata.source.workingTree}; metadata version ${parsed.executionMetadata.metadataVersion}.\n`
+    : "";
+  return `# Incomplete fixed-action comparison\n\nSchema version 1; comparison version 1. ${parsed.completedRows.length} of 39 attempts completed. Failure at ${where}: ${parsed.reason} (${parsed.prerequisiteCode ?? parsed.failureStage}); root ${parsed.rootDisposition}. Roots: ${parsed.rootAccounting.allocated} allocated, ${parsed.rootAccounting.removed} removed, ${parsed.rootAccounting.retained} retained. No complete-suite claim is made.\n${identity}\nCompleted rows are retained in the JSON artifact with row-local evidence. A failed attempt has no scored row.\n`;
 }
 
 export function renderComparison(result: ComparisonResult): string {
   ComparisonResultSchema.parse(result);
-  const lines = ["# Phase 2 measured comparison", "", "Schema version 1; comparison version 1. Each row is one fresh disposable attempt. `unknown` means the evidence does not support a stronger outcome.", "", `Plain Git recovery recipe: \`${result.gitRecoveryRecipe}\`. Harness cleanup is excluded from recovery.`, "", "| Scenario | Tool | Version | Action | Exit | Recovery | Compatibility | Recovered/preserved | Reported | Blocked | Workspace usable | Boundary accurate | Evidence |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"];
+  const lines = [result.executionMetadata ? "# Fresh fixed-action comparison" : "# Phase 2 measured comparison", "", "Schema version 1; comparison version 1. Each row is one fresh disposable attempt. `unknown` means the evidence does not support a stronger outcome.", "", `Plain Git recovery recipe: \`${result.gitRecoveryRecipe}\`. Harness cleanup is excluded from recovery.`, "", "| Scenario | Tool | Version | Action | Exit | Recovery | Compatibility | Recovered/preserved | Reported | Blocked | Workspace usable | Boundary accurate | Evidence |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"];
   for (const row of result.rows) {
     const fields = Object.values(row.score);
     const refs = [...new Set(fields.flatMap(field => field.evidenceRefs))].sort().join(", ");
@@ -157,5 +184,9 @@ export function renderComparison(result: ComparisonResult): string {
   }
   lines.push("", "Evidence references resolve to named fields in the same sanitized row. Action output is separate from the tool report.", "");
   if (result.rootAccounting) lines.push(`Roots: ${result.rootAccounting.allocated} allocated, ${result.rootAccounting.removed} removed, ${result.rootAccounting.retained} retained.`, "");
+  if (result.executionMetadata) {
+    const meta = result.executionMetadata;
+    lines.push("## Execution identity", "", `Metadata version ${meta.metadataVersion}. Source commit: \`${meta.source.commit}\`; working tree: ${meta.source.workingTree}; status digest: \`${meta.source.statusSha256}\`.`, "", "| Component | Version | SHA-256 |", "| --- | --- | --- |", `| Node executable | ${meta.versions.node} | ${meta.executables.nodeSha256} |`, `| Git executable | ${meta.versions.git} | ${meta.executables.gitSha256} |`, `| AgentTX entry | ${meta.versions.agenttx} | ${meta.executables.agenttxEntrySha256} |`, `| npm entry | — | ${meta.executables.npmEntrySha256} |`, `| Twin core build (${meta.builds.core.fileCount} files) | — | ${meta.builds.core.sha256} |`, `| Scenarios build (${meta.builds.scenarios.fileCount} files) | — | ${meta.builds.scenarios.sha256} |`, `| AgentTX build (${meta.builds.agenttx.fileCount} files) | — | ${meta.builds.agenttx.sha256} |`, "", "Fixed actions (SHA-256 of script bytes or command recipe with fixed inputs):", "", ...meta.actions.map(action => `- ${action.scenarioId} ${action.kind}: \`${action.sha256}\``), `- S11 worker: \`${meta.s11WorkerSha256}\``, "", "These local identities support reproduction; they are not authenticated provenance or a guarantee of identical outcomes.", "");
+  }
   return lines.join("\n");
 }

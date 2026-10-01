@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { ComparisonAttemptFailure, ComparisonPrerequisiteFailure, produceComparison,
   type ComparisonRootAccounting } from "./comparison-runner.js";
 import { ComparisonArtifactSchema, IncompleteComparisonSchema, renderComparisonArtifact,
-  comparisonSequence, type ComparisonArtifact, type ComparisonRow } from "./comparison-result.js";
+  comparisonSequence, type ComparisonArtifact, type ComparisonExecutionMetadata, type ComparisonRow } from "./comparison-result.js";
 
 export async function runComparisonEntry(argv: readonly string[], run = produceComparison): Promise<number> {
   if (argv.length !== 2 || argv[0] !== "--output-dir" || !isAbsolute(argv[1] ?? ""))
@@ -20,9 +20,11 @@ export async function runComparisonEntry(argv: readonly string[], run = produceC
   const rows: ComparisonRow[] = [];
   const accounting: ComparisonRootAccounting = { allocated: 0, removed: 0 };
   let ready = false;
+  let executionMetadata: ComparisonExecutionMetadata | undefined;
   let artifact: ComparisonArtifact;
   try {
-    artifact = await run(row => { rows.push(row); }, () => { ready = true; }, accounting);
+    artifact = await run(row => { rows.push(row); }, () => { ready = true; }, accounting,
+      metadata => { executionMetadata = metadata; });
   } catch (error: unknown) {
     const failureStage = ready ? error instanceof ComparisonAttemptFailure ? error.stage : "observation" : "prerequisite";
     const retained = accounting.allocated - accounting.removed;
@@ -34,6 +36,7 @@ export async function runComparisonEntry(argv: readonly string[], run = produceC
       failureStage, rootDisposition,
       rootAccounting: { allocated: accounting.allocated, removed: accounting.removed,
         retained },
+      ...(executionMetadata ? { executionMetadata } : {}),
       prerequisiteCode: ready ? null : error instanceof ComparisonPrerequisiteFailure ? error.code : "other",
       completedRows: rows, failedAttempt: ready ? comparisonSequence[rows.length] : null });
   }
