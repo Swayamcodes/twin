@@ -14,8 +14,10 @@ The text report begins with an overall coverage warning if any file,
 dependency, global npm or watch observation is incomplete or unavailable, or
 if command/process settlement is uncertain. Every section prints its own
 coverage. An empty change list under incomplete coverage says only that no
-change was observed. File changes show their tracked, untracked, ignored or
-unclassified label; project declaration changes and lockfile digest changes
+change was observed. File changes are differences between before/after
+inventories; reads and writes reverted within a run that leave no net
+difference are unobserved. File changes show their tracked, untracked, ignored
+or unclassified label; project declaration changes and lockfile digest changes
 remain separate from installed global npm metadata. Outside-project watch
 changes are observations, without rollback credit. Signal delivery reports
 Twin's request outcome, not proof of termination. Discard is clone cleanup,

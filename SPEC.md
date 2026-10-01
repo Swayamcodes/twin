@@ -6,7 +6,9 @@ twin runs any AI coding agent (Codex CLI, Claude Code, Gemini CLI, opencode,
 Aider, or a custom script) as a plain command, inside a full clone of your
 project — including files git ignores (.env, node_modules) and folders that
 aren't git repos at all. When the agent finishes, twin shows a receipt of
-everything it did. You apply the changes or discard the clone.
+observed before/after file differences and bounded command, process,
+dependency, and outside-project observations. You apply the changes or discard
+the clone.
 
 twin also ships a scenario suite: scripted "bad agent" scripts that cause a
 specific kind of damage, run through multiple recovery tools (twin, AgentTX,
@@ -34,8 +36,8 @@ This isn't hypothetical. Hand-testing on a real repo (Sept 2026) found:
 
 The core finding: isolation-based tools already protect git-tracked and
 captured-untracked state reasonably well. The real gaps are (1) ignored
-files and non-git folders, and (2) a receipt that accurately reports what a
-tool did and didn't do, rather than reporting a clean run because it never
+files and non-git folders, and (2) a receipt that reports observed changes
+and its coverage limits, rather than reporting a clean run because it never
 saw the damage.
 
 ## Who it's for
@@ -48,8 +50,11 @@ which recovery tools actually work for which kinds of accidents.
 
 1. Clone-and-run: wrap any CLI agent as a plain command inside a full clone
    of the project directory, including ignored files and non-git folders.
-2. Receipt: a report of every file touched, categorized as tracked /
-   untracked / ignored / outside-project / process / dependency change.
+2. Receipt: a report of observed file differences between before/after
+   inventories, labeled tracked / untracked / ignored / unclassified, with
+   separate bounded outside-project watch, command, process, and dependency
+   observations. Reads and writes reverted within a run that leave no net
+   difference are unobserved.
 3. Apply or discard: keep the clone's changes (conflict-safe merge back) or
    throw the clone away.
 4. Scenario suite: deterministic, scripted bad-agent scripts, no AI or

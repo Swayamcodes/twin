@@ -114,10 +114,12 @@ testable in isolation.
   falling back to a plain recursive copy otherwise (the default and only
   tested path on WSL2/ext4). Includes files git ignores and works in
   directories with no git repository at all.
-- **Manifest / diff**: hash every file before and after the run (not git),
-  so tracked/untracked/ignored/non-git files are all covered the same way.
-  Git is used only to *label* each path as tracked, untracked, or ignored —
-  never to decide what gets copied or diffed.
+- **Manifest / diff**: inventory project files before and after the run (not
+  git) and compare their recorded state, subject to scan coverage and limits.
+  Tracked/untracked/ignored/non-git files use the same comparison. Git is used
+  only to *label* each path as tracked, untracked, or ignored — never to decide
+  what gets copied or diffed. Reads and writes reverted within the run that
+  leave no net difference are unobserved; there is no live access history.
 - **Receipt**: turn the diff into a structured report — files
   added/changed/removed (with their git-category label), dependency
   changes, leftover processes, and a watch-list report for paths outside
@@ -585,8 +587,9 @@ existing discard gates remain unchanged. See [process report](docs/phase-4-proce
 The CLI now selects a bounded human receipt only with `--receipt=text` before
 `--`; its default schema-5 JSON frame and consumers are unchanged. Rendering
 uses the existing receipt and marks incomplete coverage without a clean claim.
-See [presentation](docs/phase-4-presentation.md) and the
-[Phase 4 acceptance review](docs/phase-4-acceptance.md).
+See [presentation](docs/phase-4-presentation.md). The planned receipt
+checkpoint is closed against the approved before/after observation scope in
+the [Phase 4 acceptance review](docs/phase-4-acceptance.md).
 
 Current S11 process testing now waits for an owned worker marker that records
 the action's process group, then checks that Twin settles and terminates that

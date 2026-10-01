@@ -14,17 +14,20 @@ It assesses current observations, not the later apply or scenario-suite work.
 | Process group and Twin intervention | `packages/core/test/run.test.ts`, current S11 comparison test | Direct-child and original-group observations, pipe state and Twin signal attempts are reported. Delivery does not prove termination. Escaped descendants and identities are unobserved; harness cleanup earns no Twin credit. |
 | Human and JSON presentation | `packages/cli/test/receipt-text.test.ts`, `packages/cli/test/run.test.ts`, `packages/cli/test/global-npm.test.ts`, public CLI comparison test | Explicit text mode is bounded, escapes control characters and marks incomplete coverage. Default schema-5 JSON framing is unchanged. |
 
-**Acceptance decision: hold Phase 4 closure against the literal v1 receipt
-requirement.** SPEC.md says the receipt reports *every file touched*. Current
-file observation is a before/after manifest difference. A file that is read
-without changing, or changed and restored before the final scan, leaves no
-file-change entry. No existing test or observation path establishes a complete
-history of accesses or transient writes. The bounded checkpoint above is
-implemented and tested, but it does not satisfy that literal requirement.
-This decision does not turn unobserved nested commands, escaped processes or
-unwatched outside-project changes into additional invented Phase 4 gates.
+**Scope decision (2026-10-01):** the approved v1 file receipt reports observed
+differences between before/after inventories, subject to scan coverage and
+limits. Reads and writes reverted within a run that leave no net difference
+are unobserved. The receipt does not provide a history of file accesses or
+transient writes.
 
-Verification for this review ran the focused receipt and runner suites, the
+**Acceptance decision: the planned Phase 4 receipt checkpoint is closed
+against this approved scope.** The checkpoints above are implemented and
+tested within their stated limits. This closure does not extend watch coverage
+beyond configured outside-project paths, trace nested commands, discover
+descendants that escape the original process group, or credit discard with
+outside-project recovery. It does not declare all v1 work complete.
+
+The implementation review ran the focused receipt and runner suites, the
 full core and CLI suites, the public CLI comparison, and S6/S12 consumer
 suites. Strict core, CLI and scenario TypeScript/build checks and whitespace
 checks passed. The consumer suites were run separately because their root
