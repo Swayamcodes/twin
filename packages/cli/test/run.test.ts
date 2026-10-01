@@ -124,7 +124,7 @@ describe("twin run", () => {
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] --"));
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] [--review] --"));
     },
   );
 

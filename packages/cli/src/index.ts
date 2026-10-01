@@ -6,15 +6,37 @@ import { realpathSync } from "node:fs";
 import { mkdtemp, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
 import { renderReceiptText } from "./receipt-text.js";
 
-const help = `Usage: twin run [--interactive] [--receipt=text] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--receipt=text] [--review] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
+--review prints the receipt, then asks on stdin to apply or discard. Other answers retain the copy.
 `;
+
+async function reviewChoice(signal: AbortSignal): Promise<string | null> {
+  const lines = createInterface({ input: process.stdin, terminal: false });
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      lines.close();
+      resolve(value);
+    };
+    const onAbort = (): void => finish(null);
+    lines.once("line", line => finish(line.trim()));
+    lines.once("close", () => finish(null));
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) finish(null);
+    else void write(process.stderr, "Twin review: type apply or discard, then Enter (anything else retains copy): ").catch(() => finish(null));
+  });
+}
 
 const WATCH_IDS: readonly WatchId[] = [
   ".gitconfig", ".npmrc", ".bashrc", ".zshrc",
@@ -85,9 +107,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const separator = argv.indexOf("--", 1);
   const flags = argv.slice(1, separator < 0 ? undefined : separator);
   const interactive = flags.includes("--interactive");
+  const review = flags.includes("--review");
   const format = flags.includes("--receipt=text") ? "text" : "json";
-  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text")
+  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review")
       || flags.filter(flag => flag === "--interactive").length > 1
+      || flags.filter(flag => flag === "--review").length > 1
       || flags.filter(flag => flag === "--receipt=text").length > 1
       || argv.length < separator + 2 || !argv[separator + 1]) {
     process.stderr.write(help);
@@ -97,6 +121,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   let session: Awaited<ReturnType<typeof createTwin>> | undefined;
   let scratchParent: string | undefined;
   let exitCode = 1;
+  let retainCopy = false;
   const interruption = new AbortController();
   const interrupt = (signal: "SIGINT" | "SIGTERM"): void => {
     if (!interruption.signal.aborted) interruption.abort(signal);
@@ -130,21 +155,36 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           const inspection = session.inspect();
           await writeReceipt(inspection.receipt ?? unavailableReceipt("no-run", fallbackCommand(inspection.state === "ready"),
             unavailableProcessReceipt(inspection.state === "ready")), format);
-        } catch {
+          if (review && inspection.state === "finished" && !interruption.signal.aborted) {
+            const choice = await reviewChoice(interruption.signal);
+            if (choice === "apply") {
+              const applied = await session.apply();
+              const paths = "paths" in applied ? applied.paths : [];
+              await write(process.stderr, `Twin apply ${applied.status}${applied.status === "applied" ? `: ${applied.changes} changes`
+                : `: ${JSON.stringify({ reason: applied.reason, paths: paths.slice(0, 20), omitted: Math.max(0, paths.length - 20) })}`}\n`);
+              if (applied.status !== "applied") { retainCopy = true; exitCode = 1; }
+            } else if (choice !== "discard") { retainCopy = true; exitCode = 1; }
+          } else if (review) { retainCopy = true; exitCode = 1; }
+        } catch (error) {
           exitCode = 1;
+          if (review) retainCopy = true;
+          if (review) await write(process.stderr, `Twin review failed: ${error instanceof Error ? error.message : String(error)}\n`);
         }
-        try {
+        if (retainCopy) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
+        else try {
           const discarded = await session.discard();
           if (discarded.status === "refused" || discarded.status === "failed") {
             exitCode = 1;
             await write(process.stderr, `Twin discard ${discarded.status}: ${discarded.reason}\n`);
+            if (review) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
           }
         } catch (error) {
           await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+          if (review) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
           exitCode = 1;
         }
       }
-      if (scratchParent) {
+      if (scratchParent && !retainCopy) {
         try { await rmdir(scratchParent); }
         catch (error) {
           await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);

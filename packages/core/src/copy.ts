@@ -82,6 +82,7 @@ export async function copySource(root: OwnedRoot): Promise<void> {
       await mkdir(destination, { mode: 0o700 });
       await chmod(destination, 0o700);
       for (const name of names) await visit(join(source, name), join(destination, name), `${relativePath}/${name}`);
+      await chmod(destination, Number(stat.mode & 0o777n));
     } else if (stat.isFile()) {
       const input = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {

@@ -33,13 +33,14 @@ function sameIdentity(a: import("node:fs").BigIntStats, b: import("node:fs").Big
     && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
 
-export async function captureManifest(workspace: string): Promise<ManifestSnapshot> {
+export async function captureManifest(workspace: string | Buffer, includeDirectories = false): Promise<ManifestSnapshot> {
   const entries = new Map<string, ManifestEntry>();
   const issues: ManifestSnapshot["issues"] = [];
   const deadline = Date.now() + MAX_SCAN_MS;
   let count = 0;
   let hashedBytes = 0;
   let coverage: ManifestSnapshot["coverage"] = "complete";
+  const modeMask = includeDirectories ? 0o777n : 0o7777n;
   const mark = (reason: string, path?: ReceiptPath): void => { coverage = "partial"; issues.push(path ? { reason, path } : { reason }); };
   const slash = Buffer.from("/");
   const gitRoot = Buffer.from(".git");
@@ -64,11 +65,13 @@ export async function captureManifest(workspace: string): Promise<ManifestSnapsh
         try {
           const before = await lstat(abs, { bigint: true });
           if (before.isDirectory()) {
-            if (rel.equals(gitRoot) || rel.subarray(0, gitPrefix.length).equals(gitPrefix)) {
-              entries.set(rel.toString("base64"), { path, kind: "directory", mode: Number(before.mode & 0o7777n), digest: "" });
+            if (includeDirectories || rel.equals(gitRoot) || rel.subarray(0, gitPrefix.length).equals(gitPrefix)) {
+              entries.set(rel.toString("base64"), { path, kind: "directory", mode: Number(before.mode & modeMask), digest: "" });
             }
             if (directory.depth + 1 > MAX_DEPTH) mark("depth-limit", path);
             else stack.push({ abs, rel, depth: directory.depth + 1 });
+            const after = await lstat(abs, { bigint: true });
+            if (!sameIdentity(before, after)) mark("entry-changed-during-scan", path);
             continue;
           }
           let digest: string;
@@ -105,7 +108,7 @@ export async function captureManifest(workspace: string): Promise<ManifestSnapsh
               kind = "file";
             } finally { await handle.close(); }
           } else { mark("special-file", path); continue; }
-          entries.set(rel.toString("base64"), { path, kind, mode: Number(before.mode & 0o7777n), digest });
+          entries.set(rel.toString("base64"), { path, kind, mode: Number(before.mode & modeMask), digest });
         } catch { mark("entry-unavailable", path); }
       }
     }

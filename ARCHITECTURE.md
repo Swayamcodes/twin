@@ -130,6 +130,35 @@ testable in isolation.
   states (before/after) can't detect "you also touched this file
   meanwhile" — three can.
 
+## Phase 5 apply boundary
+
+`TwinSession.apply()` is available after a settled run. Creation records
+original and copy inventories; apply requires complete coverage, rechecks the
+settled copy, scans the current original, and plans all copy changes before
+writing. Matching original changes are no-ops. A conflicting path, incomplete
+inventory, symlink, changed copy, or changed original root refuses the whole
+plan. Files, modes, deletions, and
+directory/file transitions use the same inventory for Git, ignored, and non-Git
+projects. `twin run --review -- ...` prints the existing receipt, then accepts
+`apply` or `discard` on stdin within that same process. Other responses retain
+the copy and print its location. Default `run` still discards.
+
+Before each mutation, apply rechecks root authority and the relevant path. File
+content is copied to a new sibling and renamed after another path check. These
+checks narrow ordinary races but cannot make a check-and-rename atomic against a
+concurrent writer with the same permissions. Applying a multi-path plan is not
+atomic: I/O failure may leave earlier paths changed. A failure retains the copy
+for inspection. Running descendants that escape the observed process group are
+outside the command settlement claim. No rollback of outside-project changes is
+provided. Review mode retains the copy on an interrupted or uncertain run; its
+printed location is for manual inspection, and there is no cross-process apply
+command or persistent session authority.
+
+Remaining Phase 5 work is a durable reviewed-session handoff if apply/discard
+must happen in a later CLI invocation, and an OS-backed conditional replacement
+primitive if stronger same-user race guarantees or all-path atomicity are
+required. Current apply does not retry or roll back a partly written plan.
+
 ## Scenario oracle and tool score
 
 `ScenarioRunResult` remains raw S12/S6 command, filesystem, issue, and cleanup

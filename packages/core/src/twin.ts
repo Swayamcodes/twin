@@ -1,6 +1,9 @@
 /// <reference types="node" />
 
 import { copySource } from "./copy.js";
+import { lstat } from "node:fs/promises";
+import type { BigIntStats } from "node:fs";
+import { applyCopy, type ApplyResult } from "./apply.js";
 import { runCommand, validateRunOptions } from "./run.js";
 import { allocateRoot, assertRootAuthority, discardRoot } from "./safety.js";
 import { captureManifest, unavailableManifest, type ManifestSnapshot } from "./manifest.js";
@@ -49,19 +52,21 @@ export type DiscardResult =
   | { readonly status: "failed"; readonly reason: string; readonly partialDeletionPossible: true };
 export interface TwinInspection {
   readonly workspacePath: string;
-  readonly state: "ready" | "running" | "finished" | "child-unsettled" | "discarding" | "discarded" | "discard-failed";
+  readonly state: "ready" | "running" | "finished" | "applying" | "child-unsettled" | "discarding" | "discarded" | "discard-failed";
   readonly receipt?: MinimalReceipt;
 }
 export interface TwinSession {
   readonly workspacePath: string;
   run(options: RunOptions): Promise<RunResult>;
   inspect(): TwinInspection;
+  apply(): Promise<ApplyResult>;
   discard(): Promise<DiscardResult>;
 }
 export async function createTwin(options: CreateTwinOptions): Promise<TwinSession> {
   const home = process.env.HOME;
   const root = await allocateRoot(options);
-  try { await copySource(root); }
+  let sourceIdentity: BigIntStats;
+  try { sourceIdentity = await lstat(root.source, { bigint: true }); await copySource(root); }
   catch (error: unknown) {
     const cleanup = await discardRoot(root);
     throw new Error(`Twin copy failed; cleanup=${JSON.stringify(cleanup)}; allocation=${root.path}`, { cause: error });
@@ -82,8 +87,11 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
     captureProjectDependencies(),
   ]);
   const before: ManifestSnapshot = captureBefore[0].status === "fulfilled" ? captureBefore[0].value : unavailableManifest("scan-unavailable");
+  const originalBefore = await captureManifest(root.source, true);
+  const copyBefore = await captureManifest(root.workspace, true);
   const beforeGit: GitSnapshot = captureBefore[1].status === "fulfilled" ? captureBefore[1].value : unavailableGit("git-incomplete");
   let beforeWatch: WatchCapture[] = captureBefore[2].status === "fulfilled" ? captureBefore[2].value : unavailableWatches("observation-failed");
+  let settledManifest: ManifestSnapshot | undefined;
   const beforeDependencies: DependencySnapshot = captureBefore[3].status === "fulfilled" ? captureBefore[3].value : unavailableDependencies("observation-failed");
   return Object.freeze({
     workspacePath: root.workspace,
@@ -126,9 +134,12 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         captureGitCategories(root.workspace, protectedRoots),
         captureWatches(home, protectedRoots),
         captureProjectDependencies(),
+        captureManifest(root.workspace, true),
       ]) : null;
       const after: ManifestSnapshot = captureAfter?.[0].status === "fulfilled"
         ? captureAfter[0].value : unavailableManifest(childSettled ? "scan-unavailable" : "child-unsettled");
+      settledManifest = captureAfter?.[4].status === "fulfilled" ? captureAfter[4].value
+        : unavailableManifest(childSettled ? "scan-unavailable" : "child-unsettled");
       const afterGit: GitSnapshot = captureAfter?.[1].status === "fulfilled"
         ? captureAfter[1].value : unavailableGit("git-incomplete");
       const afterWatch: WatchCapture[] = captureAfter?.[2].status === "fulfilled"
@@ -157,9 +168,20 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       if (didThrow) throw failure;
       return result!;
     },
+    apply: async (): Promise<ApplyResult> => {
+      if (state !== "finished" || !childSettled || lifecycleIssue || !receipt || !settledManifest
+          || receipt.command.disposition === "settlement-uncertain" || receipt.command.disposition === "observation-unavailable"
+          || receipt.process.finalGroup === "present" || receipt.process.finalGroup === "unknown"
+          || receipt.process.directChild.settlement === "unconfirmed" || receipt.process.directChild.settlement === "unknown") {
+        return { status: "refused", paths: [], reason: "Command settlement or session state uncertain" };
+      }
+      state = "applying";
+      try { return await applyCopy(root, sourceIdentity, originalBefore, copyBefore, settledManifest); }
+      finally { state = "finished"; }
+    },
     discard: async (): Promise<DiscardResult> => {
       if (state === "discarded") return { status: "already-removed" };
-      if (state === "running" || state === "discarding") throw new Error(`Cannot discard Twin in state ${state}`);
+      if (state === "running" || state === "applying" || state === "discarding") throw new Error(`Cannot discard Twin in state ${state}`);
       if (!childSettled || state === "discard-failed") return { status: "refused", reason: lifecycleIssue ?? `Cannot discard Twin in state ${state}` };
       const previous = state;
       state = "discarding";
