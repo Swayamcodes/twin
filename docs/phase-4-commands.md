@@ -33,5 +33,5 @@ not traced or counted.
 The CLI still emits the exact-byte `TWIN-RECEIPT/1` frame. File, watch,
 dependency and global npm observations retain their own coverage and meaning.
 Receipt schema version 5 adds `process`; see [process report](phase-4-processes.md).
-Receipt presentation and Phase 4 acceptance remain separate work. Frozen
-Phase 2 score results are not revised by this report.
+The explicit text presentation is described in [receipt presentation](phase-4-presentation.md).
+Frozen Phase 2 score results are not revised by this report.

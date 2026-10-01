@@ -54,7 +54,7 @@ async function cleanupLaunchedFixture(fixture: string, marker: string, closed: b
   await removeSettledFixture(fixture, closed, verifiedPid);
 }
 
-it("transports a global npm addition in the public CLI receipt frame", async () => {
+it.each(["json", "text"] as const)("transports a global npm addition in public CLI %s presentation", async format => {
   const fixture = await mkdtemp(join(tmpdir(), "twin-cli-global-npm-test-"));
   const source = join(fixture, "source"), home = join(fixture, "home"), prefix = join(fixture, "prefix");
   const marker = join(fixture, "action-pid");
@@ -80,7 +80,8 @@ it("transports a global npm addition in the public CLI receipt frame", async () 
     const env = { ...process.env, HOME: home, NPM_CONFIG_PREFIX: prefix, NPM_CONFIG_CACHE: join(fixture, "cache"),
       NPM_CONFIG_USERCONFIG: join(home, ".npmrc"), NPM_CONFIG_GLOBALCONFIG: join(home, "global.npmrc"),
       NPM_CONFIG_OFFLINE: "true", npm_config_prefix: undefined };
-    const running = spawn(process.execPath, [cli, "run", "--", process.execPath, "-e", script, "--", marker],
+    const running = spawn(process.execPath, [cli, "run", ...(format === "text" ? ["--receipt=text"] : []),
+      "--", process.execPath, "-e", script, "--", marker],
       { cwd: source, env, stdio: ["ignore", "pipe", "pipe"] });
     child = running;
     running.on("error", error => { launchError = error; });
@@ -95,24 +96,36 @@ it("transports a global npm addition in the public CLI receipt frame", async () 
     expect(code).toBe(0);
     pid = await actionPid(marker);
     const bytes = Buffer.concat(stderr);
-    const frameStart = bytes.lastIndexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
-    if (frameStart < 0) throw new Error(`Missing frame: stderr=${JSON.stringify(bytes.toString("utf8"))} stdout=${JSON.stringify(Buffer.concat(stdout).toString("utf8"))}`);
-    const frame = bytes.subarray(frameStart);
-    const match = /^\x1eTWIN-RECEIPT\/1 (\d+)\n/.exec(frame.toString("utf8"));
-    expect(match).not.toBeNull();
-    const header = Buffer.byteLength(match![0]);
-    const length = Number(match![1]);
-    expect(frame.length).toBe(header + length + 1);
-    expect(frame.at(-1)).toBe(10);
-    const receipt: unknown = JSON.parse(frame.subarray(header, header + length).toString("utf8"));
-    expect(receipt).toMatchObject({ schemaVersion: 5,
-      command: { admitted: true, processStart: "confirmed", disposition: "exited", nestedCommands: "not-observed",
-        executable: { status: "allowlisted-basename", value: "node" }, arguments: { status: "omitted", count: 4 } },
-      process: { directChild: { start: "confirmed", settlement: "observed" }, finalGroup: "absent", termination: [] },
-      globalNpm: { coverage: "complete", source: "env-prefix",
-      changes: [{ name: "probe", change: "added", before: null, after: "1.0.0" }] } });
-    expect(JSON.stringify(receipt)).not.toContain(script);
-    expect(JSON.stringify(receipt)).not.toContain(marker);
+    if (format === "text") {
+      const presentation = bytes.toString("utf8");
+      expect(bytes.length).toBeLessThan(32 * 1024);
+      expect(presentation).toContain("Twin receipt (schema 5)");
+      expect(presentation).toContain("added probe: absent → 1.0.0");
+      expect(presentation).toContain("Top-level command — exited");
+      expect(presentation).toContain("final group: absent");
+      expect(presentation).not.toContain("TWIN-RECEIPT/1");
+      expect(presentation).not.toContain(script);
+      expect(presentation).not.toContain(marker);
+    } else {
+      const frameStart = bytes.lastIndexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
+      if (frameStart < 0) throw new Error(`Missing frame: stderr=${JSON.stringify(bytes.toString("utf8"))} stdout=${JSON.stringify(Buffer.concat(stdout).toString("utf8"))}`);
+      const frame = bytes.subarray(frameStart);
+      const match = /^\x1eTWIN-RECEIPT\/1 (\d+)\n/.exec(frame.toString("utf8"));
+      expect(match).not.toBeNull();
+      const header = Buffer.byteLength(match![0]);
+      const length = Number(match![1]);
+      expect(frame.length).toBe(header + length + 1);
+      expect(frame.at(-1)).toBe(10);
+      const receipt: unknown = JSON.parse(frame.subarray(header, header + length).toString("utf8"));
+      expect(receipt).toMatchObject({ schemaVersion: 5,
+        command: { admitted: true, processStart: "confirmed", disposition: "exited", nestedCommands: "not-observed",
+          executable: { status: "allowlisted-basename", value: "node" }, arguments: { status: "omitted", count: 4 } },
+        process: { directChild: { start: "confirmed", settlement: "observed" }, finalGroup: "absent", termination: [] },
+        globalNpm: { coverage: "complete", source: "env-prefix",
+        changes: [{ name: "probe", change: "added", before: null, after: "1.0.0" }] } });
+      expect(JSON.stringify(receipt)).not.toContain(script);
+      expect(JSON.stringify(receipt)).not.toContain(marker);
+    }
   } catch (error) { failure = error; }
   let cleanupFailure: unknown = null;
   try {

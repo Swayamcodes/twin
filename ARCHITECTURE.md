@@ -582,6 +582,12 @@ final group status and captured pipe status. Group absence covers only the
 original process group; unreadable checks remain unknown. The CLI frame and
 existing discard gates remain unchanged. See [process report](docs/phase-4-processes.md).
 
+The CLI now selects a bounded human receipt only with `--receipt=text` before
+`--`; its default schema-5 JSON frame and consumers are unchanged. Rendering
+uses the existing receipt and marks incomplete coverage without a clean claim.
+See [presentation](docs/phase-4-presentation.md) and the
+[Phase 4 acceptance review](docs/phase-4-acceptance.md).
+
 Current S11 process testing now waits for an owned worker marker that records
 the action's process group, then checks that Twin settles and terminates that
 group before discard. Any later harness signal is cleanup only and earns no

@@ -1,7 +1,7 @@
 # Phase 4 global npm observation
 
 Receipt schema version 3 added `globalNpm` alongside `dependencies`; current
-schema version 4 retains it unchanged. Project
+schema version 5 retains it unchanged. Project
 `package.json` declarations and lockfile digests remain under `dependencies`;
 `globalNpm` compares installed package metadata (`name`, `version`) at two
 settled observation points. The version 2 `dependencies.installed` placeholder

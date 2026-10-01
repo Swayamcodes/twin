@@ -29,7 +29,7 @@ async function waitForActionExit(pid: number): Promise<void> {
   throw new Error(`Test action PID ${pid} is still present`);
 }
 
-it("delivers stdin and streams output before command completion", async () => {
+it.each(["json", "text"] as const)("delivers stdin and streams output before command completion with %s receipt", async format => {
   const source = await mkdtemp(join(tmpdir(), "twin-cli-interactive-test-"));
   const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
   const script = [
@@ -42,7 +42,8 @@ it("delivers stdin and streams output before command completion", async () => {
     '  process.stderr.write("child-stderr\\n");',
     '});',
   ].join("\n");
-  const child = spawn(process.execPath, [cli, "run", "--interactive", "--", process.execPath, "-e", script], {
+  const child = spawn(process.execPath, [cli, "run", "--interactive", ...(format === "text" ? ["--receipt=text"] : []),
+    "--", process.execPath, "-e", script], {
     cwd: source, stdio: ["pipe", "pipe", "pipe"],
   });
   let launchError: Error | null = null;
@@ -72,12 +73,17 @@ it("delivers stdin and streams output before command completion", async () => {
     const code = await within(close, 6000, "CLI close");
     expect(code).toBe(0);
     expect(Buffer.concat(stdout).toString()).toBe(`ready:${actionPid}\ngot:input\n`);
-    expect(Buffer.concat(stderr).toString()).toMatch(/^child-stderr\n\x1eTWIN-RECEIPT\/1 /);
+    const output = Buffer.concat(stderr).toString();
+    if (format === "text") {
+      expect(output).toMatch(/^child-stderr\nTwin receipt \(schema 5\)/);
+      expect(output).toContain("Captured pipes: not-captured");
+      expect(output).not.toContain("TWIN-RECEIPT/1");
+    } else expect(output).toMatch(/^child-stderr\n\x1eTWIN-RECEIPT\/1 /);
   } catch (error: unknown) { failure = launchError ?? error; }
   try {
     if (failure !== null && !closed) child.kill("SIGKILL");
     await within(close, 6000, "CLI close during cleanup");
-    if (actionPid === null) throw new Error("Test action PID was not observed");
+    if (actionPid === null || !Number.isSafeInteger(actionPid) || actionPid <= 1) throw new Error("Test action PID was not observed");
     await waitForActionExit(actionPid);
     await rm(source, { recursive: true });
   } catch (error: unknown) { cleanupFailure = new Error(`Cleanup failed; retained ${source}`, { cause: error }); }

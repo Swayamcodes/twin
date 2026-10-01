@@ -7,11 +7,13 @@ import { mkdtemp, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
+import { renderReceiptText } from "./receipt-text.js";
 
-const help = `Usage: twin run [--interactive] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--receipt=text] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
+--receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 `;
 
 const WATCH_IDS: readonly WatchId[] = [
@@ -50,7 +52,7 @@ function write(stream: NodeJS.WriteStream, chunk: string | Uint8Array): Promise<
   });
 }
 
-async function writeReceipt(receipt: MinimalReceipt): Promise<void> {
+async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): Promise<void> {
   const limit = 8 * 1024 * 1024;
   let estimatedBytes = 2048;
   for (const collection of [receipt.files.issues, receipt.files.changes, receipt.watch,
@@ -62,8 +64,13 @@ async function writeReceipt(receipt: MinimalReceipt): Promise<void> {
     }
     if (estimatedBytes > limit) break;
   }
-  let payload = Buffer.from(JSON.stringify(estimatedBytes > limit ? unavailableReceipt("receipt-limit", receipt.command, receipt.process) : receipt), "utf8");
-  if (payload.length > limit) payload = Buffer.from(JSON.stringify(unavailableReceipt("receipt-limit", receipt.command, receipt.process)), "utf8");
+  let selected = estimatedBytes > limit ? unavailableReceipt("receipt-limit", receipt.command, receipt.process) : receipt;
+  let payload = Buffer.from(JSON.stringify(selected), "utf8");
+  if (payload.length > limit) {
+    selected = unavailableReceipt("receipt-limit", receipt.command, receipt.process);
+    payload = Buffer.from(JSON.stringify(selected), "utf8");
+  }
+  if (format === "text") { await write(process.stderr, renderReceiptText(selected)); return; }
   await write(process.stderr, Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"));
   await write(process.stderr, payload);
   await write(process.stderr, "\n");
@@ -75,9 +82,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 0;
   }
 
-  const interactive = argv[1] === "--interactive";
-  const separator = interactive ? 2 : 1;
-  if (argv[0] !== "run" || argv[separator] !== "--" || argv.length < separator + 2 || !argv[separator + 1]) {
+  const separator = argv.indexOf("--", 1);
+  const flags = argv.slice(1, separator < 0 ? undefined : separator);
+  const interactive = flags.includes("--interactive");
+  const format = flags.includes("--receipt=text") ? "text" : "json";
+  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text")
+      || flags.filter(flag => flag === "--interactive").length > 1
+      || flags.filter(flag => flag === "--receipt=text").length > 1
+      || argv.length < separator + 2 || !argv[separator + 1]) {
     process.stderr.write(help);
     return 2;
   }
@@ -117,7 +129,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         try {
           const inspection = session.inspect();
           await writeReceipt(inspection.receipt ?? unavailableReceipt("no-run", fallbackCommand(inspection.state === "ready"),
-            unavailableProcessReceipt(inspection.state === "ready")));
+            unavailableProcessReceipt(inspection.state === "ready")), format);
         } catch {
           exitCode = 1;
         }
