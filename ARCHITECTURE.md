@@ -159,6 +159,21 @@ must happen in a later CLI invocation, and an OS-backed conditional replacement
 primitive if stronger same-user race guarantees or all-path atomicity are
 required. Current apply does not retry or roll back a partly written plan.
 
+## v1 agent compatibility boundary
+
+Codex CLI and Claude Code are the required v1 plain-command compatibility
+checkpoints. OpenCode, Aider, Gemini CLI, and Cursor CLI are deferred and are
+not Phase 5 acceptance requirements. The CLI launches a selected executable
+inside Twin's copy; vendor-specific adapters belong only where an observed
+defect calls for one. A blocked real-agent check remains unverified.
+
+Cursor documents a [headless CLI](https://cursor.com/docs/cli/headless) that
+runs from a terminal, so the plain-command architecture does not exclude it.
+Its checkpoint is deferred for setup cost. An editor integration that changes
+the original project in place is a different execution path and does not get
+Twin's copy and apply/discard behavior simply because the editor also offers
+a CLI.
+
 ## Scenario oracle and tool score
 
 `ScenarioRunResult` remains raw S12/S6 command, filesystem, issue, and cleanup

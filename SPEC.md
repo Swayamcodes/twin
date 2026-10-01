@@ -2,8 +2,7 @@
 
 ## What it is
 
-twin runs any AI coding agent (Codex CLI, Claude Code, Gemini CLI, opencode,
-Aider, or a custom script) as a plain command, inside a full clone of your
+twin runs coding agents as plain commands inside a full clone of your
 project — including files git ignores (.env, node_modules) and folders that
 aren't git repos at all. When the agent finishes, twin shows a receipt of
 observed before/after file differences and bounded command, process,
@@ -62,8 +61,8 @@ which recovery tools actually work for which kinds of accidents.
 5. Watch list: a small set of paths outside the project (dotfiles, global
    npm packages) monitored and reported on, even though they aren't
    recoverable in v1.
-6. Compatibility matrix: Codex CLI, Claude Code, and one more agent (Gemini
-   CLI or opencode), tested and documented.
+6. Compatibility matrix: Codex CLI and Claude Code, tested and documented
+   as plain commands. A blocked agent check remains unverified.
 7. JSON + markdown output for suite results, versioned (schemaVersion).
 
 ## Non-goals (v1)
@@ -74,9 +73,19 @@ which recovery tools actually work for which kinds of accidents.
 - Network traffic capture
 - Rolling back global state (global npm installs, dotfile changes) — these
   are *reported*, not *recovered*, in v1
-- Editor agents that edit files in place (Cursor-style) — needs a different
-  snapshot-and-restore mode, deferred to v2
+- Editor integrations that modify the original in place, outside a Twin copy —
+  need a different snapshot-and-restore mode, deferred to v2
 - Being "the first" tool in this space — it isn't, and the README says so
+
+## v1 agent compatibility scope
+
+Codex CLI and Claude Code are the only required v1 compatibility checkpoints.
+OpenCode, Aider, Gemini CLI, and Cursor CLI are deferred and are not Phase 5
+acceptance requirements. Twin's plain-command design does not exclude them.
+Cursor's [headless CLI](https://cursor.com/docs/cli/headless) can run an
+agent as a terminal command; its setup cost defers this checkpoint. That CLI
+path is distinct from an editor integration that edits the original project
+in place, which Twin's clone-and-run workflow does not cover.
 
 ## Scope decision (from Step 1.4 evidence)
 
