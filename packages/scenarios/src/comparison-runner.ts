@@ -24,6 +24,7 @@ const within = (parent: string, child: string): boolean => {
 interface CommandResult { code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string;
   timedOut: boolean; error: string | null }
 interface Root { path: string; token: string; dev: number; ino: number }
+export interface ComparisonRootAccounting { allocated: number; removed: number }
 interface State { readonly [name: string]: string | null }
 const hash = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 async function command(executable: string, argv: readonly string[], cwd: string, env: Record<string, string>,
@@ -34,10 +35,16 @@ async function command(executable: string, argv: readonly string[], cwd: string,
     let size = 0, timedOut = false, error: string | null = null;
     const child = spawn(executable, [...argv], { cwd, env, shell: false, detached: false,
       stdio: ["ignore", "pipe", "pipe"] });
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeout);
+    const stop = (): void => {
+      timedOut = true;
+      child.kill("SIGKILL");
+      child.stdout.destroy();
+      child.stderr.destroy();
+    };
+    const timer = setTimeout(stop, timeout);
     const collect = (chunks: Buffer[], bytes: Buffer): void => {
       size += bytes.length;
-      if (size > 1024 * 1024) { timedOut = true; child.kill("SIGKILL"); }
+      if (size > 1024 * 1024) stop();
       else chunks.push(Buffer.from(bytes));
     };
     child.stdout.on("data", (bytes: Buffer) => collect(stdout, bytes));
@@ -51,12 +58,24 @@ async function command(executable: string, argv: readonly string[], cwd: string,
   });
 }
 function settled(result: CommandResult): void {
-  assert(!result.timedOut && result.signal === null && result.error === null, "Child settlement uncertain; root retained");
+  assert(!result.timedOut && result.signal === null && result.error === null && result.code !== null,
+    "Child settlement uncertain; root retained");
 }
-async function allocate(): Promise<Root> {
+export function prerequisiteProbeState(results: readonly CommandResult[]): "settled" | "uncertain" {
+  return results.every(result => !result.timedOut && result.signal === null
+    && result.error === null && result.code !== null) ? "settled" : "uncertain";
+}
+export async function finishPrerequisiteRoot(
+  probeState: "not-started" | "settled" | "uncertain", remove: () => Promise<void>,
+): Promise<void> {
+  if (probeState === "uncertain") throw new ComparisonPrerequisiteFailure("probe-settlement-uncertain");
+  await remove();
+}
+async function allocate(accounting?: ComparisonRootAccounting): Promise<Root> {
   const base = await fs.realpath(tmpdir());
   assert(!within(repo, base) && !within(resolve(homedir()), base) && base !== "/");
   const path = await fs.mkdtemp(join(base, "twin-phase2-comparison-"));
+  if (accounting) accounting.allocated++;
   const stat = await fs.lstat(path), token = randomBytes(32).toString("hex");
   const root = { path, token, dev: stat.dev, ino: stat.ino };
   await fs.chmod(path, 0o700);
@@ -71,11 +90,12 @@ async function verifyRoot(root: Root): Promise<void> {
     && owner.nlink === 1 && (owner.mode & 0o777) === 0o600);
   assert.equal(await fs.readFile(join(root.path, marker), "utf8"), root.token);
 }
-async function cleanup(root: Root): Promise<void> {
+async function cleanup(root: Root, accounting?: ComparisonRootAccounting): Promise<void> {
   await verifyRoot(root);
   // The only recursively removed path is the freshly registered, marker-checked root.
   await fs.rm(root.path, { recursive: true });
   await assert.rejects(fs.lstat(root.path), { code: "ENOENT" });
+  if (accounting) accounting.removed++;
 }
 const config = (root: Root): Record<string, string> => ({
   HOME: join(root.path, "home"), AGENTTX_HOME: join(root.path, "store"),
@@ -279,6 +299,17 @@ async function stopWorker(root: Root, worker: string, token: string): Promise<vo
   throw new Error("S11 worker did not stop; root retained");
 }
 type EvidenceRef = ComparisonRow["score"]["reported"]["evidenceRefs"][number];
+export type ComparisonFailureStage = "allocation" | "setup" | "launch" | "observation" | "recovery" | "settlement" | "cleanup";
+export class ComparisonAttemptFailure extends Error {
+  constructor(readonly stage: ComparisonFailureStage, readonly rootDisposition: "removed" | "retained" | "unknown") {
+    super(`Comparison attempt ${stage} failed; root ${rootDisposition}`);
+  }
+}
+export class ComparisonPrerequisiteFailure extends Error {
+  constructor(readonly code: "agenttx-unavailable" | "agenttx-version-mismatch" | "probe-settlement-uncertain") {
+    super(code);
+  }
+}
 const a = <T extends string>(outcome: T, reason: string, ...evidenceRefs: EvidenceRef[]) => ({ outcome, reason, evidenceRefs });
 export function evaluateComparisonScore(id: ScenarioId, tool: ToolId, action: ComparisonRow["action"],
   observations: ComparisonRow["observations"]): ComparisonRow["score"] {
@@ -315,9 +346,14 @@ export function evaluateComparisonScore(id: ScenarioId, tool: ToolId, action: Co
     boundaryAccuratelyDescribed: a("unknown", "No version-matched claim was evaluated against this exact attempt."),
   };
 }
-async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, string>): Promise<ComparisonRow> {
-  const root = await allocate(), env = config(root);
+async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, string>,
+  accounting: ComparisonRootAccounting): Promise<ComparisonRow> {
+  let root: Root;
+  try { root = await allocate(accounting); }
+  catch { throw new ComparisonAttemptFailure("allocation", "unknown"); }
+  const env = config(root);
   let session: TwinSession | undefined, safeCleanup = true;
+  let stage: ComparisonFailureStage = "setup";
   let action: ComparisonRow["action"] = "unknown", recovery: ComparisonRow["recovery"] = "not-started";
   let actionExitCode: number | null = null;
   let workInputs: ComparisonRow["observations"]["workspaceInputs"] = "unknown";
@@ -335,9 +371,11 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
     if (id === "S11") await fs.writeFile(join(root.path, "support", "worker-token"), env.TWIN_S11_TOKEN!, { flag: "wx" });
     assert(argv[0] === git || argv[0] === process.execPath);
     before = await state(root, project, id);
+    stage = "launch";
     if (tool === "plain-git") {
       workInputs = workspaceInputs(id, before);
       const result = await command(argv[0]!, argv.slice(1), project, env); settled(result);
+      stage = "observation";
       actionExitCode = result.code;
       action = result.code === 0 ? "completed" : "failed";
       actionStart = "started";
@@ -350,6 +388,7 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
         ? "mentions-removal" : "no-removal-mention";
       report = effect === "expected-effect" && id !== "S13" && id !== "S6" ? "omits-effect" : "unknown";
       if (id !== "S8") {
+        stage = "recovery";
         const restored = await command(git, recipe, project, env); settled(restored);
         recovery = restored.code === 0 ? "git-recipe" : "failed";
       }
@@ -360,6 +399,7 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
       workInputs = workspaceInputs(id, await state(root, session.workspacePath, id));
       const result = await session.run({ executable: argv[0]!, argv: argv.slice(1), env, timeoutMs: 15_000 });
       assert(result.directChildSettled && result.outcome === "exited", "Twin child unsettled; root retained");
+      stage = "observation";
       actionExitCode = result.exitCode;
       action = result.exitCode === 0 ? "completed" : "failed";
       actionStart = result.started ? "started" : "unknown";
@@ -374,13 +414,15 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
       const watchedS9 = id === "S9" && receipt.watch.some(item => String(item.id) === ".s9-note" && item.comparison === "changed");
       report = effect === "expected-effect" && id !== "S13"
         ? paths.some(path => reportTargets(id).includes(path)) || watchedS9 ? "mentions-effect" : "omits-effect" : "unknown";
+      stage = "recovery";
       const discarded = await session.discard();
       recovery = discarded.status === "removed" ? "discard" : "failed";
       assert.equal(discarded.status, "removed");
       afterRecovery = await state(root, project, id);
     } else {
-      const agenttx = await fs.realpath(join(dirname(process.execPath), "agenttx"));
+      const agenttx = join(dirname(process.execPath), "agenttx");
       const result = await command(agenttx, ["run", "--", ...argv], project, env, 30_000); settled(result);
+      stage = "observation";
       const matches = [...`${result.stdout}\n${result.stderr}`.matchAll(/atx_[0-9]{8}_[0-9]{6}_[a-z0-9]+/g)]
         .map(value => value[0]);
       const idsFound = [...new Set(matches)];
@@ -441,12 +483,13 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
         report = effect === "expected-effect" && id !== "S13"
           ? reportedPaths.some(path => reportTargets(id).includes(path)) ? "mentions-effect"
             : parsed.sideEffects.length === 0 ? "omits-effect" : "unknown" : "unknown";
+        stage = "recovery";
         const rolled = await command(agenttx, ["rollback", transaction], project, env);
         settled(rolled); recovery = rolled.code === 0 ? "rollback" : "failed";
         afterRecovery = await state(root, project, id);
       }
     }
-    if (id === "S11") await stopWorker(root, worker, env.TWIN_S11_TOKEN!);
+    if (id === "S11") { stage = "settlement"; await stopWorker(root, worker, env.TWIN_S11_TOKEN!); }
     const final = Object.keys(before).every(key => before[key] === afterRecovery[key]) ? "original" : "changed";
     const present = Object.values(before).filter(value => value !== null).length;
     const targetBefore = present === 0 ? "absent" : present === Object.keys(before).length ? "present" : "mixed";
@@ -456,38 +499,66 @@ async function attempt(id: ScenarioId, tool: ToolId, versions: Record<ToolId, st
     return { scenarioId: id, tool, toolVersion: versions[tool], action, actionExitCode, recovery, compatibility, observations,
       score: evaluateComparisonScore(id, tool, action, observations) };
   } catch (error: unknown) {
-    if (error instanceof Error && /unsettled|uncertain|did not stop/.test(error.message)) safeCleanup = false;
-    throw error;
+    if (error instanceof Error && /unsettled|uncertain|did not stop/.test(error.message)) { safeCleanup = false; stage = "settlement"; }
+    throw new ComparisonAttemptFailure(stage, safeCleanup ? "removed" : "retained");
   } finally {
     if (safeCleanup) {
-      if (id === "S11") await stopWorker(root, join(root.path, "support", "s11-worker.mjs"), env.TWIN_S11_TOKEN ?? "");
-      if (session && session.inspect().state !== "discarded") {
-        const discarded = await session.discard(); assert.equal(discarded.status, "removed");
+      try {
+        if (id === "S11") await stopWorker(root, join(root.path, "support", "s11-worker.mjs"), env.TWIN_S11_TOKEN ?? "");
+        if (session && session.inspect().state !== "discarded") {
+          const discarded = await session.discard(); assert.equal(discarded.status, "removed");
+        }
+        await cleanup(root, accounting);
+      } catch {
+        throw new ComparisonAttemptFailure("cleanup", "unknown");
       }
-      await cleanup(root);
     }
   }
 }
-export async function produceComparison(): Promise<ComparisonResult> {
+export async function produceComparison(onRow?: (row: ComparisonRow) => void, onReady?: () => void,
+  accounting: ComparisonRootAccounting = { allocated: 0, removed: 0 }): Promise<ComparisonResult> {
   const gitStat = await fs.lstat(git);
-  assert(gitStat.isFile() && !gitStat.isSymbolicLink() && gitStat.uid === 0 && (gitStat.mode & 0o022) === 0);
-  const root = await allocate(), env = config(root);
+  assert(gitStat.isFile() && !gitStat.isSymbolicLink() && gitStat.uid === 0 && (gitStat.mode & 0o111) !== 0
+    && (gitStat.mode & 0o022) === 0, "Git executable is not an admitted system file");
+  const root = await allocate(accounting), env = config(root);
   let versions: Record<ToolId, string>;
+  let probeState: "not-started" | "settled" | "uncertain" = "not-started";
   try {
     for (const name of ["home", "store", "config", "cache", "tmp", "prefix"])
       await fs.mkdir(join(root.path, name), { mode: 0o700 });
-    const agenttx = await fs.realpath(join(dirname(process.execPath), "agenttx"));
-    const [gitVersion, agentVersion] = await Promise.all([
+    const agenttx = join(dirname(process.execPath), "agenttx");
+    let agenttxTarget: string;
+    try { agenttxTarget = await fs.realpath(agenttx); }
+    catch { throw new ComparisonPrerequisiteFailure("agenttx-unavailable"); }
+    if (!agenttxTarget.endsWith("/agenttx/dist/src/cli.js"))
+      throw new ComparisonPrerequisiteFailure("agenttx-version-mismatch");
+    probeState = "uncertain";
+    const [gitVersion, agentVersion, coreHead] = await Promise.all([
       command(git, ["--version"], root.path, env), command(agenttx, ["--version"], root.path, env),
+      command(git, ["rev-parse", "--short=12", "HEAD"], repo, env),
     ]);
-    settled(gitVersion); settled(agentVersion);
-    assert.equal(gitVersion.code, 0); assert.equal(agentVersion.code, 0);
-    assert.equal(agentVersion.stdout.trim(), "0.3.0", "Only installed AgentTX 0.3.0 is admitted");
-    versions = { twin: "c4a4dc1-core", agenttx: "0.3.0", "plain-git": gitVersion.stdout.trim() };
-  } finally { await cleanup(root); }
+    probeState = prerequisiteProbeState([gitVersion, agentVersion, coreHead]);
+    if (probeState === "uncertain")
+      throw new ComparisonPrerequisiteFailure("probe-settlement-uncertain");
+    settled(gitVersion); settled(coreHead);
+    assert.equal(gitVersion.code, 0);
+    assert.equal(coreHead.code, 0);
+    assert(/^[0-9a-f]{12}$/.test(coreHead.stdout.trim()), "Core HEAD identity is unavailable");
+    if (agentVersion.code !== 0)
+      throw new ComparisonPrerequisiteFailure("agenttx-unavailable");
+    if (agentVersion.stdout.trim() !== "0.3.0")
+      throw new ComparisonPrerequisiteFailure("agenttx-version-mismatch");
+    versions = { twin: `${coreHead.stdout.trim()}-core`, agenttx: "0.3.0", "plain-git": gitVersion.stdout.trim() };
+  } finally { await finishPrerequisiteRoot(probeState, () => cleanup(root, accounting)); }
+  onReady?.();
   const rows: ComparisonRow[] = [];
-  for (const id of ids) for (const tool of tools) rows.push(await attempt(id, tool, versions));
+  for (const id of ids) for (const tool of tools) {
+    const row = await attempt(id, tool, versions, accounting);
+    rows.push(row);
+    onRow?.(row);
+  }
   return ComparisonResultSchema.parse({ schemaVersion: 1, comparisonVersion: 1,
     gitRecoveryRecipe: "git restore --source=HEAD --worktree -- .; no git clean or harness restoration",
-    rows });
+    rootAccounting: { allocated: accounting.allocated, removed: accounting.removed,
+      retained: accounting.allocated - accounting.removed }, rows });
 }

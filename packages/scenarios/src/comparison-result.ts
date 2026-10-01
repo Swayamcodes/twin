@@ -73,18 +73,79 @@ export const ComparisonRowSchema = ComparisonRowBaseSchema.superRefine((row, ctx
       message: "Blocked requires observed prevention before the fixed action started" });
   }
 });
+const RootAccountingSchema = z.strictObject({
+  allocated: z.number().int().nonnegative(), removed: z.number().int().nonnegative(),
+  retained: z.number().int().nonnegative(),
+}).superRefine((value, ctx) => {
+  if (value.allocated !== value.removed + value.retained)
+    ctx.addIssue({ code: "custom", message: "Root accounting does not balance" });
+});
 export const ComparisonResultSchema = z.strictObject({
   schemaVersion: z.literal(1), comparisonVersion: z.literal(1),
   gitRecoveryRecipe: z.literal("git restore --source=HEAD --worktree -- .; no git clean or harness restoration"),
+  rootAccounting: RootAccountingSchema.optional(),
   rows: z.array(ComparisonRowSchema).length(39),
 }).superRefine((value, ctx) => {
   const ids = new Set(value.rows.map(row => `${row.scenarioId}:${row.tool}`));
   if (ids.size !== 39) ctx.addIssue({ code: "custom", message: "Each scenario/tool pair must occur once" });
+  if (value.rootAccounting && (value.rootAccounting.allocated !== 40 || value.rootAccounting.removed !== 40))
+    ctx.addIssue({ code: "custom", message: "Complete suite must settle all 40 roots" });
 });
 export type ComparisonRow = z.infer<typeof ComparisonRowSchema>;
 export type ComparisonResult = z.infer<typeof ComparisonResultSchema>;
 export type ScenarioId = ComparisonRow["scenarioId"];
 export type ToolId = ComparisonRow["tool"];
+export const comparisonSequence = (["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"] as const)
+  .flatMap(scenarioId => (["twin", "agenttx", "plain-git"] as const).map(tool => ({ scenarioId, tool })));
+
+export const IncompleteComparisonSchema = z.strictObject({
+  schemaVersion: z.literal(1), comparisonVersion: z.literal(1), status: z.literal("incomplete"),
+  reason: z.enum(["prerequisite-failed", "attempt-failed"]),
+  failureStage: z.enum(["prerequisite", "allocation", "setup", "launch", "observation", "recovery", "settlement", "cleanup"]),
+  prerequisiteCode: z.enum(["agenttx-unavailable", "agenttx-version-mismatch", "probe-settlement-uncertain", "other"]).nullable(),
+  rootDisposition: z.enum(["not-allocated", "removed", "retained", "unknown"]),
+  rootAccounting: RootAccountingSchema,
+  completedRows: z.array(ComparisonRowSchema).max(38),
+  failedAttempt: z.strictObject({ scenarioId: scenario, tool }).nullable(),
+}).superRefine((value, ctx) => {
+  if (value.reason === "prerequisite-failed" && (value.completedRows.length !== 0 || value.failedAttempt !== null))
+    ctx.addIssue({ code: "custom", message: "Prerequisite failure precedes all attempts" });
+  if (value.reason === "attempt-failed" && value.failedAttempt === null)
+    ctx.addIssue({ code: "custom", message: "Attempt failure needs an identity" });
+  if (value.reason === "prerequisite-failed" && value.failureStage !== "prerequisite")
+    ctx.addIssue({ code: "custom", message: "Prerequisite failure precedes attempt launch" });
+  if (value.reason === "attempt-failed" && value.prerequisiteCode !== null)
+    ctx.addIssue({ code: "custom", message: "Attempt failure has no prerequisite code" });
+  value.completedRows.forEach((row, index) => {
+    const expected = comparisonSequence[index];
+    if (row.scenarioId !== expected?.scenarioId || row.tool !== expected.tool)
+      ctx.addIssue({ code: "custom", path: ["completedRows", index], message: "Completed rows must be the ordered suite prefix" });
+  });
+  const next = comparisonSequence[value.completedRows.length];
+  if (value.reason === "attempt-failed" && (value.failedAttempt?.scenarioId !== next?.scenarioId
+    || value.failedAttempt?.tool !== next?.tool))
+    ctx.addIssue({ code: "custom", path: ["failedAttempt"], message: "Failed attempt must be the next suite pair" });
+  const settledRoots = value.reason === "attempt-failed" ? value.completedRows.length + 1 : 0;
+  const { allocated, removed, retained } = value.rootAccounting;
+  const disposition = value.rootDisposition;
+  const consistent = disposition === "not-allocated"
+    ? allocated === settledRoots && removed === settledRoots && retained === 0
+    : disposition === "removed"
+      ? allocated === settledRoots + 1 && removed === settledRoots + 1 && retained === 0
+      : allocated === settledRoots + 1 && removed === settledRoots && retained === 1;
+  if (!consistent)
+    ctx.addIssue({ code: "custom", path: ["rootDisposition"], message: "Root disposition disagrees with allocation/removal accounting" });
+});
+export type IncompleteComparison = z.infer<typeof IncompleteComparisonSchema>;
+export const ComparisonArtifactSchema = z.union([ComparisonResultSchema, IncompleteComparisonSchema]);
+export type ComparisonArtifact = z.infer<typeof ComparisonArtifactSchema>;
+
+export function renderComparisonArtifact(result: ComparisonArtifact): string {
+  if (!("status" in result)) return renderComparison(result);
+  const parsed = IncompleteComparisonSchema.parse(result);
+  const where = parsed.failedAttempt ? `${parsed.failedAttempt.scenarioId} / ${parsed.failedAttempt.tool}` : "prerequisites";
+  return `# Incomplete fixed-action comparison\n\nSchema version 1; comparison version 1. ${parsed.completedRows.length} of 39 attempts completed. Failure at ${where}: ${parsed.reason} (${parsed.prerequisiteCode ?? parsed.failureStage}); root ${parsed.rootDisposition}. Roots: ${parsed.rootAccounting.allocated} allocated, ${parsed.rootAccounting.removed} removed, ${parsed.rootAccounting.retained} retained. No complete-suite claim is made.\n\nCompleted rows are retained in the JSON artifact with row-local evidence. A failed attempt has no scored row.\n`;
+}
 
 export function renderComparison(result: ComparisonResult): string {
   ComparisonResultSchema.parse(result);
@@ -95,5 +156,6 @@ export function renderComparison(result: ComparisonResult): string {
     lines.push(`| ${row.scenarioId} | ${row.tool} | ${row.toolVersion} | ${row.action} | ${row.actionExitCode ?? "unknown"} | ${row.recovery} | ${row.compatibility.join(", ") || "none"} | ${fields.map(field => `${field.outcome}: ${field.reason.replaceAll("|", "\\|")}`).join(" | ")} | ${refs} |`);
   }
   lines.push("", "Evidence references resolve to named fields in the same sanitized row. Action output is separate from the tool report.", "");
+  if (result.rootAccounting) lines.push(`Roots: ${result.rootAccounting.allocated} allocated, ${result.rootAccounting.removed} removed, ${result.rootAccounting.retained} retained.`, "");
   return lines.join("\n");
 }
