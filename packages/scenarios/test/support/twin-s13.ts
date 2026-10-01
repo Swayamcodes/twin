@@ -41,7 +41,7 @@ interface SpawnPolicy {
 interface AdmittedSpawn {
   executable: string;
   argv: string[];
-  options: { cwd: string; shell: false; env: Record<string, string>; detached: false;
+  options: { cwd: string; shell: false; env: Record<string, string>; detached: boolean;
     stdio: ["ignore", "pipe", "pipe"] };
 }
 /** Pure test seam: never launches. The real guard forwards only this owned snapshot. */
@@ -66,7 +66,8 @@ function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptions: unk
   assert(argv.every((arg): arg is string => typeof arg === "string"), "Expected dense string argv");
   assert(typeof cwd === "string", "Expected cwd string");
   assert(shell === false, "Explicit shell:false required");
-  assert(policy.requireDetached ? detached === false : detached === undefined || detached === false, "Detached execution forbidden");
+  assert(policy.requireDetached ? detached === true : detached === undefined || detached === false,
+    "Unexpected detached setting");
   assert(stdio.every(value => typeof value === "string"), "Expected string stdio");
   assert.deepEqual(stdio, ["ignore", "pipe", "pipe"]);
   const env: Record<string, string> = {};
@@ -79,7 +80,8 @@ function admitSpawn(inputCommand: unknown, inputArgv: unknown, inputOptions: unk
   assert.deepEqual(argv, policy.argv);
   assert.equal(cwd, policy.cwd);
   assert.deepEqual(env, policy.env);
-  return { executable, argv, options: { cwd, shell: false, env, detached: false, stdio: ["ignore", "pipe", "pipe"] } };
+  return { executable, argv, options: { cwd, shell: false, env, detached: policy.requireDetached === true,
+    stdio: ["ignore", "pipe", "pipe"] } };
 }
 
 /** Synchronous restorations are independent; even failed restores cannot skip synchronization. */

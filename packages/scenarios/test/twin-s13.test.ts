@@ -142,7 +142,7 @@ describe("2.5R-3 fixed ignored-input usability through Twin", () => {
 // Pure guard destinations are in-memory spies; these paths are never opened.
 function guard() {
   const node = "/synthetic/node", asset = "/synthetic/support/action.mjs", cwd = "/synthetic/twin/workspace";
-  const input = { node, argv: [asset], options: { cwd, shell: false, detached: false,
+  const input = { node, argv: [asset], options: { cwd, shell: false, detached: true,
     env: { LANG: "C", LC_ALL: "C", TZ: "UTC" } as Record<string, string>, stdio: ["ignore", "pipe", "pipe"] } };
   const admit = actionGuard(node, asset, cwd);
   const destination = vi.fn<() => void>(() => { pureForwards++; });
@@ -165,6 +165,13 @@ describe("S13 critical guard checks without native children", () => {
   it.each(["changed", "extra"])("rejects %s environment", kind => {
     const s = guard(); if (kind === "changed") s.input.options.env.LANG = "changed"; else s.input.options.env.NODE_OPTIONS = "forbidden";
     expect(s.forward).toThrow(); expect(s.destination).not.toHaveBeenCalled();
+  });
+  it.each(["false", "missing"])("rejects %s detached setting", kind => {
+    const s = guard();
+    if (kind === "false") s.input.options.detached = false;
+    else Reflect.deleteProperty(s.input.options, "detached");
+    expect(s.forward).toThrow("Unexpected detached setting");
+    expect(s.destination).not.toHaveBeenCalled();
   });
   it("allows only one synthetic forward", () => {
     const s = guard(); s.forward(); expect(s.forward).toThrow("Only one S13 action");

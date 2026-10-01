@@ -258,6 +258,12 @@ function setupEnv(directory: string) { return { PATH: directory, LANG: "C" as co
 interface Gate { phase: "closed" | "reference" | "setup" | "action"; setupIndex: number; directIndex: number; actionCount: number;
   receiptPhase: "closed" | "before" | "after"; receiptCount: number; twinAllocations: number; scratch?: string; expectedTwin?: string;
   original?: string; twin?: string; events: S6RuntimeEvents; directAdmission?: S6DirectAdmission; }
+export function admitS6Detached(phase: Gate["phase"], detached: unknown): boolean {
+  if (phase === "action") { assert.equal(detached, true, "Twin action requires detached process group"); return true; }
+  assert(phase === "reference" || phase === "setup", "Launch outside fixed phase");
+  assert(detached === false || detached === undefined, "Direct and setup launches must not detach");
+  return false;
+}
 function directCwd(attestation: RegisteredScenarioRootAttestation | undefined, cwd: string): void {
   assert(attestation, "missing-registered-fixture-attestation");
   assert.equal(attestation.attestationVersion, 1); assert.equal(attestation.type, "directory");
@@ -354,7 +360,8 @@ function installGate(state: Gate, git: { git: string; directory: string }): () =
     const env = object.env; assert(env && typeof env === "object" && !Array.isArray(env));
     const copiedEnv = Object.fromEntries(Object.entries(env));
     const stdio = object.stdio; assert(Array.isArray(stdio) && JSON.stringify([...stdio]) === JSON.stringify(["ignore", "pipe", "pipe"]));
-    assert(shell === false && (detached === false || detached === undefined) && typeof cwd === "string");
+    assert(shell === false && typeof cwd === "string");
+    const admittedDetached = admitS6Detached(state.phase, detached);
     const setup = state.phase === "reference" && state.directIndex < 7 || state.phase === "setup";
     if (setup) {
       assert.equal(command, "git");
@@ -375,7 +382,7 @@ function installGate(state: Gate, git: { git: string; directory: string }): () =
       assert.equal(cwd, state.twin); assert.deepEqual(copiedEnv, setupEnv(git.directory)); assert.equal(state.actionCount++, 0);
     }
     if (state.phase === "action") state.events.record("attempted");
-    const child = originalSpawn(command as string, [...args], { cwd, shell: false, detached: false,
+    const child = originalSpawn(command as string, [...args], { cwd, shell: false, detached: admittedDetached,
       env: { ...copiedEnv } as Record<string, string>, stdio: ["ignore", "pipe", "pipe"] });
     if (state.phase === "action") child.once("spawn", () => { state.events.record("started"); });
     return child;

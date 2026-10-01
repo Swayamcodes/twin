@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { testParent, checkParent, cleanupKnownArtifacts } from "./support/score-artifacts.js";
 import { ADAPTER_FINGERPRINT_MODULES, CORE_FINGERPRINT_MODULES, fingerprintCompiled, fingerprintS12LabeledFiles,
-  produceTwinS12Score, S12AllocationLedger, S12RuntimeEvents, S12DirectAdmission,
+  produceTwinS12Score, S12AllocationLedger, S12RuntimeEvents, S12DirectAdmission, admitS12Detached,
   s12ReferenceFailure, finalizeS12ScoreCandidate } from "../dist/s12-score-producer.js";
 import { deriveS12ScoreSupport, S12ScoreResultSchema, validateS12ScoreSupport } from "../src/contract/s12-score-support.js";
 import { AttemptRequestSchema } from "../src/contract/attempt-protocol-schema.js";
@@ -31,6 +31,15 @@ async function independentFingerprint(kind: "core" | "adapter"): Promise<string>
   return `fp-${hash.digest("hex")}`;
 }
 describe("2.6R-1 fixed producer", () => {
+  it("requires a detached Twin action and keeps direct and setup launches attached", () => {
+    expect(admitS12Detached("action", true)).toBe(true);
+    for (const value of [false, undefined]) expect(() => admitS12Detached("action", value))
+      .toThrow("Twin action requires detached process group");
+    for (const phase of ["reference", "setup"] as const) {
+      for (const value of [false, undefined]) expect(admitS12Detached(phase, value)).toBe(false);
+      expect(() => admitS12Detached(phase, true)).toThrow();
+    }
+  });
   it("rejects missing and duplicate runtime events without backfilling", () => {
     const events = new S12RuntimeEvents();
     expect(() => events.require("received")).toThrow();

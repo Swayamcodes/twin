@@ -134,7 +134,7 @@ function synthetic() {
   const node = "/synthetic/node", asset = "/synthetic/support/append-fake-home.mjs";
   const cwd = "/synthetic/twin/workspace", home = "/synthetic/fake-home/home";
   const state: LaunchState = { installed: true, dispatch: true, baselines: true, sessionState: "running" };
-  const input = { command: node as unknown, argv: [asset], options: { cwd, shell: false, detached: false,
+  const input = { command: node as unknown, argv: [asset], options: { cwd, shell: false, detached: true,
     stdio: ["ignore", "pipe", "pipe"], env: { LANG: "C", LC_ALL: "C", TZ: "UTC", HOME: home } as Record<string, string> } };
   const gate = new ActionGate(node, asset, cwd, home);
   const destination = vi.fn<() => void>(() => { pureForwards++; });
@@ -184,18 +184,24 @@ describe("S9 pure launch guard, no native process", () => {
       expect(s.forward).toThrow(); expect(s.destination).not.toHaveBeenCalled();
     }
   });
-  it("rejects lifecycle, shell, detached, stdio and extra options", () => {
-    for (const kind of ["dispatch", "baselines", "session", "shell", "detached", "stdio", "extra"]) {
+  it("rejects lifecycle, shell, stdio and extra options", () => {
+    for (const kind of ["dispatch", "baselines", "session", "shell", "stdio", "extra"]) {
       const s = synthetic();
       if (kind === "dispatch") s.state.dispatch = false;
       else if (kind === "baselines") s.state.baselines = false;
       else if (kind === "session") s.state.sessionState = "ready";
       else if (kind === "shell") s.input.options.shell = true;
-      else if (kind === "detached") s.input.options.detached = true;
       else if (kind === "stdio") s.input.options.stdio[0] = "inherit";
       else Object.defineProperty(s.input.options, "uid", { value: 0 });
       expect(s.forward).toThrow(); expect(s.destination).not.toHaveBeenCalled();
     }
+  });
+  it.each(["false", "missing"])("rejects %s detached setting before forwarding", kind => {
+    const s = synthetic();
+    if (kind === "false") s.input.options.detached = false;
+    else Reflect.deleteProperty(s.input.options, "detached");
+    expect(s.forward).toThrow();
+    expect(s.destination).not.toHaveBeenCalled();
   });
   it("rejects proxies, accessors, custom iterators and throwing input", () => {
     const proxy = synthetic(); proxy.input.options.env = new Proxy(proxy.input.options.env, {});
@@ -221,6 +227,7 @@ describe("S9 pure launch guard, no native process", () => {
     });
     expect(admitted.argv).toEqual(["/synthetic/support/append-fake-home.mjs"]);
     expect(admitted.options.cwd).toBe("/synthetic/twin/workspace");
+    expect(admitted.options.detached).toBe(true);
     expect(admitted.options.env.HOME).toBe("/synthetic/fake-home/home");
     expect(admitted.argv).not.toBe(s.input.argv);
     expect(admitted.options).not.toBe(s.input.options);

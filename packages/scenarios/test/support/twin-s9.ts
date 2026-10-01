@@ -319,7 +319,7 @@ function cleanupSupport(reg: Registration): void {
 export interface LaunchState { installed: boolean; dispatch: boolean; baselines: boolean; sessionState: string | null }
 export interface Admitted {
   executable: string; argv: string[];
-  options: { cwd: string; shell: false; detached: false; stdio: ["ignore", "pipe", "pipe"]; env: Record<string, string> };
+  options: { cwd: string; shell: false; detached: true; stdio: ["ignore", "pipe", "pipe"]; env: Record<string, string> };
 }
 function plain(value: unknown): asserts value is Record<string, unknown> {
   assert(value && typeof value === "object" && !isProxy(value), "Proxy or non-object rejected");
@@ -360,11 +360,11 @@ export class ActionGate {
       TZ: data(inputEnv, "TZ"), HOME: data(inputEnv, "HOME") };
     assert.equal(command, this.node); assert(isAbsolute(this.node) && !this.node.includes("\0"));
     assert.deepEqual(argv, [this.asset]); assert.equal(cwd, this.cwd);
-    assert.equal(shell, false); assert.equal(detached, false);
+    assert.equal(shell, false); assert.equal(detached, true);
     assert.deepEqual(stdio, ["ignore", "pipe", "pipe"]);
     assert.deepEqual(env, { LANG: "C", LC_ALL: "C", TZ: "UTC", HOME: this.home });
     return { executable: this.node, argv: [this.asset], options: { cwd: this.cwd, shell: false,
-      detached: false, stdio: ["ignore", "pipe", "pipe"],
+      detached: true, stdio: ["ignore", "pipe", "pipe"],
       env: { LANG: "C", LC_ALL: "C", TZ: "UTC", HOME: this.home } } };
   }
 }

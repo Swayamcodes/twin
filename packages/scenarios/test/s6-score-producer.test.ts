@@ -4,7 +4,7 @@ import childProcess from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { produceTwinS6Score, exactS6Output, S6AllocationLedger, S6RuntimeEvents,
+import { produceTwinS6Score, exactS6Output, S6AllocationLedger, S6RuntimeEvents, admitS6Detached,
   finalizeS6ScoreCandidate, s6ReferenceFailure, fingerprintCompiled,
   CORE_FINGERPRINT_MODULES, ADAPTER_FINGERPRINT_MODULES } from "../dist/s6-score-producer.js";
 import { S6ScoreResultSchema, deriveS6ScoreSupport, validateS6ScoreSupport } from "../src/contract/s6-score-support.js";
@@ -28,6 +28,15 @@ async function independentFingerprint(base: string, labels: readonly string[]): 
 }
 const output = ["Removing .env", "Removing node_modules/", "Removing scratch.txt"].join("\n") + "\n";
 describe("2.6R-2 fixed S6 producer", () => {
+  it("requires a detached Twin action and keeps direct and setup launches attached", () => {
+    expect(admitS6Detached("action", true)).toBe(true);
+    for (const value of [false, undefined]) expect(() => admitS6Detached("action", value))
+      .toThrow("Twin action requires detached process group");
+    for (const phase of ["reference", "setup"] as const) {
+      for (const value of [false, undefined]) expect(admitS6Detached(phase, value)).toBe(false);
+      expect(() => admitS6Detached(phase, true)).toThrow();
+    }
+  });
   it("accepts exact LF removal output in any order", () => {
     for (const value of [output, ["Removing scratch.txt", "Removing .env", "Removing node_modules/"].join("\n") + "\n"])
       expect(() => exactS6Output(Buffer.from(value))).not.toThrow();

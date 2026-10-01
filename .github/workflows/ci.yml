@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Set up pinned pnpm
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+        with:
+          version: 12.6.0
+          run_install: false
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: |
+          pnpm run build:core
+          pnpm exec tsc -p packages/cli/tsconfig.json
+          pnpm run build:scenarios
+      - name: Strict TypeScript checks
+        run: |
+          pnpm run typecheck:core
+          pnpm run typecheck:core:tests
+          pnpm exec tsc -p packages/cli/tsconfig.json --noEmit
+          pnpm exec tsc -p packages/scenarios/tsconfig.json --noEmit
+          pnpm exec tsc -p packages/scenarios/tsconfig.test.json
+      - name: Core tests
+        run: pnpm exec vitest run --config packages/core/vitest.config.ts
+      - name: CLI tests
+        run: pnpm exec vitest run --config packages/cli/vitest.config.ts --no-file-parallelism --maxWorkers=1
+      - name: Scenario tests and retained JSON/Markdown validation
+        run: pnpm exec vitest run --config vitest.config.ts

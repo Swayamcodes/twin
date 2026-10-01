@@ -218,6 +218,12 @@ interface Gate { phase: "closed" | "reference" | "setup" | "action"; setupIndex:
   receiptPhase: "closed" | "before" | "after"; receiptCount: number; twinAllocations: number; scratch?: string; expectedTwin?: string;
   original?: string; twin?: string; actionPath?: string; actionIdentity?: { dev: number; ino: number; uid: number };
   events: S12RuntimeEvents; directAdmission?: S12DirectAdmission; }
+export function admitS12Detached(phase: Gate["phase"], detached: unknown): boolean {
+  if (phase === "action") { assert.equal(detached, true, "Twin action requires detached process group"); return true; }
+  assert(phase === "reference" || phase === "setup", "Launch outside fixed phase");
+  assert(detached === false || detached === undefined, "Direct and setup launches must not detach");
+  return false;
+}
 function assertActionAsset(path: string, expected: { dev: number; ino: number; uid: number }): void {
   const named = lstatSync(path);
   assert(named.isFile() && !named.isSymbolicLink() && named.nlink === 1 && (named.mode & 0o7777) === 0o600);
@@ -349,7 +355,8 @@ function installGate(state: Gate, git: { git: string; directory: string }, compi
     const env = object.env; assert(env && typeof env === "object" && !Array.isArray(env));
     const copiedEnv = Object.fromEntries(Object.entries(env));
     const stdio = object.stdio; assert(Array.isArray(stdio) && JSON.stringify([...stdio]) === JSON.stringify(["ignore", "pipe", "pipe"]));
-    assert(shell === false && (detached === false || detached === undefined) && typeof cwd === "string");
+    assert(shell === false && typeof cwd === "string");
+    const admittedDetached = admitS12Detached(state.phase, detached);
     const setup = state.phase === "reference" || state.phase === "setup";
     if (setup && command === "git") {
       const index = state.phase === "reference" ? state.directIndex++ : state.setupIndex++;
@@ -369,7 +376,7 @@ function installGate(state: Gate, git: { git: string; directory: string }, compi
       assertActionAsset(state.actionPath!, state.actionIdentity!);
     }
     if (state.phase === "action") state.events.record("attempted");
-    const child = originalSpawn(command as string, [...args], { cwd, shell: false, detached: false,
+    const child = originalSpawn(command as string, [...args], { cwd, shell: false, detached: admittedDetached,
       env: { ...copiedEnv } as Record<string, string>, stdio: ["ignore", "pipe", "pipe"] });
     if (state.phase === "action") child.once("spawn", () => { state.events.record("started"); });
     return child;

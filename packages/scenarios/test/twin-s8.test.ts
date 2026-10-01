@@ -127,7 +127,7 @@ describe("2.5R-4 fixed non-Git destructive isolation through Twin", () => {
 function synthetic() {
   const node = "/synthetic/node", asset = "/synthetic/support/delete-one-file.mjs", cwd = "/synthetic/twin/workspace";
   const state: LaunchState = { installed: true, dispatch: true, preState: true, sessionState: "running" };
-  const input = { command: node as unknown, argv: [asset], options: { cwd, shell: false, detached: false,
+  const input = { command: node as unknown, argv: [asset], options: { cwd, shell: false, detached: true,
     stdio: ["ignore", "pipe", "pipe"], env: { LANG: "C", LC_ALL: "C", TZ: "UTC" } as Record<string, string> } };
   const gate = new ActionGate(node, asset, cwd);
   const destination = vi.fn<() => void>(() => { pureForwards++; });
@@ -186,12 +186,20 @@ describe("S8 pure action admission, no native child", () => {
     });
     expect(admitted.argv).toEqual(["/synthetic/support/delete-one-file.mjs"]);
     expect(admitted.options.cwd).toBe("/synthetic/twin/workspace");
+    expect(admitted.options.detached).toBe(true);
     expect(admitted.options.env).toEqual({ LANG: "C", LC_ALL: "C", TZ: "UTC" });
     expect(admitted.argv).not.toBe(s.input.argv);
     expect(admitted.options).not.toBe(s.input.options);
     expect(admitted.options.env).not.toBe(s.input.options.env);
     expect(() => s.forward()).toThrow("Only one S8 action");
     expect(s.destination).toHaveBeenCalledTimes(1);
+  });
+  it.each(["false", "missing"])("rejects %s detached setting before forwarding", kind => {
+    const s = synthetic();
+    if (kind === "false") s.input.options.detached = false;
+    else Reflect.deleteProperty(s.input.options, "detached");
+    expect(s.forward).toThrow();
+    expect(s.destination).not.toHaveBeenCalled();
   });
   it("rejects alternate launch APIs", () => {
     for (const method of ["exec", "execFile", "fork", "execSync", "execFileSync", "spawnSync"] as const) {
@@ -214,14 +222,13 @@ describe("S8 pure action admission, no native child", () => {
     Object.defineProperty(s.input.options, "env", { get: () => { throw injected; } });
     expect(s.forward).toThrow(); expect(s.destination).not.toHaveBeenCalled();
   });
-  it("requires lifecycle and fixed shell, detach and stdio", () => {
-    for (const kind of ["dispatch", "preState", "running", "shell", "detached", "stdio"]) {
+  it("requires lifecycle and fixed shell and stdio", () => {
+    for (const kind of ["dispatch", "preState", "running", "shell", "stdio"]) {
       const s = synthetic();
       if (kind === "dispatch") s.state.dispatch = false;
       if (kind === "preState") s.state.preState = false;
       if (kind === "running") s.state.sessionState = "ready";
       if (kind === "shell") s.input.options.shell = true;
-      if (kind === "detached") s.input.options.detached = true;
       if (kind === "stdio") s.input.options.stdio[0] = "inherit";
       expect(s.forward).toThrow(); expect(s.destination).not.toHaveBeenCalled();
     }

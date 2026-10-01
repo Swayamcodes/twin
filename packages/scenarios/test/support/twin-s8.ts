@@ -287,7 +287,7 @@ export interface LaunchState { installed: boolean; dispatch: boolean; preState: 
 export interface Admitted {
   executable: string;
   argv: string[];
-  options: { cwd: string; shell: false; detached: false; stdio: ["ignore", "pipe", "pipe"]; env: Record<string, string> };
+  options: { cwd: string; shell: false; detached: true; stdio: ["ignore", "pipe", "pipe"]; env: Record<string, string> };
 }
 function data(object: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(object, key);
@@ -328,11 +328,11 @@ export class ActionGate {
     assert(isAbsolute(this.node) && !this.node.includes("\0"));
     assert.deepEqual(argv, [this.asset]);
     assert.equal(cwd, this.cwd);
-    assert.equal(shell, false); assert.equal(detached, false);
+    assert.equal(shell, false); assert.equal(detached, true);
     assert.deepEqual(stdio, ["ignore", "pipe", "pipe"]);
     assert.deepEqual(env, environment);
     return { executable: this.node, argv: [this.asset], options: { cwd: this.cwd, shell: false,
-      detached: false, stdio: ["ignore", "pipe", "pipe"], env: { ...environment } } };
+      detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...environment } } };
   }
 }
 export function forbidChildApi(): never { throw new Error("S8 forbids alternate child APIs"); }
