@@ -174,6 +174,12 @@ the original project in place is a different execution path and does not get
 Twin's copy and apply/discard behavior simply because the editor also offers
 a CLI.
 
+The [v1 compatibility matrix](docs/compatibility-matrix.md) distinguishes
+Codex's tested `codex exec` behavior from Claude's billing-blocked model work.
+The funded Claude rerun is on indefinite hold for budget reasons. It is an
+optional follow-up, not a Phase 5 prerequisite; the unverified model-backed
+cells stay unverified. CLI polish and final acceptance still remain in Phase 5.
+
 ## Scenario oracle and tool score
 
 `ScenarioRunResult` remains raw S12/S6 command, filesystem, issue, and cleanup

@@ -87,6 +87,12 @@ agent as a terminal command; its setup cost defers this checkpoint. That CLI
 path is distinct from an editor integration that edits the original project
 in place, which Twin's clone-and-run workflow does not cover.
 
+The [v1 compatibility matrix](docs/compatibility-matrix.md) records verified
+Codex behavior and Claude's billing-blocked model work separately. The funded
+Claude rerun is on indefinite hold for budget reasons; it is optional
+follow-up, not a Phase 5 prerequisite. Phase 5 still needs CLI polish and
+final acceptance.
+
 ## Scope decision (from Step 1.4 evidence)
 
 Originally the wedge was "recovers more than existing tools." Testing showed
