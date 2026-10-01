@@ -5,7 +5,7 @@ const MAX_ITEMS = 12;
 const MAX_VALUE_BYTES = 128;
 const TRUNCATED = "Presentation truncated; use the JSON receipt for remaining observations.";
 
-function safe(value: string): string {
+export function safeTerminalValue(value: string, maxBytes = MAX_VALUE_BYTES): string {
   let result = "";
   for (const char of value) {
     const point = char.codePointAt(0)!;
@@ -14,13 +14,14 @@ function safe(value: string): string {
       || point >= 0x2066 && point <= 0x2069 || point === 0x200e || point === 0x200f
       || point === 0x2028 || point === 0x2029 || point === 0xfeff;
     const part = unsafe ? `\\u${point.toString(16).padStart(4, "0")}` : char;
-    if (Buffer.byteLength(result, "utf8") + Buffer.byteLength(part, "utf8") > MAX_VALUE_BYTES) {
+    if (Buffer.byteLength(result, "utf8") + Buffer.byteLength(part, "utf8") > maxBytes) {
       return `${result}…[truncated]`;
     }
     result += part;
   }
   return result;
 }
+const safe = safeTerminalValue;
 function path(value: ReceiptPath): string {
   return value.encoding === "base64" ? `base64:${safe(value.value)}` : safe(value.value);
 }

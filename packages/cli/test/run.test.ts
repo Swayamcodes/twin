@@ -1,6 +1,8 @@
 /// <reference types="node" />
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { rmdir } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { main } from "../src/index.js";
 
@@ -10,6 +12,7 @@ const output = new TextEncoder();
 const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
+const apply = vi.fn();
 const receipt: MinimalReceipt = {
   schemaVersion: 5,
   command: { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
@@ -43,7 +46,7 @@ function result(exitCode: number): RunResult {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(createTwin).mockResolvedValue({ run, inspect, discard } as unknown as TwinSession);
+  vi.mocked(createTwin).mockResolvedValue({ workspacePath: "/tmp/twin", run, inspect, apply, discard } as unknown as TwinSession);
   run.mockResolvedValue(result(0));
   inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished", receipt });
   discard.mockResolvedValue({ status: "removed" });
@@ -51,7 +54,22 @@ beforeEach(() => {
   vi.spyOn(process.stderr, "write").mockImplementation(mockWrite);
 });
 
+afterEach(async () => {
+  for (const [options] of vi.mocked(createTwin).mock.calls) {
+    try { await rmdir(options.scratchParent); }
+    catch (error: unknown) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+  }
+});
+
 describe("twin run", () => {
+  it.each([["--help"], ["-h"], ["run", "--help"], ["run", "-h"]])("shows help without launching for %j", async (...args: string[]) => {
+    expect(await main(args)).toBe(0);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run"));
+  });
+
   it("runs a command with multiple arguments and uses the public lifecycle", async () => {
     expect(await main(["run", "--", "node", "-e", "console.log(1)"])).toBe(0);
 
@@ -109,7 +127,7 @@ describe("twin run", () => {
     expect(listener).toBeDefined();
     listener!();
     listener!();
-    finishCreate({ run, inspect, discard } as unknown as TwinSession);
+    finishCreate({ workspacePath: "/tmp/twin", run, inspect, apply, discard } as unknown as TwinSession);
     expect(await running).toBe(1);
     expect(run).not.toHaveBeenCalled();
     expect(inspect).toHaveBeenCalledOnce();
@@ -124,6 +142,7 @@ describe("twin run", () => {
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Invalid Twin arguments"));
       expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] [--review] --"));
     },
   );
@@ -149,6 +168,17 @@ describe("twin run", () => {
   it("attempts discard when the command throws", async () => {
     run.mockRejectedValue(new Error("command failed"));
     expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
+  it("bounds and escapes an execution error before its receipt", async () => {
+    run.mockRejectedValue(new Error(`\u001b[31m${"x".repeat(4000)}\u202e`));
+    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
+    expect(text).toContain("\\u001b[31m");
+    expect(text).toContain("…[truncated]");
+    expect(text).not.toContain("\u001b");
+    expect(text.length).toBeLessThan(33 * 1024);
     expect(discard).toHaveBeenCalledOnce();
   });
 
@@ -235,6 +265,47 @@ describe("twin run", () => {
     expect(await main(["run", "--", "tool"])).toBe(1);
     expect(inspect.mock.invocationCallOrder[0]!).toBeLessThan(discard.mock.invocationCallOrder[0]!);
     expect(process.stderr.write).toHaveBeenCalledWith("Twin discard refused: guard\n", expect.any(Function));
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin copy retained: /tmp/twin"), expect.any(Function));
+  });
+
+  it("does not claim a complete copy after partial discard failure", async () => {
+    discard.mockResolvedValue({ status: "failed", reason: "path changed", partialDeletionPossible: true });
+    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
+    expect(text).toContain("Twin discard failed: path changed");
+    expect(text).toContain("Twin copy cleanup uncertain at: /tmp/twin");
+    expect(text).not.toContain("Twin copy retained:");
+  });
+
+  it("retains the copy and bounds a thrown discard failure", async () => {
+    vi.mocked(createTwin).mockResolvedValue({ workspacePath: `/tmp/\u001b[31mcopy`, run, inspect, apply, discard } as unknown as TwinSession);
+    discard.mockRejectedValue(new Error(`\u001b[31m${"x".repeat(4000)}`));
+    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
+    expect(text).toContain("Twin discard failed: \\u001b[31m");
+    expect(text).toContain("Twin copy cleanup uncertain at: /tmp/\\u001b[31mcopy");
+    expect(text).toContain("cannot resume this session");
+    expect(text).not.toContain("\u001b");
+    expect(text.length).toBeLessThan(34 * 1024);
+  });
+
+  it.each(["conflict", "failed"] as const)("retains a copy after %s apply with bounded terminal-safe details", async status => {
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["apply\n"]) as typeof process.stdin);
+    apply.mockResolvedValue(status === "conflict"
+      ? { status, reason: `\u001b[31m${"x".repeat(4000)}`, paths: ["file\u202e"] }
+      : { status, reason: `\u001b[31m${"x".repeat(4000)}`, partialApplicationPossible: true });
+    try {
+      expect(await main(["run", "--review", "--receipt=text", "--", "tool"])).toBe(1);
+    } finally { input.mockRestore(); }
+    const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
+    expect(text).toContain(`Twin apply ${status}`);
+    expect(text).toContain("\\u001b[31m");
+    expect(text).not.toContain("\u001b");
+    expect(text.length).toBeLessThan(34 * 1024);
+    expect(text).toContain("Twin copy retained: /tmp/twin");
+    if (status === "failed") expect(text).toContain("may have changed earlier paths");
+    else expect(text).toContain("\\u202e");
+    expect(discard).not.toHaveBeenCalled();
   });
 
   it("appends its frame after child stderr that imitates a frame", async () => {

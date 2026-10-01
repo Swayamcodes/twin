@@ -8,34 +8,52 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
-import { renderReceiptText } from "./receipt-text.js";
+import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
 
 const help = `Usage: twin run [--interactive] [--receipt=text] [--review] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
---review prints the receipt, then asks on stdin to apply or discard. Other answers retain the copy.
+--review prints the receipt, then asks on stdin to apply or discard in this invocation.
+EOF, interruption, or another answer retains the copy for manual inspection.
+Retained copies cannot be applied by a later twin CLI invocation.
 `;
 
-async function reviewChoice(signal: AbortSignal): Promise<string | null> {
+type ReviewChoice = "apply" | "discard" | "other" | "eof" | "interrupted";
+
+async function reviewChoice(signal: AbortSignal): Promise<ReviewChoice> {
   const lines = createInterface({ input: process.stdin, terminal: false });
   return new Promise(resolve => {
     let settled = false;
-    const finish = (value: string | null): void => {
+    const finish = (value: ReviewChoice): void => {
       if (settled) return;
       settled = true;
       signal.removeEventListener("abort", onAbort);
       lines.close();
       resolve(value);
     };
-    const onAbort = (): void => finish(null);
-    lines.once("line", line => finish(line.trim()));
-    lines.once("close", () => finish(null));
+    const onAbort = (): void => finish("interrupted");
+    lines.once("line", line => {
+      const choice = line.trim();
+      finish(choice === "apply" || choice === "discard" ? choice : "other");
+    });
+    lines.once("close", () => finish("eof"));
     signal.addEventListener("abort", onAbort, { once: true });
-    if (signal.aborted) finish(null);
-    else void write(process.stderr, "Twin review: type apply or discard, then Enter (anything else retains copy): ").catch(() => finish(null));
+    if (signal.aborted) finish("interrupted");
+    else void write(process.stderr, "Twin review: type apply or discard, then Enter (EOF or another answer retains copy): ").catch(() => finish("other"));
   });
+}
+
+function errorText(error: unknown): string {
+  return safeTerminalValue(error instanceof Error ? error.message : String(error), 512);
+}
+
+function copyLocationMessage(path: string, cleanupUncertain = false): string {
+  const location = safeTerminalValue(path, 1024);
+  return cleanupUncertain
+    ? `Twin copy cleanup uncertain at: ${location}\nIf present, inspect it manually. Twin cannot resume this session in a later CLI invocation.\n`
+    : `Twin copy retained: ${location}\nInspect it manually. Twin can apply or discard only during the same --review invocation; rerun the command with --review for a new copy.\n`;
 }
 
 const WATCH_IDS: readonly WatchId[] = [
@@ -99,7 +117,8 @@ async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): P
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
-  if (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h")) {
+  if ((argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h"))
+      || (argv.length === 2 && argv[0] === "run" && (argv[1] === "--help" || argv[1] === "-h"))) {
     process.stdout.write(help);
     return 0;
   }
@@ -114,6 +133,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       || flags.filter(flag => flag === "--review").length > 1
       || flags.filter(flag => flag === "--receipt=text").length > 1
       || argv.length < separator + 2 || !argv[separator + 1]) {
+    process.stderr.write("Invalid Twin arguments. Expected one command after --.\n");
     process.stderr.write(help);
     return 2;
   }
@@ -148,7 +168,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         && result.directChildSettled && !result.lifecycleIssue && result.exitCode === 0
         && result.signal === null && result.spawnError === null && result.terminationError === null ? 0 : 1;
     } catch (error) {
-      await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+      await write(process.stderr, `${errorText(error)}\n`);
     } finally {
       if (session) {
         try {
@@ -157,37 +177,50 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             unavailableProcessReceipt(inspection.state === "ready")), format);
           if (review && inspection.state === "finished" && !interruption.signal.aborted) {
             const choice = await reviewChoice(interruption.signal);
-            if (choice === "apply") {
+            if (choice === "apply" && !interruption.signal.aborted) {
               const applied = await session.apply();
               const paths = "paths" in applied ? applied.paths : [];
               await write(process.stderr, `Twin apply ${applied.status}${applied.status === "applied" ? `: ${applied.changes} changes`
-                : `: ${JSON.stringify({ reason: applied.reason, paths: paths.slice(0, 20), omitted: Math.max(0, paths.length - 20) })}`}\n`);
-              if (applied.status !== "applied") { retainCopy = true; exitCode = 1; }
-            } else if (choice !== "discard") { retainCopy = true; exitCode = 1; }
-          } else if (review) { retainCopy = true; exitCode = 1; }
+                : `: ${JSON.stringify({ reason: safeTerminalValue(applied.reason, 512), paths: paths.slice(0, 20).map(path => safeTerminalValue(path, 128)), omitted: Math.max(0, paths.length - 20) })}`}\n`);
+              if (applied.status !== "applied") {
+                retainCopy = true; exitCode = 1;
+                if (applied.status === "failed") await write(process.stderr, "Twin apply may have changed earlier paths; inspect both original and retained copy.\n");
+              }
+            } else if (choice === "discard" && !interruption.signal.aborted) {
+              // Discard below after the receipt and review prompt have settled.
+            } else {
+              retainCopy = true; exitCode = 1;
+              await write(process.stderr, `Twin review ${interruption.signal.aborted ? "interrupted" : choice}; no apply or discard requested.\n`);
+            }
+          } else if (review) {
+            retainCopy = true; exitCode = 1;
+            await write(process.stderr, "Twin review unavailable: command or process settlement is uncertain, or execution was interrupted.\n");
+          }
         } catch (error) {
           exitCode = 1;
           if (review) retainCopy = true;
-          if (review) await write(process.stderr, `Twin review failed: ${error instanceof Error ? error.message : String(error)}\n`);
+          if (review) await write(process.stderr, `Twin review failed: ${errorText(error)}\n`);
         }
-        if (retainCopy) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
+        if (retainCopy) await write(process.stderr, copyLocationMessage(session.workspacePath));
         else try {
           const discarded = await session.discard();
           if (discarded.status === "refused" || discarded.status === "failed") {
             exitCode = 1;
-            await write(process.stderr, `Twin discard ${discarded.status}: ${discarded.reason}\n`);
-            if (review) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
+            retainCopy = true;
+            await write(process.stderr, `Twin discard ${discarded.status}: ${safeTerminalValue(discarded.reason, 512)}\n`);
+            await write(process.stderr, copyLocationMessage(session.workspacePath, discarded.status === "failed"));
           }
         } catch (error) {
-          await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
-          if (review) await write(process.stderr, `Twin copy retained: ${session.workspacePath}\n`);
+          retainCopy = true;
+          await write(process.stderr, `Twin discard failed: ${errorText(error)}\n`);
+          await write(process.stderr, copyLocationMessage(session.workspacePath, true));
           exitCode = 1;
         }
       }
       if (scratchParent && !retainCopy) {
         try { await rmdir(scratchParent); }
         catch (error) {
-          await write(process.stderr, `${error instanceof Error ? error.message : String(error)}\n`);
+          await write(process.stderr, `${errorText(error)}\n`);
           exitCode = 1;
         }
       }

@@ -90,8 +90,8 @@ in place, which Twin's clone-and-run workflow does not cover.
 The [v1 compatibility matrix](docs/compatibility-matrix.md) records verified
 Codex behavior and Claude's billing-blocked model work separately. The funded
 Claude rerun is on indefinite hold for budget reasons; it is optional
-follow-up, not a Phase 5 prerequisite. Phase 5 still needs CLI polish and
-final acceptance.
+follow-up, not a Phase 5 prerequisite. [Phase 5 acceptance](docs/phase-5-acceptance.md)
+records the final v1 decision and its limits.
 
 ## Scope decision (from Step 1.4 evidence)
 

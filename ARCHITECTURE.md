@@ -141,7 +141,9 @@ plan. Files, modes, deletions, and
 directory/file transitions use the same inventory for Git, ignored, and non-Git
 projects. `twin run --review -- ...` prints the existing receipt, then accepts
 `apply` or `discard` on stdin within that same process. Other responses retain
-the copy and print its location. Default `run` still discards.
+the copy and print its location and manual-inspection instructions. EOF and
+interruption also retain it. Default `run` still discards. See the [CLI usage
+flow](docs/cli-usage.md).
 
 Before each mutation, apply rechecks root authority and the relevant path. File
 content is copied to a new sibling and renamed after another path check. These
@@ -154,10 +156,11 @@ provided. Review mode retains the copy on an interrupted or uncertain run; its
 printed location is for manual inspection, and there is no cross-process apply
 command or persistent session authority.
 
-Remaining Phase 5 work is a durable reviewed-session handoff if apply/discard
-must happen in a later CLI invocation, and an OS-backed conditional replacement
-primitive if stronger same-user race guarantees or all-path atomicity are
-required. Current apply does not retry or roll back a partly written plan.
+Future work beyond the accepted Phase 5 scope includes a durable reviewed-session
+handoff if apply/discard must happen in a later CLI invocation, and an OS-backed
+conditional replacement primitive if stronger same-user race guarantees or
+all-path atomicity are required. Current apply does not retry or roll back a
+partly written plan.
 
 ## v1 agent compatibility boundary
 
@@ -178,7 +181,8 @@ The [v1 compatibility matrix](docs/compatibility-matrix.md) distinguishes
 Codex's tested `codex exec` behavior from Claude's billing-blocked model work.
 The funded Claude rerun is on indefinite hold for budget reasons. It is an
 optional follow-up, not a Phase 5 prerequisite; the unverified model-backed
-cells stay unverified. CLI polish and final acceptance still remain in Phase 5.
+cells stay unverified. The [Phase 5 acceptance review](docs/phase-5-acceptance.md)
+records the final v1 decision.
 
 ## Scenario oracle and tool score
 
