@@ -1,4 +1,7 @@
 packages:
   - "packages/*"
 
+allowBuilds:
+  unrs-resolver: true
+
 pmOnFail: ignore

@@ -2,6 +2,12 @@
 
 Twin runs a command in a complete copy of the current project, including Git-ignored files and projects without Git. It observes changes in the copy, prints a receipt, and can discard the copy or apply reviewed changes to the original. Git classifies files in the receipt; it does not decide what Twin copies.
 
+## Landing and results pages
+
+The Phase 7 web app lives in `packages/web`. From this checkout, run `pnpm install --frozen-lockfile` and `pnpm --filter @twin-cli/web dev` to preview it, or `pnpm --filter @twin-cli/web build` for a static production export in `packages/web/out`. The results page reads the committed [Phase 6 JSON](docs/phase-6-results-2297bf07/comparison.json) at build time. It displays that retained attempt set, not the historical Phase 2 file or a fresh hosted run. The terminal playback is a separate, unpaid fixed-command demonstration with actual text receipt output.
+
+The landing/results checkpoint is functionally complete; visual polish is deferred to a separate checkpoint.
+
 **A copy is a snapshot, not an OS sandbox.** The command runs with the caller's permissions. An absolute path to the original, a home-directory file, or another path outside the copy can still be changed. Twin observes only its documented outside-project watch paths and configured global npm prefix; it does not roll back external changes. Its process-group settlement does not prove that a descendant which escapes the group has stopped. See the [architecture and limits](ARCHITECTURE.md#documented-limits-known-from-step-13-findings-and-reasoning).
 
 ## Build and run from this checkout
