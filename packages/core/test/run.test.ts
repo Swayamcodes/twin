@@ -617,12 +617,39 @@ describe("direct execution", () => {
   }));
   it.each(["wait", "stubborn"] as const)("times out and settles direct child: %s", async behavior => fixtureTest(async f => {
     const session = await f.create();
-    const result = await session.run({ ...nodeOptions(behavior), timeoutMs: 500 });
-    expect(result.outcome).toBe("timed-out");
-    expect(result.signal).toBe(behavior === "stubborn" ? "SIGKILL" : "SIGTERM");
-    expect(result.directChildSettled).toBe(true);
-    if (behavior === "stubborn") expect(Buffer.from(result.stdout.bytes).toString()).toBe("ready");
-    expect(session.inspect().state).toBe("finished");
+    let options = nodeOptions(behavior);
+    const interruption = new AbortController();
+    if (behavior === "stubborn") {
+      options = { ...options, argv: [options.argv[0]!, `${options.argv[1]!}require("node:fs").writeFileSync("timeout-ready.pid",String(process.pid));`, ...options.argv.slice(2)] };
+      // A spawn event does not establish that the child installed its signal handler.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    }
+    const running = session.run({ ...options, timeoutMs: 500, interruptSignal: interruption.signal });
+    try {
+      if (behavior === "stubborn") {
+        const pid = Number(await waitForTestFile(join(session.workspacePath, "timeout-ready.pid")));
+        expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
+        await vi.advanceTimersByTimeAsync(500);
+        await vi.advanceTimersByTimeAsync(1000);
+        await running;
+        await waitForTestProcessStop(pid);
+        await waitForTestProcessStop(-pid);
+      }
+      const result = await running;
+      expect(result.outcome).toBe("timed-out");
+      expect(result.signal).toBe(behavior === "stubborn" ? "SIGKILL" : "SIGTERM");
+      expect(result.directChildSettled).toBe(true);
+      if (behavior === "stubborn") expect(Buffer.from(result.stdout.bytes).toString()).toBe("ready");
+      expect(session.inspect().state).toBe("finished");
+    } finally {
+      if (behavior === "stubborn") {
+        try {
+          interruption.abort();
+          await vi.advanceTimersByTimeAsync(1000);
+          await Promise.race([running, delay(9000, undefined, { ref: false }).then(() => { throw new Error("Timeout fixture did not settle; retain it for inspection"); })]);
+        } finally { vi.useRealTimers(); }
+      }
+    }
   }));
   it("rejects invalid input without consuming the execution attempt", async () => fixtureTest(async f => {
     const session = await f.create();

@@ -10,6 +10,8 @@ The Phase 7 web app lives in `packages/web`. From this checkout, run `pnpm insta
 
 The landing/results checkpoint is functionally complete; visual polish is deferred to a separate checkpoint.
 
+The [final Phase 7 acceptance review](docs/phase-7-acceptance.md) closes the approved functional scope after correcting the timeout-fixture readiness race; full core passed 172/172. Website visual polish remains deferred, and only local web export is verified; hosted deployment is unverified.
+
 **A copy is a snapshot, not an OS sandbox.** The command runs with the caller's permissions. An absolute path to the original, a home-directory file, or another path outside the copy can still be changed. Twin observes only its documented outside-project watch paths and configured global npm prefix; it does not roll back external changes. Its process-group settlement does not prove that a descendant which escapes the group has stopped. See the [architecture and limits](ARCHITECTURE.md#documented-limits-known-from-step-13-findings-and-reasoning).
 
 ## Install and run
