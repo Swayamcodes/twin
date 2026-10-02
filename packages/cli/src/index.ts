@@ -10,10 +10,14 @@ import { createInterface } from "node:readline";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
 import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
+import { resolveExecutable } from "./executable.js";
 
 const help = `Usage: twin run [--interactive] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
+Use a bare executable name (node) or an absolute executable path (/usr/bin/node).
+Bare names use the command's PATH in order; missing PATH has no candidates.
+Empty/relative PATH entries use the copy's working directory; executable symlinks are followed.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 --receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
@@ -162,8 +166,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
       session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+      const executable = await resolveExecutable(argv[separator + 1]!, env, session.workspacePath);
       if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
-      const result = await session.run({ executable: argv[separator + 1]!, argv: argv.slice(separator + 2), env,
+      const result = await session.run({ executable, argv: argv.slice(separator + 2), env,
         interruptSignal: interruption.signal,
         ...(interactive ? { stdio: "inherit" as const } : {}) });
       if (!interactive) {

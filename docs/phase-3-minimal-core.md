@@ -1,6 +1,6 @@
 # Phase 3 execution — core and CLI
 
-`@twin-cli/core` provides a dependency-free copy/run/inspect/discard session.
+`@twin-cli/core` provides a dependency-free copy/run/inspect/apply/discard session.
 The execution and cleanup boundary below also applies to the public `twin run`
 CLI. The historical Phase 3.0 verification notes are retained below; the current
 project-plan checkpoint decision is at the end of this guide. This is not evidence
@@ -17,6 +17,7 @@ interface TwinSession {
   readonly workspacePath: string;
   run(options: RunOptions): Promise<RunResult>;
   inspect(): TwinInspection;
+  apply(): Promise<ApplyResult>;
   discard(): Promise<DiscardResult>;
 }
 function createTwin(options: CreateTwinOptions): Promise<TwinSession>;
@@ -30,9 +31,10 @@ returning. Creation failure rejects, attempts guarded cleanup, and includes the
 allocation path and cleanup disposition in its local error; no runnable session
 is returned. An allocation whose authority could not be established is retained.
 
-The frozen session exposes only its workspace path and three methods. `inspect()`
-returns state and path, without scanning files. States are ready, running, finished,
-child-unsettled, discarding, discarded and discard-failed. Inspect files directly
+The frozen session exposes its workspace path and four methods. `inspect()`
+returns state, path and the receipt when available, without rescanning files.
+States are ready, running, finished, applying, child-unsettled, discarding,
+discarded and discard-failed. Inspect files directly
 while ready or finished. `run()` permits one execution attempt, including a failed
 spawn. Invalid input or failed prelaunch authority checks do not consume it.
 The ready-to-running lock is acquired before any caller-controlled property,
@@ -106,7 +108,9 @@ Snapshotting is sequential, not atomic against code running inside accessors; th
 values captured are validated, and caller-owned objects are neither frozen nor
 mutated. Later changes to caller input do not change the admitted command.
 No environment is inherited
-implicitly and no selected-executable PATH search occurs. Spawn uses shell:false,
+implicitly and core performs no selected-executable PATH search. The CLI resolves
+bare names using the command environment before calling this absolute-path API;
+see [CLI usage](cli-usage.md). Spawn uses shell:false,
 workspace cwd and detached:true on supported macOS/Linux platforms, placing
 the direct child in a new process group. The default captured mode ignores stdin and
 pipes stdout/stderr into the bounded result. `stdio: "inherit"` explicitly passes

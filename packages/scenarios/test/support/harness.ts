@@ -125,7 +125,7 @@ export async function removeTestRoot(root: TestRoot): Promise<void> {
 export async function runNode(cwd: TestRoot, argv: readonly string[]): Promise<ProcessResult> {
   await verifyTestRoot(cwd);
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin",
-    LANG: "C", LC_ALL: "C", TZ: "UTC" };
+    TMPDIR: await realpath(tmpdir()), LANG: "C", LC_ALL: "C", TZ: "UTC" };
   const entryIndex = argv.indexOf(scenarioEntry);
   const id = entryIndex >= 0 ? argv[entryIndex + 1] : undefined;
   if (id === "S12" || id === "S6") {

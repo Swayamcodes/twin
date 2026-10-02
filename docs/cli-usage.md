@@ -3,8 +3,20 @@
 Run a command from the project directory:
 
 ```sh
-twin run -- <executable> [args...]
+twin run -- node script.js
+twin run -- /absolute/path/to/node script.js
 ```
+
+Use a bare executable name or an absolute executable path. The CLI resolves bare
+names by checking PATH entries in order for an executable regular file, using
+filesystem APIs without a resolver subprocess. It uses the same environment map
+that it passes to the command. Empty and relative PATH entries are relative to
+the copy's working directory; symbolic links to executable regular files are
+followed, and the absolute candidate path is passed to core. Missing PATH has no
+candidates; a failed search exits nonzero without starting the action. Relative
+executable paths containing `/` are not accepted. Absolute paths pass unchanged
+to the existing core admission and launch path. This check does not pin the file
+against replacement between resolution and launch.
 
 Twin copies the project, runs the command in that copy, prints a JSON receipt
 on stderr, then discards the copy after confirmed settlement. Arguments after

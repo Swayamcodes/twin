@@ -2,7 +2,7 @@
 
 import { mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
@@ -54,6 +54,7 @@ function result(exitCode: number): RunResult {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("PATH", dirname(process.execPath));
   vi.mocked(createTwin).mockResolvedValue({ workspacePath: "/tmp/twin", run, inspect, apply, discard } as unknown as TwinSession);
   run.mockResolvedValue(result(0));
   inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished", receipt });
@@ -63,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const root of htmlRoots.splice(0)) await rm(root, { recursive: true, force: true });
   for (const [options] of vi.mocked(createTwin).mock.calls) {
     try { await rmdir(options.scratchParent); }
@@ -83,7 +85,7 @@ describe("twin run", () => {
     expect(await main(["run", "--", "node", "-e", "console.log(1)"])).toBe(0);
 
     expect(createTwin).toHaveBeenCalledWith(expect.objectContaining({ sourceDirectory: process.cwd() }));
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: "node", argv: ["-e", "console.log(1)"] }));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: process.execPath, argv: ["-e", "console.log(1)"] }));
     expect(inspect).toHaveBeenCalledOnce();
     expect(discard).toHaveBeenCalledOnce();
     expect(run.mock.invocationCallOrder[0]!).toBeLessThan(inspect.mock.invocationCallOrder[0]!);
@@ -92,16 +94,29 @@ describe("twin run", () => {
     expect(process.stderr.write).toHaveBeenCalledWith(output.encode("from stderr"), expect.any(Function));
   });
 
+  it("passes an absolute executable unchanged", async () => {
+    expect(await main(["run", "--", process.execPath, "script.js"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: process.execPath, argv: ["script.js"] }));
+  });
+
+  it("rejects a missing PATH candidate without calling core run", async () => {
+    vi.stubEnv("PATH", await htmlRoot());
+    expect(await main(["run", "--", "missing-executable", "script.js"])).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledOnce();
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Executable not found on PATH"), expect.any(Function));
+  });
+
   it("preserves every argument token after the separator", async () => {
     const args = ["--flag", "two words", "", "'quoted'", "--", "λ", "--receipt=text"];
-    expect(await main(["run", "--", "tool", ...args])).toBe(0);
+    expect(await main(["run", "--", "/tool", ...args])).toBe(0);
     expect(run.mock.calls[0]![0].argv).toEqual(args);
   });
 
   it("selects inherited stdio without replaying captured bytes", async () => {
-    expect(await main(["run", "--interactive", "--", "tool", "two words"])).toBe(0);
+    expect(await main(["run", "--interactive", "--", "/tool", "two words"])).toBe(0);
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
-      executable: "tool", argv: ["two words"], stdio: "inherit",
+      executable: "/tool", argv: ["two words"], stdio: "inherit",
     }));
     expect(process.stdout.write).not.toHaveBeenCalled();
     const stderrChunks = vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array));
@@ -110,7 +125,7 @@ describe("twin run", () => {
 
   it.each([false, true])("selects bounded text receipt with interactive=%s", async interactive => {
     const flags = interactive ? ["--receipt=text", "--interactive"] : ["--receipt=text"];
-    expect(await main(["run", ...flags, "--", "tool", "private-argument"])).toBe(0);
+    expect(await main(["run", ...flags, "--", "/tool", "private-argument"])).toBe(0);
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ argv: ["private-argument"],
       ...(interactive ? { stdio: "inherit" } : {}) }));
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
@@ -127,7 +142,7 @@ describe("twin run", () => {
 
   it("exports the selected receipt while preserving the default JSON frame and cleanup", async () => {
     const destination = join(await htmlRoot(), "receipt.html");
-    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool", "private-argument"])).toBe(0);
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "/tool", "private-argument"])).toBe(0);
     const html = await readFile(destination, "utf8");
     expect(html).toContain("Coverage: INCOMPLETE");
     expect(html).toContain("Global npm installed packages");
@@ -142,7 +157,7 @@ describe("twin run", () => {
 
   it("can export beside text stderr without changing that format", async () => {
     const destination = join(await htmlRoot(), "receipt.html");
-    expect(await main(["run", "--receipt=text", `--receipt-html=${destination}`, "--", "tool"])).toBe(0);
+    expect(await main(["run", "--receipt=text", `--receipt-html=${destination}`, "--", "/tool"])).toBe(0);
     expect(await readFile(destination, "utf8")).toContain("Twin receipt (schema 5)");
     const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
     expect(stderr).toContain("Twin receipt (schema 5)");
@@ -152,7 +167,7 @@ describe("twin run", () => {
   it("refuses an existing destination and still discards the settled copy", async () => {
     const destination = join(await htmlRoot(), "receipt.html");
     await writeFile(destination, "original", "utf8");
-    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "/tool"])).toBe(1);
     expect(await readFile(destination, "utf8")).toBe("original");
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin HTML export failed"), expect.any(Function));
     expect(discard).toHaveBeenCalledOnce();
@@ -160,7 +175,7 @@ describe("twin run", () => {
 
   it("reports a destination failure without skipping command receipt or discard", async () => {
     const destination = join(await htmlRoot(), "missing", "receipt.html");
-    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "/tool"])).toBe(1);
     const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
     expect(stderr).toContain("TWIN-RECEIPT/1");
     expect(stderr).toContain("Twin HTML export failed");
@@ -172,7 +187,7 @@ describe("twin run", () => {
     const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["apply\n"]) as typeof process.stdin);
     apply.mockResolvedValue({ status: "applied", changes: 0 });
     try {
-      expect(await main(["run", "--review", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+      expect(await main(["run", "--review", `--receipt-html=${destination}`, "--", "/tool"])).toBe(1);
     } finally { input.mockRestore(); }
     expect(apply).toHaveBeenCalledOnce();
     expect(discard).toHaveBeenCalledOnce();
@@ -183,7 +198,7 @@ describe("twin run", () => {
     vi.mocked(createTwin).mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve; }));
     const beforeInt = process.listeners("SIGINT");
     const beforeTerm = process.listeners("SIGTERM");
-    const running = main(["run", "--", "tool"]);
+    const running = main(["run", "--", "/tool"]);
     await vi.waitFor(() => expect(createTwin).toHaveBeenCalledOnce());
     const listener = process.listeners(requested).at(-1) as (() => void) | undefined;
     expect(listener).toBeDefined();
@@ -198,9 +213,9 @@ describe("twin run", () => {
     expect(process.listeners("SIGTERM")).toEqual(beforeTerm);
   });
 
-  it.each([["run"], ["run", "--"], ["run", "tool"], ["run", "--", ""],
-    ["run", "--receipt=text", "--receipt=text", "--", "tool"], ["run", "--receipt-html=", "--", "tool"],
-    ["run", "--receipt-html=a", "--receipt-html=b", "--", "tool"], ["run", "--unknown", "--", "tool"]])(
+  it.each([["run"], ["run", "--"], ["run", "/tool"], ["run", "--", ""],
+    ["run", "--receipt=text", "--receipt=text", "--", "/tool"], ["run", "--receipt-html=", "--", "/tool"],
+    ["run", "--receipt-html=a", "--receipt-html=b", "--", "/tool"], ["run", "--unknown", "--", "/tool"]])(
     "rejects missing or malformed command usage: %j",
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
@@ -212,7 +227,7 @@ describe("twin run", () => {
 
   it("returns nonzero and discards after a nonzero command result", async () => {
     run.mockResolvedValue(result(7));
-    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--", "/tool"])).toBe(1);
     expect(inspect).toHaveBeenCalledOnce();
     expect(discard).toHaveBeenCalledOnce();
   });
@@ -223,20 +238,20 @@ describe("twin run", () => {
     { terminationError: "Could not deliver SIGTERM" },
   ])("returns nonzero for incomplete execution despite child exit zero: %j", async difference => {
     run.mockResolvedValue({ ...result(0), ...difference });
-    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--", "/tool"])).toBe(1);
     expect(inspect).toHaveBeenCalledOnce();
     expect(discard).toHaveBeenCalledOnce();
   });
 
   it("attempts discard when the command throws", async () => {
     run.mockRejectedValue(new Error("command failed"));
-    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--", "/tool"])).toBe(1);
     expect(discard).toHaveBeenCalledOnce();
   });
 
   it("bounds and escapes an execution error before its receipt", async () => {
     run.mockRejectedValue(new Error(`\u001b[31m${"x".repeat(4000)}\u202e`));
-    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--receipt=text", "--", "/tool"])).toBe(1);
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain("\\u001b[31m");
     expect(text).toContain("…[truncated]");
@@ -248,7 +263,7 @@ describe("twin run", () => {
   it("frames an unattempted command when interrupted before launch", async () => {
     run.mockRejectedValue(new Error("Interrupted before command launch"));
     inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "ready" });
-    expect(await main(["run", "--", "tool", "secret-argument"])).toBe(1);
+    expect(await main(["run", "--", "/tool", "secret-argument"])).toBe(1);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     const frameStart = bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
     expect(frameStart).toBeGreaterThanOrEqual(0);
@@ -267,7 +282,7 @@ describe("twin run", () => {
   it("renders a no-run text receipt without inventing an attempt", async () => {
     run.mockRejectedValue(new Error("Interrupted before command launch"));
     inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "ready" });
-    expect(await main(["run", "--receipt=text", "--", "tool", "secret-argument"])).toBe(1);
+    expect(await main(["run", "--receipt=text", "--", "/tool", "secret-argument"])).toBe(1);
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain("Coverage: INCOMPLETE");
     expect(text).toContain("Top-level command — not-attempted");
@@ -280,7 +295,7 @@ describe("twin run", () => {
   it("renders unknown execution when a non-ready session has no receipt", async () => {
     run.mockRejectedValue(new Error("receipt unavailable"));
     inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished" });
-    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--receipt=text", "--", "/tool"])).toBe(1);
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain("Top-level command — observation-unavailable");
     expect(text).toContain("Admission: unknown; process start: unknown");
@@ -292,7 +307,7 @@ describe("twin run", () => {
   it("reports unknown command state when a finished session has no receipt", async () => {
     run.mockRejectedValue(new Error("receipt unavailable"));
     inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished" });
-    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--", "/tool"])).toBe(1);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     const frame = bytes.subarray(bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 ")));
     const headerEnd = frame.indexOf(10);
@@ -306,7 +321,7 @@ describe("twin run", () => {
   });
 
   it("frames exact UTF-8 receipt bytes on stderr before discard", async () => {
-    expect(await main(["run", "--", "tool"])).toBe(0);
+    expect(await main(["run", "--", "/tool"])).toBe(0);
     const chunks = vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array));
     const bytes = Buffer.concat(chunks);
     const commandBytes = output.encode("from stderr");
@@ -325,7 +340,7 @@ describe("twin run", () => {
 
   it("treats refused discard as failure", async () => {
     discard.mockResolvedValue({ status: "refused", reason: "guard" });
-    expect(await main(["run", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--", "/tool"])).toBe(1);
     expect(inspect.mock.invocationCallOrder[0]!).toBeLessThan(discard.mock.invocationCallOrder[0]!);
     expect(process.stderr.write).toHaveBeenCalledWith("Twin discard refused: guard\n", expect.any(Function));
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin copy retained: /tmp/twin"), expect.any(Function));
@@ -333,7 +348,7 @@ describe("twin run", () => {
 
   it("does not claim a complete copy after partial discard failure", async () => {
     discard.mockResolvedValue({ status: "failed", reason: "path changed", partialDeletionPossible: true });
-    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--receipt=text", "--", "/tool"])).toBe(1);
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain("Twin discard failed: path changed");
     expect(text).toContain("Twin copy cleanup uncertain at: /tmp/twin");
@@ -343,7 +358,7 @@ describe("twin run", () => {
   it("retains the copy and bounds a thrown discard failure", async () => {
     vi.mocked(createTwin).mockResolvedValue({ workspacePath: `/tmp/\u001b[31mcopy`, run, inspect, apply, discard } as unknown as TwinSession);
     discard.mockRejectedValue(new Error(`\u001b[31m${"x".repeat(4000)}`));
-    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(1);
+    expect(await main(["run", "--receipt=text", "--", "/tool"])).toBe(1);
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain("Twin discard failed: \\u001b[31m");
     expect(text).toContain("Twin copy cleanup uncertain at: /tmp/\\u001b[31mcopy");
@@ -358,7 +373,7 @@ describe("twin run", () => {
       ? { status, reason: `\u001b[31m${"x".repeat(4000)}`, paths: ["file\u202e"] }
       : { status, reason: `\u001b[31m${"x".repeat(4000)}`, partialApplicationPossible: true });
     try {
-      expect(await main(["run", "--review", "--receipt=text", "--", "tool"])).toBe(1);
+      expect(await main(["run", "--review", "--receipt=text", "--", "/tool"])).toBe(1);
     } finally { input.mockRestore(); }
     const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
     expect(text).toContain(`Twin apply ${status}`);
@@ -374,7 +389,7 @@ describe("twin run", () => {
   it("appends its frame after child stderr that imitates a frame", async () => {
     const imitation = Buffer.from("\x1eTWIN-RECEIPT/1 2\n{}\n");
     run.mockResolvedValue({ ...result(0), stderr: { bytes: imitation } });
-    expect(await main(["run", "--", "tool"])).toBe(0);
+    expect(await main(["run", "--", "/tool"])).toBe(0);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     expect(bytes.subarray(0, imitation.length)).toEqual(imitation);
     const payload = Buffer.from(JSON.stringify(receipt), "utf8");
@@ -388,7 +403,7 @@ describe("twin run", () => {
       workspacePath: "/tmp/twin", state: "finished",
       receipt: { ...receipt, files: { coverage: "partial", issues: [{ reason: "x".repeat(9 * 1024 * 1024) }], changes: [] } },
     });
-    expect(await main(["run", "--", "tool"])).toBe(0);
+    expect(await main(["run", "--", "/tool"])).toBe(0);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     expect(bytes.length).toBeLessThan(8 * 1024 * 1024);
     const frameStart = bytes.indexOf(Buffer.from("\x1eTWIN-RECEIPT/1 "));
@@ -407,7 +422,7 @@ describe("twin run", () => {
   it("renders the receipt-limit fallback with command and process evidence in text mode", async () => {
     inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished",
       receipt: { ...receipt, files: { coverage: "partial", issues: [{ reason: "x".repeat(9 * 1024 * 1024) }], changes: [] } } });
-    expect(await main(["run", "--receipt=text", "--", "tool"])).toBe(0);
+    expect(await main(["run", "--receipt=text", "--", "/tool"])).toBe(0);
     const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
     expect(bytes.length).toBeLessThan(32 * 1024);
     const text = bytes.toString("utf8");

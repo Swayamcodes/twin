@@ -96,9 +96,9 @@ issues. Private B identities/references must be unique, owned and resolvable.
 twin/
 packages/
 core/ # clone, diff, receipt logic — the reusable engine
-cli/ # command parsing (Commander) — thin wrapper over core
+cli/ # manual command parsing and PATH resolution — thin wrapper over core
 scenarios/ # bad-agent scripts + scoring harness + adapters
-web/ # (future, Phase 6+) static landing + results viewer
+web/ # landing + results viewer; production export in packages/web/out
 pnpm-workspace.yaml
 
 
@@ -109,11 +109,10 @@ testable in isolation.
 
 ## `core` responsibilities
 
-- **Clone**: copy a project directory to a scratch location, choosing a
-  reflink/copy-on-write strategy where available (macOS APFS, btrfs) and
-  falling back to a plain recursive copy otherwise (the default and only
-  tested path on WSL2/ext4). Includes files git ignores and works in
-  directories with no git repository at all.
+- **Clone**: copy a project directory to a scratch location using ordinary
+  independent file reads and writes, preserving supported modes and relative
+  symlinks. There is no implemented reflink/copy-on-write selection. Includes
+  files git ignores and works in directories with no git repository at all.
 - **Manifest / diff**: inventory project files before and after the run (not
   git) and compare their recorded state, subject to scan coverage and limits.
   Tracked/untracked/ignored/non-git files use the same comparison. Git is used
@@ -568,8 +567,8 @@ deferred.
 ## Windows / WSL2
 
 Development and all testing happen inside WSL2 (Ubuntu, ext4). ext4 has no
-reflink, so the plain-copy fallback is the default and only path exercised
-locally; the reflink/copy-on-write path is planned for implementation and
+reflink. Ordinary independent file copying is the only implemented strategy;
+the reflink/copy-on-write path is planned for implementation and
 future verification in CI on a macOS runner. Native Windows is out of scope
 for v1.
 

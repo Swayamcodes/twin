@@ -1,10 +1,10 @@
-# Current measured comparison
+# Measured comparison checkpoints
 
 The [complete versioned Phase 2 result](phase-2-comparison.json) and its
-[deterministic Markdown rendering](phase-2-comparison.md) contain 39 fresh
+[deterministic Markdown rendering](phase-2-comparison.md) contain 39
 Twin/AgentTX/plain-Git attempts, one for every S1–S13/tool pair, at the
 `c4a4dc1` core baseline. The earlier C/T/R tables below are preserved as
-separate checkpoint evidence; they do not supply the new rows' scores.
+separate checkpoint evidence; they do not supply the complete result's scores.
 
 ## Complete fixed-action comparison
 
@@ -87,47 +87,50 @@ npm's global install with disposable HOME, configuration, cache and prefix.
 S11's harness termination and S9/S10 fake-home or prefix teardown are not
 Twin recovery.
 
-## Twin five-dimension evaluations
+## Earlier Twin five-dimension evaluations — checkpoint `5c165db`
 
 The columns use the independent [rubric dimensions](../SPEC.md#scoring-five-independent-fields-per-scenario).
 `R` denotes an existing retained score. `C` evaluates test-local
 public-CLI assertions; `T` evaluates test-local direct Twin-session
-assertions. C/T rows are current evaluations, not newly retained
+assertions as evaluated at `5c165db`, before the later receipt/process changes.
+C/T rows are historical checkpoint evaluations, not newly retained
 `ToolScore` artifacts, and do not change R rows. Plain Git/direct action
 and AgentTX were unscored at this earlier checkpoint; the complete result
 above is a separate comparison contract.
 
 | Twin attempt | Recovered or preserved | Reported | Blocked before execution | Workspace usable | Boundary accurately described | Attempt assertions |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C1](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L472) |
-| S2 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C2](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L480) |
-| S3 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C3](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L488) |
-| S4 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C4](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L496) |
-| S5 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C5](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L504) |
+| S1 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C1](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L472) |
+| S2 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C2](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L480) |
+| S3 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C3](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L488) |
+| S4 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C4](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L496) |
+| S5 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C5](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L504) |
 | S6 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [frozen score support](../packages/scenarios/src/contract/s6-score-support.ts) |
-| S6 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C6](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L524) |
-| S7 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C7](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L511) |
+| S6 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C6](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L524) |
+| S7 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C7](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L511) |
 | S8 R | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
 | S9 R | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
-| S9 C | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [C9](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L535) |
-| S10 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T10](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L658) |
-| S11 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T11](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L748) |
+| S9 C | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [C9](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L535) |
+| S10 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T10](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L658) |
+| S11 T | `not-recovered` | `not-reported` | `not-blocked` | `usable` | `unknown` | [T11](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L748) |
 | S12 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [frozen score support](../packages/scenarios/src/contract/s12-score-support.ts) |
-| S12 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C12](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L518) |
+| S12 C | `unknown` | `reported` | `not-blocked` | `usable` | `unknown` | [C12](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L518) |
 | S13 R | `unknown` | `unknown` | `not-blocked` | `usable` | `unknown` | [retained score refs](../packages/scenarios/src/s8-s13-score-producer.ts#L258) |
 
-The [common C assertions](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L463)
+The [common C assertions](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L463)
 establish one successful CLI action, complete receipt coverage and unchanged
 original endpoints. C1–C7 and C12 each assert the named effect and exact
 receipt change; C6 asserts all three deletion paths and categories. C9
 asserts successful action output, changed fake-home bytes and receipt
 omission. Together these same-attempt assertions support each C row's
 reporting, `not-blocked` and usability outcome; C9's changed external
-file supports `not-recovered`. [T10](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L658)
+file supports `not-recovered`. [T10](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L658)
 asserts npm success, exact package presence before/after discard, and
-receipt shape and omissions. [T11](../packages/scenarios/test/cli-plain-git-comparison.test.ts#L748)
+receipt shape and omissions. [T11](https://github.com/Swayamcodes/twin/blob/5c165db/packages/scenarios/test/cli-plain-git-comparison.test.ts#L748)
 asserts process identity and survival after action/discard, plus receipt
-shape and omissions. Those assertions support their known outcomes. R
+shape and omissions. Those checkpoint assertions supported their recorded outcomes; current tests
+report global-package changes and same-group termination instead. The older
+outcomes are unchanged. R
 rows carry their existing attempt-local evidence references.
 
 ## Limits and remaining gaps
