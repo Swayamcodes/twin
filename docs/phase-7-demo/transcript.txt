@@ -1,0 +1,52 @@
+Scripted demonstration · published @twin-cli/cli@0.1.0 · no AI agent
+$ git check-ignore ignored-input.txt
+ignored-input.txt
+$ cat message.txt  # original before run
+before
+$ twin run --receipt=text --review -- node demo.cjs
+Ignored input in copy: "demo-only\n"
+Copy edit: message.txt = "after\n"
+Twin receipt (schema 5)
+Coverage: COMPLETE for stated observations
+
+Files — complete
+  modified [tracked] message.txt
+  No file observation issues reported.
+
+Project dependency declarations — complete
+  No declaration changes observed.
+Project lockfiles — complete
+  No lockfile changes observed.
+  No dependency observation issues reported.
+
+Global npm installed packages — complete (env-prefix)
+  No global package changes observed.
+  No global npm observation issues reported.
+
+Outside-project watches — observations only; no rollback
+  .gitconfig: unchanged; missing → missing
+  .npmrc: unchanged; missing → missing
+  .bashrc: unchanged; missing → missing
+  .zshrc: unchanged; missing → missing
+  .codex/config.toml: unchanged; missing → missing
+  .claude/settings.json: unchanged; missing → missing
+  .gemini/settings.json: unchanged; missing → missing
+
+Top-level command — exited
+  Admission: admitted; process start: confirmed
+  Executable: node; arguments: omitted (1 counted)
+  Exit code: 0; signal: none observed; timeout: not observed
+  Nested commands: not observed.
+
+Process group — observed lifecycle only
+  Direct child: start confirmed; settlement observed
+  Group after direct-child exit: absent; final group: absent
+  Captured pipes: closed
+  No Twin termination signal attempt observed.
+  Escaped descendants: not observed. Group absence does not establish their absence.
+  Twin discard is clone cleanup; outside-project recovery is not established by this receipt.
+Twin review: type apply or discard, then Enter (EOF or another answer retains copy): apply
+Twin apply applied: 1 changes
+$ cat message.txt  # original after apply
+after
+twin exit: 0; direct child/group absent; copy removed

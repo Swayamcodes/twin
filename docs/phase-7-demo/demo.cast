@@ -1,0 +1,13 @@
+{"version": 2, "width": 100, "height": 32, "title": "Twin 0.1.0 scripted review/apply demonstration", "env": {"TERM": "dumb"}}
+[5.7e-05, "o", "Scripted demonstration · published @twin-cli/cli@0.1.0 · no AI agent\r\n"]
+[0.000135, "o", "$ git check-ignore ignored-input.txt\r\nignored-input.txt\r\n"]
+[0.000142, "o", "$ cat message.txt  # original before run\r\nbefore\r\n"]
+[0.600448, "o", "$ twin run --receipt=text --review -- node demo.cjs\r\n"]
+[0.920248, "o", "Ignored input in copy: \"demo-only\\n\"\r\nCopy edit: message.txt = \"after\\n\"\r\n"]
+[0.921538, "o", "Twin receipt (schema 5)\r\nCoverage: COMPLETE for stated observations\r\n\r\nFiles — complete\r\n  modified [tracked] message.txt\r\n  No file observation issues reported.\r\n\r\nProject dependency declarations — complete\r\n  No declaration changes observed.\r\nProject lockfiles — complete\r\n  No lockfile changes observed.\r\n  No dependency observation issues reported.\r\n\r\nGlobal npm installed packages — complete (env-prefix)\r\n  No global package changes observed.\r\n  No global npm observation issues reported.\r\n\r\nOutside-project watches — observations only; no rollback\r\n  .gitconfig: unchanged; missing → missing\r\n  .npmrc: unchanged; missing → missing\r\n  .bashrc: unchanged; missing → missing\r\n  .zshrc: unchanged; missing → missing\r\n  .codex/config.toml: unchanged; missing → missing\r\n  .claude/settings.json: unchanged; missing → missing\r\n  .gemini/settings.json: unchanged; missing → missing\r\n\r\nTop-level command — exited\r\n  Admission: admitted; process start: confirmed\r\n  Executable: node; arguments: omitted (1 counted)\r\n  Exit code: 0; signal: none observed; timeout: not observed\r\n  Nested commands: not observed.\r\n\r\nProcess group — observed lifecycle only\r\n  Direct child: start confirmed; settlement observed\r\n  Group after direct-child exit: absent; final group: absent\r\n  Captured pipes: closed\r\n  No Twin termination signal attempt observed.\r\n  Escaped descendants: not observed. Group absence does not establish their absence.\r\n  Twin discard is clone cleanup; outside-project recovery is not established by this receipt.\r\n"]
+[0.922917, "o", "Twin review: type apply or discard, then Enter (EOF or another answer retains copy): "]
+[1.923785, "i", "apply\n"]
+[1.92408, "o", "apply\r\n"]
+[2.083567, "o", "Twin apply applied: 1 changes\r\n"]
+[2.104718, "o", "$ cat message.txt  # original after apply\r\nafter\r\n"]
+[2.104769, "o", "twin exit: 0; direct child/group absent; copy removed\r\n"]
