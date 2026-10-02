@@ -2,6 +2,8 @@
 
 Twin runs a command in a complete copy of the current project, including Git-ignored files and projects without Git. It observes changes in the copy, prints a receipt, and can discard the copy or apply reviewed changes to the original. Git classifies files in the receipt; it does not decide what Twin copies.
 
+Read the [public write-up](docs/twin-public-write-up.md) for the workflow, evidence, limits, and scripted demo.
+
 ## Landing and results pages
 
 The Phase 7 web app lives in `packages/web`. From this checkout, run `pnpm install --frozen-lockfile` and `pnpm --filter @twin-cli/web dev` to preview it, or `pnpm --filter @twin-cli/web build` for a static production export in `packages/web/out`. The results page reads the committed [Phase 6 JSON](docs/phase-6-results-2297bf07/comparison.json) at build time. It displays that retained attempt set, not the historical Phase 2 file or a fresh hosted run. The terminal playback is a separate, unpaid fixed-command demonstration with actual text receipt output.
