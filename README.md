@@ -12,6 +12,8 @@ The landing/results checkpoint is functionally complete; visual polish is deferr
 
 ## Build and run from this checkout
 
+The npm release is prepared as `@twin-cli/core` and `@twin-cli/cli` version `0.1.0`, under the [MIT license](LICENSE). These packages have not been published. After publication, install with `npm install --global @twin-cli/cli@0.1.0` or run `npx --package=@twin-cli/cli@0.1.0 twin --help`. The [release guide](docs/npm-release.md) records local packing, installation verification, confirmed scope ownership, and the required core-before-CLI publication order.
+
 Use Node 24 and the repository-pinned pnpm 12.6.0. From this repository:
 
 ```sh
