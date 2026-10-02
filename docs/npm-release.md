@@ -1,9 +1,13 @@
-# npm release preparation
+# npm 0.1.0 release
 
-Prepared from `d7c20429c9342956bc8785126f050310188e928a`, with release wiring
-changes in the working tree. Nothing has been published or tagged.
-The rebuild after CLI PATH support is based on
-`6528363a8d8d9d4a757e5aaf9491aa2b6207b200`.
+`@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm.
+Publication and the registry-installed smoke are recorded at checkout
+`c7f4bae0e5a0ccad9cbc3f140789fde262e8a0bf`. This documentation checkpoint does
+not republish packages or create Git tags.
+
+Preparation began at `d7c20429c9342956bc8785126f050310188e928a`; the rebuild
+including CLI PATH support used `6528363a8d8d9d4a757e5aaf9491aa2b6207b200`.
+The local packing instructions below remain available for checkout verification.
 
 ## Confirmed release decisions
 
@@ -14,22 +18,43 @@ and in each package root; both manifests declare `license: MIT`.
 
 The user confirmed npm identity `swayamshinde` and reported that
 `npm org ls twin-cli` confirms owner access. This supersedes the earlier local
-`ENEEDAUTH` observation. On 2026-10-02, public registry queries returned 404 for
-both scoped packages; the unscoped `twin-cli` name is occupied by another project.
-Recheck identity, org access, and version availability immediately before any
-authorized publication. Packing and local installation do not publish a package.
+`ENEEDAUTH` observation. During preparation, public registry queries on
+2026-10-02 returned 404 for both scoped packages; the unscoped `twin-cli` name
+was occupied by another project. Those observations predate the completed scoped
+publication. Packing and local installation alone do not publish a package.
 
-## Install commands — available only after publication
+## Install the published release
 
-These commands are intended for the published `0.1.0` packages. They are not
-advertised as currently available:
+Requires Node.js 24.2 or later. These commands use the public `0.1.0` packages:
 
 ```sh
 npm install --global @twin-cli/cli@0.1.0
 npx --package=@twin-cli/cli@0.1.0 twin --help
-npx --package=@twin-cli/cli@0.1.0 twin run -- /absolute/path/to/command arg1 arg2
+npx --package=@twin-cli/cli@0.1.0 twin run -- node script.js
 npm install @twin-cli/core@0.1.0
 ```
+
+## Published-release verification
+
+The user confirmed both public packages, a successful global installation, and
+successful npx help. A registry-installed fixed Node run using a bare `node`
+name, `--receipt=text`, and `--receipt-html=<new-file>` exited zero, reported
+the copy modification, and preserved the original baseline. This is a real
+registry-installed run, separate from the earlier local-tarball smoke below.
+These execution results are user-reported; no additional smoke run is performed
+for this documentation checkpoint. Anonymous read-only registry queries also
+confirm the two versions, MIT licenses, CLI executable and exact core dependency.
+
+**Expected incomplete coverage:** the registry smoke fixture had no `package.json`
+and no explicit npm prefix. Dependency declaration coverage was therefore
+incomplete; global npm coverage was unavailable with `prefix-unset`. Exit zero
+and the reported file modification do not imply complete observation coverage.
+
+**Deferred text issue:** `prefix-unset` appeared repeatedly in the smoke's text
+receipt. This repetition is recorded for follow-up and is not fixed here.
+Neither the missing manifest nor the unset prefix is evidence of a failed command
+or a recovered global-package change. Existing outside-project, process-group,
+apply, and compatibility limits remain unchanged, including Claude's budget hold.
 
 ## Package arrangement
 
@@ -112,11 +137,13 @@ export containing the same observation. Verify the printed child PID is absent,
 the original project is unchanged, and Twin removed its scratch copy. Remove the
 owned fixture only after those checks; retain it if settlement is uncertain.
 
-## Publication order — after prerequisites and explicit authorization
+## Historical 0.1.0 publication procedure
 
-The following commands are documented for a future authorized publication; they
-were not executed during this checkpoint. Publish the inspected, licensed
-tarballs, starting with core:
+The 0.1.0 release is complete. Preparation documented core-before-CLI order;
+the commands below are retained as that checkpoint's procedure, not instructions
+to republish 0.1.0 or a claim that these exact commands were used. Future releases
+require newly authorized versions and inspected tarballs. No publication commands
+are executed by this documentation checkpoint:
 
 ```sh
 npm whoami --registry=https://registry.npmjs.org
@@ -129,7 +156,7 @@ npm view @twin-cli/cli@0.1.0 version bin dependencies --json --registry=https://
 
 Account policy may require an interactive OTP or an approved publishing token.
 Supply credentials through npm's normal authentication flow, not tracked files.
-Publication still requires explicit authorization, a current identity/access
-check, and confirmation that neither `0.1.0` version has been published since
-preparation. No publication, tagging, or credential changes are part of this
-checkpoint.
+Any future publication requires explicit authorization, a current identity/access
+check, and confirmation that its target versions are not already published.
+The existing 0.1.0 versions must not be republished. No publication, tagging,
+or credential changes are part of this documentation checkpoint.

@@ -10,9 +10,21 @@ The landing/results checkpoint is functionally complete; visual polish is deferr
 
 **A copy is a snapshot, not an OS sandbox.** The command runs with the caller's permissions. An absolute path to the original, a home-directory file, or another path outside the copy can still be changed. Twin observes only its documented outside-project watch paths and configured global npm prefix; it does not roll back external changes. Its process-group settlement does not prove that a descendant which escapes the group has stopped. See the [architecture and limits](ARCHITECTURE.md#documented-limits-known-from-step-13-findings-and-reasoning).
 
-## Build and run from this checkout
+## Install and run
 
-The npm release is prepared as `@twin-cli/core` and `@twin-cli/cli` version `0.1.0`, under the [MIT license](LICENSE). These packages have not been published. After publication, install with `npm install --global @twin-cli/cli@0.1.0` or run `npx --package=@twin-cli/cli@0.1.0 twin --help`. The [release guide](docs/npm-release.md) records local packing, installation verification, confirmed scope ownership, and the required core-before-CLI publication order.
+`@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm under the [MIT license](LICENSE). The CLI requires Node.js 24.2 or later:
+
+```sh
+npm install --global @twin-cli/cli@0.1.0
+twin --help
+twin run -- node script.js
+# Or use npx without a global install:
+npx --package=@twin-cli/cli@0.1.0 twin --help
+```
+
+For the reusable engine, install `npm install @twin-cli/core@0.1.0`. The [release record](docs/npm-release.md) documents publication, registry-install verification, and the smoke check's expected incomplete coverage and repeated `prefix-unset` text issue.
+
+## Build and run from this checkout
 
 Use Node 24 and the repository-pinned pnpm 12.6.0. From this repository:
 

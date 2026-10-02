@@ -6,7 +6,7 @@ It supports reviewed apply and guarded discard. Requires Node.js 24.2 or later.
 
 Licensed under MIT; see [LICENSE](LICENSE).
 
-The following install command will be available only after publication:
+`@twin-cli/core@0.1.0` is publicly available on npm:
 
 ```sh
 npm install @twin-cli/core@0.1.0
@@ -17,5 +17,5 @@ permissions. Outside-project observations do not provide rollback, and process
 group settlement does not establish the absence of escaped descendants.
 
 See the [repository](https://github.com/Swayamcodes/twin) for the public API,
-architecture, observation limits, and measured compatibility. Release preparation
-is underway; this README does not claim that the package has been published.
+architecture, observation limits, and measured compatibility. The [release record](https://github.com/Swayamcodes/twin/blob/main/docs/npm-release.md)
+includes publication and registry-install verification.
