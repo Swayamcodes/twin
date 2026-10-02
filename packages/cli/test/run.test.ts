@@ -1,6 +1,8 @@
 /// <reference types="node" />
 
-import { rmdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
@@ -13,6 +15,12 @@ const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
 const apply = vi.fn();
+const htmlRoots: string[] = [];
+async function htmlRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "twin-html-test-"));
+  htmlRoots.push(root);
+  return root;
+}
 const receipt: MinimalReceipt = {
   schemaVersion: 5,
   command: { coverage: "top-level-only", nestedCommands: "not-observed", admitted: true,
@@ -55,6 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  for (const root of htmlRoots.splice(0)) await rm(root, { recursive: true, force: true });
   for (const [options] of vi.mocked(createTwin).mock.calls) {
     try { await rmdir(options.scratchParent); }
     catch (error: unknown) {
@@ -116,6 +125,59 @@ describe("twin run", () => {
     else expect(bytes.subarray(0, output.encode("from stderr").length)).toEqual(Buffer.from(output.encode("from stderr")));
   });
 
+  it("exports the selected receipt while preserving the default JSON frame and cleanup", async () => {
+    const destination = join(await htmlRoot(), "receipt.html");
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool", "private-argument"])).toBe(0);
+    const html = await readFile(destination, "utf8");
+    expect(html).toContain("Coverage: INCOMPLETE");
+    expect(html).toContain("Global npm installed packages");
+    expect(html).toContain("Top-level command — exited");
+    expect(html).not.toContain("private-argument");
+    const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
+    const payload = Buffer.from(JSON.stringify(receipt), "utf8");
+    expect(bytes).toEqual(Buffer.concat([Buffer.from("from stderr"),
+      Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"), payload, Buffer.from("\n")]));
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
+  it("can export beside text stderr without changing that format", async () => {
+    const destination = join(await htmlRoot(), "receipt.html");
+    expect(await main(["run", "--receipt=text", `--receipt-html=${destination}`, "--", "tool"])).toBe(0);
+    expect(await readFile(destination, "utf8")).toContain("Twin receipt (schema 5)");
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("Twin receipt (schema 5)");
+    expect(stderr).not.toContain("TWIN-RECEIPT/1");
+  });
+
+  it("refuses an existing destination and still discards the settled copy", async () => {
+    const destination = join(await htmlRoot(), "receipt.html");
+    await writeFile(destination, "original", "utf8");
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+    expect(await readFile(destination, "utf8")).toBe("original");
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin HTML export failed"), expect.any(Function));
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
+  it("reports a destination failure without skipping command receipt or discard", async () => {
+    const destination = join(await htmlRoot(), "missing", "receipt.html");
+    expect(await main(["run", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("TWIN-RECEIPT/1");
+    expect(stderr).toContain("Twin HTML export failed");
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
+  it("continues review and apply after an HTML export failure", async () => {
+    const destination = join(await htmlRoot(), "missing", "receipt.html");
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["apply\n"]) as typeof process.stdin);
+    apply.mockResolvedValue({ status: "applied", changes: 0 });
+    try {
+      expect(await main(["run", "--review", `--receipt-html=${destination}`, "--", "tool"])).toBe(1);
+    } finally { input.mockRestore(); }
+    expect(apply).toHaveBeenCalledOnce();
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
   it.each(["SIGINT", "SIGTERM"] as const)("handles %s during startup and restores listeners", async requested => {
     let finishCreate!: (session: TwinSession) => void;
     vi.mocked(createTwin).mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve; }));
@@ -137,13 +199,14 @@ describe("twin run", () => {
   });
 
   it.each([["run"], ["run", "--"], ["run", "tool"], ["run", "--", ""],
-    ["run", "--receipt=text", "--receipt=text", "--", "tool"], ["run", "--unknown", "--", "tool"]])(
+    ["run", "--receipt=text", "--receipt=text", "--", "tool"], ["run", "--receipt-html=", "--", "tool"],
+    ["run", "--receipt-html=a", "--receipt-html=b", "--", "tool"], ["run", "--unknown", "--", "tool"]])(
     "rejects missing or malformed command usage: %j",
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
       expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Invalid Twin arguments"));
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] [--review] --"));
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] [--receipt-html=<file>] [--review] --"));
     },
   );
 

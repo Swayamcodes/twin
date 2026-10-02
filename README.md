@@ -29,6 +29,8 @@ node /path/to/twin/packages/cli/dist/index.js run -- /absolute/path/to/command a
 
 The default run captures command output, writes it to the usual streams, prints a framed JSON receipt on stderr, and discards the copy after confirmed settlement. The receipt labels file changes as tracked, untracked, ignored, or unclassified and gives bounded dependency, command, process, and watched-path observations. Incomplete coverage remains explicit. `--receipt=text` selects a bounded human receipt. `--interactive` inherits stdin, stdout and stderr so a headless command can interact with the terminal; command output is then not captured, and Twin does not allocate a PTY:
 
+Add `--receipt-html=/path/to/receipt.html` before `--` to export the same bounded observations as a standalone, script-free HTML file while retaining the selected JSON or text output on stderr. Twin refuses to overwrite an existing destination. A failed export exits nonzero while Twin still handles review or discard. The HTML shares the text receipt's presentation limits; use the JSON receipt for omitted entries.
+
 ```sh
 node /path/to/twin/packages/cli/dist/index.js run --interactive --receipt=text -- /absolute/path/to/command arg1 arg2
 ```

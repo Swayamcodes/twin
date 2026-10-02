@@ -9,12 +9,14 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
 import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
+import { exportReceiptHtml } from "./receipt-html.js";
 
-const help = `Usage: twin run [--interactive] [--receipt=text] [--review] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
+--receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
 --review prints the receipt, then asks on stdin to apply or discard in this invocation.
 EOF, interruption, or another answer retains the copy for manual inspection.
 Retained copies cannot be applied by a later twin CLI invocation.
@@ -92,7 +94,7 @@ function write(stream: NodeJS.WriteStream, chunk: string | Uint8Array): Promise<
   });
 }
 
-async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): Promise<void> {
+function selectedReceipt(receipt: MinimalReceipt): MinimalReceipt {
   const limit = 8 * 1024 * 1024;
   let estimatedBytes = 2048;
   for (const collection of [receipt.files.issues, receipt.files.changes, receipt.watch,
@@ -104,13 +106,14 @@ async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): P
     }
     if (estimatedBytes > limit) break;
   }
-  let selected = estimatedBytes > limit ? unavailableReceipt("receipt-limit", receipt.command, receipt.process) : receipt;
-  let payload = Buffer.from(JSON.stringify(selected), "utf8");
-  if (payload.length > limit) {
-    selected = unavailableReceipt("receipt-limit", receipt.command, receipt.process);
-    payload = Buffer.from(JSON.stringify(selected), "utf8");
-  }
-  if (format === "text") { await write(process.stderr, renderReceiptText(selected)); return; }
+  const selected = estimatedBytes > limit ? unavailableReceipt("receipt-limit", receipt.command, receipt.process) : receipt;
+  return Buffer.byteLength(JSON.stringify(selected), "utf8") > limit
+    ? unavailableReceipt("receipt-limit", receipt.command, receipt.process) : selected;
+}
+
+async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): Promise<void> {
+  if (format === "text") { await write(process.stderr, renderReceiptText(receipt)); return; }
+  const payload = Buffer.from(JSON.stringify(receipt), "utf8");
   await write(process.stderr, Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"));
   await write(process.stderr, payload);
   await write(process.stderr, "\n");
@@ -128,10 +131,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const interactive = flags.includes("--interactive");
   const review = flags.includes("--review");
   const format = flags.includes("--receipt=text") ? "text" : "json";
-  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review")
+  const htmlFlags = flags.filter(flag => flag.startsWith("--receipt-html="));
+  const htmlDestination = htmlFlags[0]?.slice("--receipt-html=".length);
+  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review" && !flag.startsWith("--receipt-html="))
       || flags.filter(flag => flag === "--interactive").length > 1
       || flags.filter(flag => flag === "--review").length > 1
       || flags.filter(flag => flag === "--receipt=text").length > 1
+      || htmlFlags.length > 1 || (htmlFlags.length === 1 && !htmlDestination)
       || argv.length < separator + 2 || !argv[separator + 1]) {
     process.stderr.write("Invalid Twin arguments. Expected one command after --.\n");
     process.stderr.write(help);
@@ -173,8 +179,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       if (session) {
         try {
           const inspection = session.inspect();
-          await writeReceipt(inspection.receipt ?? unavailableReceipt("no-run", fallbackCommand(inspection.state === "ready"),
-            unavailableProcessReceipt(inspection.state === "ready")), format);
+          const receipt = selectedReceipt(inspection.receipt ?? unavailableReceipt("no-run", fallbackCommand(inspection.state === "ready"),
+            unavailableProcessReceipt(inspection.state === "ready")));
+          await writeReceipt(receipt, format);
+          if (htmlDestination) {
+            try { await exportReceiptHtml(receipt, htmlDestination); }
+            catch (error) {
+              exitCode = 1;
+              await write(process.stderr, `Twin HTML export failed: ${errorText(error)}\n`);
+            }
+          }
           if (review && inspection.state === "finished" && !interruption.signal.aborted) {
             const choice = await reviewChoice(interruption.signal);
             if (choice === "apply" && !interruption.signal.aborted) {
