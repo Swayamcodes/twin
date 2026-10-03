@@ -62,6 +62,32 @@ observed short full UI conversation and review/discard flow for this version
 and terminal. It did not test a project edit/apply or published Twin 0.1.0 with
 the new timeout option; published 0.1.0 does not expose that option.
 
+## Manual full UI edit/apply follow-up
+
+The user observed a full interactive edit/apply in a disposable Git fixture
+using the built, unreleased checkout CLI:
+
+```sh
+node /home/lenovo/dev/twin/packages/cli/dist/index.js run --interactive --receipt=text --review --timeout-ms=300000 -- codex
+```
+
+Codex was asked to replace `message.txt` with exactly `after\n` and change no
+other file. While review was waiting, the original still contained `before\n`.
+The schema-5 receipt reported one tracked modification, `message.txt`, exit 0
+without timeout, a settled direct child, and an absent final original process
+group. The user chose `apply`; Twin reported `Twin apply applied: 1 changes`.
+The original afterward contained `after\n`, and Git diff confirmed the
+`before` → `after` change. Full interactive edit/apply is verified for this
+manual attempt.
+
+The receipt also reported an outside-project `.codex/config.toml` change;
+Twin does not restore outside-project files. Codex printed “Any running work
+continues”; actual background-task termination remains unverified. The capture
+did not independently display the agent version, so the earlier conversation
+test's version is not attributed to this attempt. Scratch removal was not
+checked for this attempt. This verifies checkout behavior, not published Twin
+0.1.0, which does not expose `--timeout-ms`.
+
 ## Automation-terminal full UI attempts
 
 Separate automation-terminal attempts used Codex `0.160.0` with `TERM=dumb`.
@@ -82,4 +108,10 @@ alone does not verify a conversation.
 
 ## Scope and limits
 
-The earlier checkpoint comprises three live `codex exec` executions on one installed version and platform, not ordinary automated tests or a claim about other versions. `--interactive` inherited the caller's terminal descriptors for those headless runs; Twin did not allocate a PTY, and those runs did not test the full Codex TUI. The manual full UI follow-up and unsuccessful automation-terminal attempts above have separate versions, environments, and outcomes. Twin observes the top-level command and its original process group, while nested commands, background task termination, and escaped descendants remain outside its confirmed coverage. The usual Twin review/apply conflict and partial-failure limits still apply; see the [Phase 5 acceptance review](phase-5-acceptance.md) for the acceptance decision.
+Background tasks escaping the original process group may continue after the
+agent UI exits and are not reliably tracked or terminated by Twin. The
+[current S11 test](scenario-catalog.md) verifies termination and receipt
+reporting for an identified same-group worker, not escaped descendants.
+Further background-task testing is optional follow-up, not a release blocker.
+
+The earlier checkpoint comprises three live `codex exec` executions on one installed version and platform, not ordinary automated tests or a claim about other versions. `--interactive` inherited the caller's terminal descriptors for those headless runs; Twin did not allocate a PTY, and those runs did not test the full Codex TUI. The manual full UI conversation, manual edit/apply, and unsuccessful automation-terminal attempts above are separate observations; the edit/apply capture did not independently display an agent version. Twin observes the top-level command and its original process group, while nested commands, background task termination, and escaped descendants remain outside its confirmed coverage. The usual Twin review/apply conflict and partial-failure limits still apply; see the [Phase 5 acceptance review](phase-5-acceptance.md) for the acceptance decision.

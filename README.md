@@ -14,6 +14,13 @@ The [final Phase 7 acceptance review](docs/phase-7-acceptance.md) closes the app
 
 **A copy is a snapshot, not an OS sandbox.** The command runs with the caller's permissions. An absolute path to the original, a home-directory file, or another path outside the copy can still be changed. Twin observes only its documented outside-project watch paths and configured global npm prefix; it does not roll back external changes. Its process-group settlement does not prove that a descendant which escapes the group has stopped. See the [architecture and limits](ARCHITECTURE.md#documented-limits-known-from-step-13-findings-and-reasoning).
 
+Background tasks that escape the original process group may continue after the
+agent UI exits and are not reliably tracked or terminated by Twin. The
+[current S11 test](docs/scenario-catalog.md) verifies termination and receipt
+reporting for an identified worker that stays in the same process group; it
+does not establish handling of escaped background tasks. Further background-task
+testing is optional follow-up, not a release blocker.
+
 ## Install and run
 
 `@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm under the [MIT license](LICENSE). The CLI requires Node.js 24.2 or later:
@@ -74,7 +81,7 @@ The [retained version-one JSON](docs/phase-6-results-2297bf07/comparison.json) a
 
 Every row reasons independently about **recovered or preserved**, **reported**, **blocked before execution**, **workspace usable**, and **boundary accurately described**. `unknown` is an evidence limit, not a failure or a pass. There is no total, ranking, or inferred winner. Action output is separate from a tool's report; for example, plain Git's S6 removal text earns no reporting credit. The [comparison explanation](docs/measured-comparison.md) and [scenario catalog](docs/scenario-catalog.md) give the conditions and limits behind these observations.
 
-The [Codex/Claude compatibility matrix](docs/compatibility-matrix.md) covers plain-command use. Codex `exec` was verified for the recorded version with an ignored input, a Git apply, a non-Git discard, and an interruption. Claude Code's launch, receipt, settlement, and discard were verified, but insufficient API credit stopped model-backed editing and apply after an edit. The funded Claude rerun is optional and on an indefinite budget hold; those cells remain unverified. Neither check establishes support for a full terminal UI.
+The [Codex/Claude compatibility matrix](docs/compatibility-matrix.md) covers plain-command use. Codex `exec` was verified for the recorded version with an ignored input, a Git apply, a non-Git discard, and an interruption. Separate user-observed manual attempts verified a full Codex UI conversation and interactive edit/apply through the built, unreleased checkout CLI, not published Twin 0.1.0; the edit/apply capture did not independently display the agent version. Background-task termination remains unverified. Claude Code's launch, receipt, settlement, and discard were verified, but insufficient API credit stopped model-backed editing and apply after an edit. The funded Claude rerun is optional and on an indefinite budget hold; model-backed interactive testing remains unverified.
 
 ## Reproduce and verify
 
