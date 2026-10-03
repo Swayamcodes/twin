@@ -11,9 +11,15 @@ import { createTwin, unavailableProcessReceipt, type CommandReceipt, type Minima
 import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
 import { resolveExecutable } from "./executable.js";
+import { initConfig, loadConfig, validTimeout } from "./config.js";
 
 const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
+twin init saves project-root twin.config.json without launching a command.
+Bare twin and commandless twin run use that config.
+Aliases: -i = --interactive, -r = --review, -t text = --receipt=text.
+--no-interactive and --no-review override saved true values; conflicting flags are rejected.
+Explicit options override config; a command after -- replaces the saved command.
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 Use a bare executable name (node) or an absolute executable path (/usr/bin/node).
 Bare names use the command's PATH in order; missing PATH has no candidates.
@@ -131,26 +137,76 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 0;
   }
 
-  const separator = argv.indexOf("--", 1);
-  const flags = argv.slice(1, separator < 0 ? undefined : separator);
-  const interactive = flags.includes("--interactive");
-  const timeoutFlags = flags.filter(flag => flag.startsWith("--timeout-ms="));
-  const timeoutValue = timeoutFlags[0]?.slice("--timeout-ms=".length);
-  const timeoutMs = timeoutValue === undefined ? (interactive ? 3600000 : 60000) : Number(timeoutValue);
-  const review = flags.includes("--review");
-  const format = flags.includes("--receipt=text") ? "text" : "json";
-  const htmlFlags = flags.filter(flag => flag.startsWith("--receipt-html="));
-  const htmlDestination = htmlFlags[0]?.slice("--receipt-html=".length);
-  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review" && !flag.startsWith("--receipt-html=") && !flag.startsWith("--timeout-ms="))
-      || flags.filter(flag => flag === "--interactive").length > 1
-      || flags.filter(flag => flag === "--review").length > 1
-      || flags.filter(flag => flag === "--receipt=text").length > 1
-      || timeoutFlags.length > 1 || (timeoutValue !== undefined && !/^[0-9]+$/.test(timeoutValue))
-      || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000
-      || htmlFlags.length > 1 || (htmlFlags.length === 1 && !htmlDestination)
-      || argv.length < separator + 2 || !argv[separator + 1]) {
-    process.stderr.write("Invalid Twin arguments. Expected one command after --.\n");
-    process.stderr.write(help);
+  if (argv[0] === "init" && argv.length === 1) {
+    const lines = createInterface({ input: process.stdin, terminal: false });
+    const iterator = lines[Symbol.asyncIterator]();
+    const cancellation = new AbortController();
+    const cancel = (): void => { cancellation.abort(); lines.close(); };
+    process.on("SIGINT", cancel);
+    process.on("SIGTERM", cancel);
+    try {
+      await initConfig(process.cwd(), async prompt => {
+        await write(process.stderr, prompt);
+        const next = await iterator.next();
+        if (cancellation.signal.aborted) throw new Error("Twin init cancelled: interrupted; no config published.");
+        if (next.done) throw new Error("Twin init cancelled: input ended; no config saved.");
+        return next.value;
+      }, cancellation.signal);
+      await write(process.stdout, "Saved twin.config.json. Run twin from this project directory. Saved one-shot tasks repeat unless a command after -- overrides them.\n");
+      return 0;
+    } catch (error) {
+      await write(process.stderr, `${errorText(error)}\n`);
+      return 2;
+    } finally {
+      lines.close();
+      process.off("SIGINT", cancel);
+      process.off("SIGTERM", cancel);
+    }
+  }
+
+  let interactive: boolean;
+  let review: boolean;
+  let format: "json" | "text";
+  let timeoutMs: number;
+  let htmlDestination: string | undefined;
+  let command: readonly string[];
+  try {
+    const input = argv[0] === "run" ? argv.slice(1) : argv;
+    const separator = input.indexOf("--");
+    const flags = input.slice(0, separator < 0 ? undefined : separator);
+    const options: { interactive?: boolean; review?: boolean; receipt?: "json" | "text"; timeoutMs?: number } = {};
+    const seen = new Set<string>();
+    for (let i = 0; i < flags.length; i++) {
+      const flag = flags[i]!;
+      let key: string;
+      if (flag === "--interactive" || flag === "-i" || flag === "--no-interactive") { key = "interactive"; options.interactive = flag !== "--no-interactive"; }
+      else if (flag === "--review" || flag === "-r" || flag === "--no-review") { key = "review"; options.review = flag !== "--no-review"; }
+      else if (flag === "--receipt=text" || flag === "--receipt=json" || flag === "-t") {
+        key = "receipt";
+        const value = flag === "-t" ? flags[++i] : flag.slice("--receipt=".length);
+        if (value !== "text" && value !== "json") throw new Error("Invalid Twin receipt option.");
+        options.receipt = value;
+      } else if (flag.startsWith("--timeout-ms=")) {
+        key = "timeout";
+        const value = flag.slice("--timeout-ms=".length);
+        if (!/^[0-9]+$/.test(value) || !validTimeout(Number(value))) throw new Error("Invalid Twin timeout.");
+        options.timeoutMs = Number(value);
+      } else if (flag.startsWith("--receipt-html=")) {
+        key = "html"; htmlDestination = flag.slice("--receipt-html=".length);
+        if (!htmlDestination) throw new Error("Invalid Twin HTML destination.");
+      } else throw new Error("Invalid Twin arguments.");
+      if (seen.has(key)) throw new Error("Invalid Twin arguments: duplicate option.");
+      seen.add(key);
+    }
+    const config = await loadConfig(process.cwd());
+    command = separator < 0 ? config?.command ?? [] : input.slice(separator + 1);
+    if (!command.length || !command[0]) throw new Error("No command selected. Run twin init or twin run -- <executable> [args...].");
+    interactive = options.interactive ?? config?.interactive ?? false;
+    review = options.review ?? config?.review ?? false;
+    format = options.receipt ?? config?.receipt ?? "json";
+    timeoutMs = options.timeoutMs ?? config?.timeoutMs ?? (interactive ? 3600000 : 60000);
+  } catch (error) {
+    await write(process.stderr, `${errorText(error)}\n`);
     return 2;
   }
 
@@ -172,9 +228,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
       session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-      const executable = await resolveExecutable(argv[separator + 1]!, env, session.workspacePath);
+      const executable = await resolveExecutable(command[0]!, env, session.workspacePath);
       if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
-      const result = await session.run({ executable, argv: argv.slice(separator + 2), env, timeoutMs,
+      const result = await session.run({ executable, argv: command.slice(1), env, timeoutMs,
         interruptSignal: interruption.signal,
         ...(interactive ? { stdio: "inherit" as const } : {}) });
       if (!interactive) {

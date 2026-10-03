@@ -1,12 +1,17 @@
 /// <reference types="node" />
 
-import { mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { main } from "../src/index.js";
+
+vi.mock("node:fs/promises", async importOriginal => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original, link: vi.fn(original.link) };
+});
 
 vi.mock("@twin-cli/core", async importOriginal => ({ ...await importOriginal<typeof import("@twin-cli/core")>(), createTwin: vi.fn() }));
 
@@ -64,6 +69,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   for (const root of htmlRoots.splice(0)) await rm(root, { recursive: true, force: true });
   for (const [options] of vi.mocked(createTwin).mock.calls) {
@@ -79,6 +85,155 @@ describe("twin run", () => {
     expect(await main(args)).toBe(0);
     expect(createTwin).not.toHaveBeenCalled();
     expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run"));
+  });
+
+  it.each([[], ["run"]])("uses saved argv and timeout for commandless %j", async (...args: string[]) => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    await writeFile(join(root, "twin.config.json"), JSON.stringify({ command: ["/tool", "exec", "  saved task  ", "--skip-git-repo-check"], timeoutMs: 321, receipt: "text" }));
+    expect(await main(args)).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: "/tool", argv: ["exec", "  saved task  ", "--skip-git-repo-check"], timeoutMs: 321 }));
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin receipt"), expect.any(Function));
+  });
+
+  it("overrides config without persisting and replaces the whole command, keeping aliases after --", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    const saved = JSON.stringify({ command: ["/saved", "exec", "old task"], interactive: false, review: false, receipt: "json", timeoutMs: 10 });
+    await writeFile(join(root, "twin.config.json"), saved);
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["discard\n"]) as typeof process.stdin);
+    expect(await main(["run", "-i", "-r", "-t", "text", "--timeout-ms=123", "--", "/tool", "-i", "-r", "-t", "text", "", "two words", "--"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: "/tool", argv: ["-i", "-r", "-t", "text", "", "two words", "--"], stdio: "inherit", timeoutMs: 123 }));
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin review"), expect.any(Function));
+    expect(await readFile(join(root, "twin.config.json"), "utf8")).toBe(saved);
+    input.mockRestore();
+  });
+
+  it("uses configured interactive, review and receipt preferences", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    await writeFile(join(root, "twin.config.json"), JSON.stringify({ command: ["/tool"], interactive: true, review: true, receipt: "text" }));
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["discard\n"]) as typeof process.stdin);
+    expect(await main([])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ stdio: "inherit", timeoutMs: 3600000 }));
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Twin review"), expect.any(Function));
+    input.mockRestore();
+  });
+
+  it.each([[], ["run"]])("guides missing-config invocation %j without launch", async (...args: string[]) => {
+    vi.spyOn(process, "cwd").mockReturnValue(await htmlRoot());
+    expect(await main(args)).toBe(2);
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("twin init or twin run --"), expect.any(Function));
+    expect(createTwin).not.toHaveBeenCalled();
+  });
+
+  it.each(["{", '{"command":[]}', '{"command":["/tool"],"timeoutMs":0}'])("rejects invalid saved config before even an explicit workload: %s", async saved => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    await writeFile(join(root, "twin.config.json"), saved);
+    expect(await main(["run", "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+  });
+
+  it("init prompts and saves without creating a session", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(['codex\none-shot\n  task λ  \n["--skip-git-repo-check"]\nno\ntext\n']) as typeof process.stdin);
+    expect(await main(["init"])).toBe(0);
+    expect(JSON.parse(await readFile(join(root, "twin.config.json"), "utf8"))).toEqual({ command: ["codex", "exec", "  task λ  ", "--skip-git-repo-check"], interactive: false, review: false, receipt: "text" });
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(await main(["init"])).toBe(2);
+    input.mockRestore();
+  });
+
+  it.each([
+    ["invalid agent", "other\n", "Choose codex or claude."],
+    ["invalid mode", "codex\nother\n", "Choose interactive or one-shot."],
+    ["invalid review", "codex\ninteractive\n[]\nmaybe\n", "Choose yes or no for review."],
+    ["invalid receipt", "claude\ninteractive\n[]\nno\nhtml\n", "Choose json or text for receipts."],
+    ["empty task", "codex\none-shot\n\n", "must not be empty"],
+    ["whitespace task", "claude\none-shot\n  \t \n", "must not be empty"],
+    ["invalid extra JSON", "codex\ninteractive\nbroken\n", ""],
+    ["invalid extra array", "codex\ninteractive\n[1]\n", "JSON string array"],
+    ...["", "codex\n", "codex\none-shot\n", "codex\none-shot\ntask\n", "codex\ninteractive\n[]\n", "codex\ninteractive\n[]\nno\n"].map(answers => ["EOF", answers, "input ended; no config saved"]),
+  ])("cancels init for %s without publishing or launching", async (_name, answers, message) => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from([answers]) as typeof process.stdin);
+    expect(await main(["init"])).toBe(2);
+    await expect(readFile(join(root, "twin.config.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining(message!), expect.any(Function));
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("reports init publication failure without config or workload launch", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["codex\ninteractive\n[]\nno\njson\n"]) as typeof process.stdin);
+    vi.mocked(link).mockRejectedValueOnce(new Error("publication failed"));
+    expect(await main(["init"])).toBe(2);
+    expect(await readdir(root)).toEqual([]);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("publication failed"), expect.any(Function));
+  });
+
+  it.each(["SIGINT", "SIGTERM"] as const)("cancels init on %s and restores listeners without launch", async signal => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    const input = new PassThrough();
+    vi.spyOn(process, "stdin", "get").mockReturnValue(input as unknown as typeof process.stdin);
+    const before = process.listeners(signal);
+    const setup = main(["init"]);
+    await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith("Agent (codex/claude): ", expect.any(Function)));
+    process.emit(signal);
+    expect(await setup).toBe(2);
+    input.destroy();
+    expect(process.listeners(signal)).toEqual(before);
+    await expect(readFile(join(root, "twin.config.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("false overrides disable saved interactive and review preferences without persisting", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    const saved = JSON.stringify({ command: ["/tool", "--no-review", "--no-interactive"], interactive: true, review: true, receipt: "text" });
+    await writeFile(join(root, "twin.config.json"), saved);
+    expect(await main(["run", "--no-interactive", "--no-review", "--receipt=json"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ argv: ["--no-review", "--no-interactive"], timeoutMs: 60000 }));
+    expect(run.mock.calls[0]![0]).not.toHaveProperty("stdio");
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("TWIN-RECEIPT/1");
+    expect(stderr).not.toContain("Twin review:");
+    expect(apply).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledOnce();
+    expect(await readFile(join(root, "twin.config.json"), "utf8")).toBe(saved);
+  });
+
+  it.each([
+    ["--interactive", "--no-interactive"], ["--no-interactive", "-i"], ["--no-interactive", "--no-interactive"],
+    ["--review", "--no-review"], ["--no-review", "-r"], ["--no-review", "--no-review"],
+  ])("rejects conflicting or duplicate boolean options %j", async (...flags: string[]) => {
+    expect(await main(["run", ...flags, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+  });
+
+  it("uses the existing missing executable error and cleanup for config-backed commands", async () => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    vi.stubEnv("PATH", root);
+    await writeFile(join(root, "twin.config.json"), JSON.stringify({ command: ["missing-executable"] }));
+    expect(await main([])).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledOnce();
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Executable not found on PATH"), expect.any(Function));
+  });
+
+  it.each([["-i", "--interactive"], ["-r", "--review"], ["-t", "text", "--receipt=text"], ["-t"], ["-t", "bad"]])("rejects duplicate aliases and malformed receipt %j", async (...flags: string[]) => {
+    expect(await main(["run", ...flags, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
   });
 
   it("runs a command with multiple arguments and uses the public lifecycle", async () => {
@@ -257,8 +412,8 @@ describe("twin run", () => {
     async (...args: string[]) => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Invalid Twin arguments"));
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] --"));
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringMatching(/Invalid Twin|No command selected/), expect.any(Function));
+      expect(run).not.toHaveBeenCalled();
     },
   );
 

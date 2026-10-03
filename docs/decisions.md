@@ -173,3 +173,15 @@ cleanup; absent or changed evidence leaves the root for manual review.
 Status: `pending commit`.
 
 I learned that a useful interactive deadline belongs in CLI policy, while core keeps the same bounded termination and settlement authority. Explicit short deadlines let automated tests stay bounded without limiting every human session to one minute; terminal capability still comes from the caller's environment.
+
+## CLI project convenience — unreleased checkpoint
+
+Status: `pending commit`.
+
+I learned that saving an argument array requires an explicit choice between interactive chat and a repeating one-shot task. Config and one-off options can normalize into the existing run path without adding execution authority; preserving argument boundaries and refusing overwrite keeps setup predictable.
+
+## CLI convenience correction — exclusive publication and false overrides
+
+Status: `pending commit`.
+
+I learned that refusing overwrite is separate from keeping partial writes invisible: a closed private sibling and an exclusive hard link provide both. Explicit false options also need the same duplicate key as their positive forms so saved preferences cannot silently win or depend on flag order.

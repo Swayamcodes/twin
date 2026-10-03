@@ -74,3 +74,84 @@ for manual inspection; a later CLI invocation cannot apply or discard that
 session. A new `--review` run creates a new copy. The [apply boundary](../ARCHITECTURE.md#phase-5-apply-boundary)
 describes conflict checks and the remaining same-user check/write race and
 non-atomic multi-path limit.
+
+## Project convenience setup (unreleased)
+
+These conveniences are available in this checkout, not published Twin 0.1.0.
+From the project root, run `twin init`. Setup asks for Codex or Claude, then
+explicitly asks **interactive chat versus one-shot execution**. It asks for
+one-shot task text separately (one nonblank line, with exact task bytes preserved as one argument),
+additional arguments as a JSON string array, review preference, and JSON or text
+receipt preference. It writes a private sibling temporary file, closes it, then publishes
+`twin.config.json` via an exclusive hard link, refusing to overwrite an existing
+file even if one appears during setup. Interrupted writes cannot expose a partial
+config. SIGINT/SIGTERM and EOF while answers are pending cancel setup. A signal
+racing with publication may leave a complete config; abrupt termination may
+leave the private temporary file. Setup does not launch agents or make network calls.
+
+For Codex interactive mode, no additional arguments, review enabled and text
+receipts, init produces:
+
+```json
+{
+  "command": ["codex"],
+  "interactive": true,
+  "review": true,
+  "receipt": "text"
+}
+```
+
+For Codex one-shot mode with task `Fix the tests`, the additional argument
+array `["--skip-git-repo-check"]`, review enabled and text receipts:
+
+```json
+{
+  "command": ["codex", "exec", "Fix the tests", "--skip-git-repo-check"],
+  "interactive": false,
+  "review": true,
+  "receipt": "text"
+}
+```
+
+Claude interactive mode saves `["claude"]`; Claude one-shot mode saves
+`["claude", "-p", "Fix the tests"]` before any additional arguments.
+A saved one-shot task repeats on every config-backed run unless explicitly
+overridden. No shell splitting or command evaluation is used: each JSON array
+element is one argument, including empty strings and strings containing spaces.
+Claude's funded conversation verification remains on budget hold; setup support
+does not establish verified model work or interactive conversation compatibility.
+
+Run `twin` or commandless `twin run` from the same project root to use the file.
+Config lookup uses only the current directory, without searching ancestors.
+The file requires a nonempty `command` string array; optional `interactive`
+and `review` are booleans, `receipt` is `json` or `text`, and `timeoutMs` is
+an integer from 1 through 3,600,000 using the same timeout validation as the CLI.
+Unknown fields and malformed values are rejected before copying or executing,
+even with an explicit command. Missing config gives short setup/explicit-run
+guidance; an explicit command works without config.
+
+Init uses typed prompts, with Codex and Claude as its only agent choices. Custom
+commands require manually authored config or an explicit command after `--`.
+Empty or whitespace-only one-shot tasks are rejected; nonempty tasks are saved
+without trimming. Invalid answers stop setup without retrying.
+
+Explicit CLI options take precedence over config, then existing defaults apply.
+`-i` aliases `--interactive`, `-r` aliases `--review`, and `-t text` aliases
+`--receipt=text`. `--receipt=json` can override saved text output. Aliases and
+long options share duplicate validation. `--no-interactive` and `--no-review`
+override saved true values. Positive and negative forms share an option key: any
+repeat or conflict is rejected, rather than selecting the last value. These invocations use saved options:
+
+```sh
+twin
+twin run
+twin -i -r -t text
+twin run --timeout-ms=120000 -- node script.js
+```
+
+A command after `--` replaces the entire saved command, including saved task
+and additional arguments; other config preferences still apply. Tokens after
+`--` are passed unchanged and never interpreted as Twin options. One-off
+options never modify the config. Execution continues through the existing
+resolution, core validation, environment forwarding, launch, signal,
+settlement, receipt, review and cleanup lifecycle.
