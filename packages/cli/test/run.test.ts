@@ -108,9 +108,46 @@ describe("twin run", () => {
   });
 
   it("preserves every argument token after the separator", async () => {
-    const args = ["--flag", "two words", "", "'quoted'", "--", "λ", "--receipt=text"];
-    expect(await main(["run", "--", "/tool", ...args])).toBe(0);
+    const args = ["--flag", "two words", "", "'quoted'", "--", "λ", "--receipt=text", "--timeout-ms=bad", "--timeout-ms=0"];
+    expect(await main(["run", "--timeout-ms=1234", "--", "/tool", ...args])).toBe(0);
     expect(run.mock.calls[0]![0].argv).toEqual(args);
+    expect(run.mock.calls[0]![0].timeoutMs).toBe(1234);
+  });
+
+  it.each([false, true])("selects the default timeout with interactive=%s", async interactive => {
+    expect(await main(["run", ...(interactive ? ["--interactive"] : []), "--", "/tool"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: interactive ? 3600000 : 60000 }));
+  });
+
+  it.each([false, true])("overrides the timeout with interactive=%s", async interactive => {
+    for (const timeoutMs of [1, 1500, 60000, 3600000]) {
+      expect(await main(["run", `--timeout-ms=${timeoutMs}`, ...(interactive ? ["--interactive"] : []), "--", "/tool"])).toBe(0);
+      expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ timeoutMs }));
+    }
+  });
+
+  it.each(["dumb", "xterm-256color"])("forwards TERM=%s unchanged in interactive mode", async term => {
+    vi.stubEnv("TERM", term);
+    expect(await main(["run", "--interactive", "--", "/tool"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ env: expect.objectContaining({ TERM: term }) }));
+  });
+
+  it.each(["", "0", "-1", "3600001", "9999999999999999999999", "1.5", "1e3", "0x10", "+1",
+    "NaN", "Infinity", " 1", "1 ", "1\n", "١", "bad"])("rejects invalid timeout %j before creating a session", async value => {
+    expect(await main(["run", "--timeout-ms=" + value, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["--timeout-ms=100", "--timeout-ms=100"],
+    ["--timeout-ms=100", "--interactive", "--timeout-ms=200"],
+    ["--timeout-ms", "100"],
+    ["--timeout-ms"],
+  ])("rejects duplicate or malformed timeout flags %j before creating a session", async (...flags: string[]) => {
+    expect(await main(["run", ...flags, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("selects inherited stdio without replaying captured bytes", async () => {
@@ -221,7 +258,7 @@ describe("twin run", () => {
       expect(await main(args)).toBe(2);
       expect(createTwin).not.toHaveBeenCalled();
       expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Invalid Twin arguments"));
-      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--receipt=text] [--receipt-html=<file>] [--review] --"));
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] --"));
     },
   );
 

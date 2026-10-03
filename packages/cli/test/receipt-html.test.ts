@@ -65,7 +65,7 @@ describe("standalone HTML receipt", () => {
       dependencies: { declarations: { coverage: "complete", changes: Array.from({ length: 12 }, () => ({
         field: "dependencies" as const, name: large, change: "added" as const, before: null, after: "1" })) },
         lockfiles: { coverage: "complete", changes: Array.from({ length: 12 }, () => ({
-          path: large, change: "added" as const, beforeDigest: null, afterDigest: "x" })) },
+          path: "pnpm-lock.yaml" as const, change: "added" as const, beforeDigest: null, afterDigest: "x" })) },
         issues: Array.from({ length: 12 }, () => ({ phase: "after" as const, path: large, reason: large })) },
       globalNpm: { coverage: "complete", source: "env-prefix", changes: Array.from({ length: 12 }, () => ({
         name: large, change: "changed" as const, before: large, after: large })),

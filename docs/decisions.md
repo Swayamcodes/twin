@@ -167,3 +167,9 @@ The A1–A3 review showed that a live ownership marker cannot establish the
 cleanup authority of an earlier attempt. I now require a synced attempt-local
 record of allocation, identity, action settlement and disposition before
 cleanup; absent or changed evidence leaves the root for manual review.
+
+## CLI timeout selection — unreleased checkpoint
+
+Status: `pending commit`.
+
+I learned that a useful interactive deadline belongs in CLI policy, while core keeps the same bounded termination and settlement authority. Explicit short deadlines let automated tests stay bounded without limiting every human session to one minute; terminal capability still comes from the caller's environment.

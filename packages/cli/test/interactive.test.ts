@@ -1,9 +1,9 @@
 /// <reference types="node" />
 
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -42,7 +42,7 @@ it.each(["json", "text"] as const)("delivers stdin and streams output before com
     '  process.stderr.write("child-stderr\\n");',
     '});',
   ].join("\n");
-  const child = spawn(process.execPath, [cli, "run", "--interactive", ...(format === "text" ? ["--receipt=text"] : []),
+  const child = spawn(process.execPath, [cli, "run", "--interactive", "--timeout-ms=5000", ...(format === "text" ? ["--receipt=text"] : []),
     "--", process.execPath, "-e", script], {
     cwd: source, stdio: ["pipe", "pipe", "pipe"],
   });
@@ -91,3 +91,77 @@ it.each(["json", "text"] as const)("delivers stdin and streams output before com
   if (cleanupFailure !== null) throw cleanupFailure;
   if (failure !== null) throw failure;
 }, 25000);
+
+it("settles a live interactive timeout before review and discard", async () => {
+  const source = await mkdtemp(join(tmpdir(), "twin-cli-interactive-timeout-test-"));
+  const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+  const script = [
+    'process.on("SIGTERM", () => process.stdout.write("caught:SIGTERM\\n"));',
+    'setInterval(() => {}, 1000);',
+    'process.stdout.write(`ready:${process.pid}:${process.cwd()}\\n`);',
+  ].join("\n");
+  const child = spawn(process.execPath, [cli, "run", "--interactive", "--timeout-ms=1500", "--receipt=text", "--review",
+    "--", process.execPath, "-e", script], { cwd: source, stdio: ["pipe", "pipe", "pipe"] });
+  let launchError: Error | null = null;
+  child.on("error", error => { launchError = error; });
+  let closed = false;
+  const close = new Promise<number | null>(resolve => child.once("close", code => { closed = true; resolve(code); }));
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  let actionPid: number | null = null;
+  let workspace: string | null = null;
+  let failure: unknown = null;
+  let cleanupFailure: unknown = null;
+  try {
+    const ready = await within(new Promise<RegExpExecArray>(resolve => {
+      const onData = (): void => {
+        const match = /^ready:(\d+):([^\n]+)\n/.exec(Buffer.concat(stdout).toString());
+        if (!match) return;
+        child.stdout.off("data", onData);
+        resolve(match);
+      };
+      child.stdout.on("data", onData);
+      onData();
+    }), 6000, "timeout action readiness");
+    actionPid = Number(ready[1]);
+    workspace = ready[2]!;
+    await within(new Promise<void>(resolve => {
+      const onData = (): void => {
+        if (!Buffer.concat(stderr).toString().includes("Twin review: type apply or discard")) return;
+        child.stderr.off("data", onData);
+        resolve();
+      };
+      child.stderr.on("data", onData);
+      onData();
+    }), 10000, "settled timeout review");
+    const output = Buffer.concat(stderr).toString();
+    expect(Buffer.concat(stdout).toString()).toContain("caught:SIGTERM\n");
+    expect(output).toContain("Top-level command — timed-out");
+    expect(output).toContain("signal: SIGKILL; timeout: observed");
+    expect(output).toContain("Direct child: start confirmed; settlement observed");
+    expect(output).toContain("Group after direct-child exit: absent; final group: absent");
+    expect(output).toContain("Captured pipes: not-captured");
+    expect(output).toContain("Twin signal attempt: SIGTERM to process-group; delivery sent");
+    expect(output).toContain("Twin signal attempt: SIGKILL to process-group; delivery sent");
+    expect(child.exitCode).toBeNull();
+    await waitForActionExit(actionPid);
+    expect((await lstat(workspace)).isDirectory()).toBe(true);
+    child.stdin.end("discard\n");
+    expect(await within(close, 6000, "timeout CLI close after discard")).toBe(1);
+    await expect(lstat(dirname(dirname(workspace)))).rejects.toMatchObject({ code: "ENOENT" });
+  } catch (error: unknown) { failure = launchError ?? error; }
+  try {
+    if (failure !== null && !closed) child.kill("SIGKILL");
+    await within(close, 6000, "timeout CLI close during cleanup");
+    if (actionPid === null || !Number.isSafeInteger(actionPid) || actionPid <= 1) throw new Error("Test action PID was not observed");
+    await waitForActionExit(actionPid);
+    if (workspace === null) throw new Error("Twin workspace was not observed");
+    await expect(lstat(dirname(dirname(workspace)))).rejects.toMatchObject({ code: "ENOENT" });
+    await rm(source, { recursive: true });
+  } catch (error: unknown) { cleanupFailure = new Error(`Cleanup failed; retained ${source}`, { cause: error }); }
+  if (failure !== null && cleanupFailure !== null) throw new AggregateError([failure, cleanupFailure], "Interactive timeout test and cleanup failed");
+  if (cleanupFailure !== null) throw cleanupFailure;
+  if (failure !== null) throw failure;
+}, 35000);

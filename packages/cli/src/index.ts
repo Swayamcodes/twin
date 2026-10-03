@@ -12,13 +12,14 @@ import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
 import { resolveExecutable } from "./executable.js";
 
-const help = `Usage: twin run [--interactive] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
 Twin runs commands in a disposable project copy. It is not an OS sandbox.
 Use a bare executable name (node) or an absolute executable path (/usr/bin/node).
 Bare names use the command's PATH in order; missing PATH has no candidates.
 Empty/relative PATH entries use the copy's working directory; executable symlinks are followed.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
+--timeout-ms=<integer> sets the command deadline (1–3600000 ms); defaults: captured 60000 ms, interactive 3600000 ms.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 --receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
 --review prints the receipt, then asks on stdin to apply or discard in this invocation.
@@ -133,14 +134,19 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const separator = argv.indexOf("--", 1);
   const flags = argv.slice(1, separator < 0 ? undefined : separator);
   const interactive = flags.includes("--interactive");
+  const timeoutFlags = flags.filter(flag => flag.startsWith("--timeout-ms="));
+  const timeoutValue = timeoutFlags[0]?.slice("--timeout-ms=".length);
+  const timeoutMs = timeoutValue === undefined ? (interactive ? 3600000 : 60000) : Number(timeoutValue);
   const review = flags.includes("--review");
   const format = flags.includes("--receipt=text") ? "text" : "json";
   const htmlFlags = flags.filter(flag => flag.startsWith("--receipt-html="));
   const htmlDestination = htmlFlags[0]?.slice("--receipt-html=".length);
-  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review" && !flag.startsWith("--receipt-html="))
+  if (argv[0] !== "run" || separator < 1 || flags.some(flag => flag !== "--interactive" && flag !== "--receipt=text" && flag !== "--review" && !flag.startsWith("--receipt-html=") && !flag.startsWith("--timeout-ms="))
       || flags.filter(flag => flag === "--interactive").length > 1
       || flags.filter(flag => flag === "--review").length > 1
       || flags.filter(flag => flag === "--receipt=text").length > 1
+      || timeoutFlags.length > 1 || (timeoutValue !== undefined && !/^[0-9]+$/.test(timeoutValue))
+      || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000
       || htmlFlags.length > 1 || (htmlFlags.length === 1 && !htmlDestination)
       || argv.length < separator + 2 || !argv[separator + 1]) {
     process.stderr.write("Invalid Twin arguments. Expected one command after --.\n");
@@ -168,7 +174,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
       const executable = await resolveExecutable(argv[separator + 1]!, env, session.workspacePath);
       if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
-      const result = await session.run({ executable, argv: argv.slice(separator + 2), env,
+      const result = await session.run({ executable, argv: argv.slice(separator + 2), env, timeoutMs,
         interruptSignal: interruption.signal,
         ...(interactive ? { stdio: "inherit" as const } : {}) });
       if (!interactive) {
