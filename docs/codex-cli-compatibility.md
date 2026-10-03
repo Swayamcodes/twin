@@ -35,6 +35,51 @@ Twin exited one and printed a text receipt. It recorded SIGINT sent to the proce
 
 The first captured attempt, inside the restricted tool sandbox, reached Codex but failed before the model run with `failed to initialize in-process app-server client: Read-only file system (os error 30)`. Twin reported exit one, no file changes, and confirmed process settlement. That copy was retained for inspection, then removed after process settlement was checked. The successful model-backed runs above used Twin's same launch path outside that sandbox so Codex could initialize using the existing login. All owned fixture roots were removed after the live runs and test workers closed.
 
+## Manual full UI follow-up at e3d1431
+
+The user reported this manual check in a WSL terminal at checkout
+`e3d1431ada98349b716d0b518109c632746678d3`. The terminal advertised
+`TERM=xterm-256color`, and the Codex UI reported version `0.156.1`. This is
+user-observed evidence from the unreleased built Twin CLI, separate from the
+earlier `codex exec` checks above. Plain `codex` was launched with inherited
+interactive stdio, a text receipt, review, and an explicit five-minute deadline:
+
+```sh
+node /home/lenovo/dev/twin/packages/cli/dist/index.js run --interactive --receipt=text --review --timeout-ms=300000 -- codex
+```
+
+The user entered “Reply hello; do not edit files or run commands.” Codex replied
+“hello”. The receipt recorded exit 0, no timeout, no project differences, a
+settled direct child, and an absent final original process group. Review/discard
+completed with shell exit 0, and the user confirmed the displayed Twin scratch
+root was removed. The receipt also reported an outside-project
+`.codex/config.toml` change; Twin does not restore outside-project files.
+
+Codex printed “Any running work continues.” Background task termination remains
+unverified: absence of the original process group does not prove termination of
+background work or escaped descendants. This manual check establishes the
+observed short full UI conversation and review/discard flow for this version
+and terminal. It did not test a project edit/apply or published Twin 0.1.0 with
+the new timeout option; published 0.1.0 does not expose that option.
+
+## Automation-terminal full UI attempts
+
+Separate automation-terminal attempts used Codex `0.160.0` with `TERM=dumb`.
+Codex warned: `WARNING: TERM is set to "dumb". Codex's interactive TUI may not
+work in this terminal.` After continuation, its UI rendered, but no conversation
+reply appeared before timeout. Published Twin 0.1.0 attempts reached its
+60-second deadline; the unreleased built checkout at `e3d1431` reached the
+explicit `--timeout-ms=300000` deadline. On the latter attempt, TERM was recorded
+as `dumb` immediately before launch, and stdin/stdout/stderr were all TTYs on
+`/dev/pts/3`. Twin's receipt recorded timeout, settled direct child, and an absent
+final original process group; review/discard and fixture cleanup completed.
+
+The earlier restricted-sandbox full UI attempt failed at a read-only Codex
+daemon lock before a conversation could complete. These environment and timeout
+observations remain distinct from the successful manual `0.156.1` check. The
+automation failures cannot be attributed conclusively to TERM; UI rendering
+alone does not verify a conversation.
+
 ## Scope and limits
 
-These are three live Codex executions on one installed version and platform, not ordinary automated tests or a claim about other versions. `--interactive` inherited the caller's terminal descriptors for `codex exec`; Twin did not allocate a PTY, and the full Codex TUI was not tested. Twin observes the top-level command and its process group, while nested commands and escaped descendants remain outside its confirmed coverage. The usual Twin review/apply conflict and partial-failure limits still apply; Phase 5 remains open.
+The earlier checkpoint comprises three live `codex exec` executions on one installed version and platform, not ordinary automated tests or a claim about other versions. `--interactive` inherited the caller's terminal descriptors for those headless runs; Twin did not allocate a PTY, and those runs did not test the full Codex TUI. The manual full UI follow-up and unsuccessful automation-terminal attempts above have separate versions, environments, and outcomes. Twin observes the top-level command and its original process group, while nested commands, background task termination, and escaped descendants remain outside its confirmed coverage. The usual Twin review/apply conflict and partial-failure limits still apply; see the [Phase 5 acceptance review](phase-5-acceptance.md) for the acceptance decision.
