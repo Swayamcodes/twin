@@ -8,10 +8,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
-import { renderReceiptText, safeTerminalValue } from "./receipt-text.js";
+import { renderReceiptText, renderCompactReceipt, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
 import { resolveExecutable } from "./executable.js";
 import { initConfig, loadConfig, validTimeout } from "./config.js";
+import { askTerminal, chooseTerminal, preparation, renderLogo, terminalColors, terminalOutput, terminalPrompts } from "./terminal-ui.js";
 
 const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
@@ -28,14 +29,21 @@ Empty/relative PATH entries use the copy's working directory; executable symlink
 --timeout-ms=<integer> sets the command deadline (1–3600000 ms); defaults: captured 60000 ms, interactive 3600000 ms.
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 --receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
---review prints the receipt, then asks on stdin to apply or discard in this invocation.
+--review prints the receipt, then asks on stdin to apply, discard, or cancel and retain in this invocation.
 EOF, interruption, or another answer retains the copy for manual inspection.
 Retained copies cannot be applied by a later twin CLI invocation.
 `;
 
-type ReviewChoice = "apply" | "discard" | "other" | "eof" | "interrupted";
+type ReviewChoice = "apply" | "discard" | "cancel" | "other" | "eof" | "interrupted";
 
 async function reviewChoice(signal: AbortSignal): Promise<ReviewChoice> {
+  if (terminalPrompts()) {
+    const choice = await chooseTerminal({ message: "Twin review", choices: [
+      { name: "Apply changes", value: "apply" }, { name: "Discard copy", value: "discard" },
+      { name: "Cancel and retain copy", value: "cancel" },
+    ], default: "cancel" }, signal);
+    return signal.aborted ? "interrupted" : choice === "apply" || choice === "discard" ? choice : "cancel";
+  }
   const lines = createInterface({ input: process.stdin, terminal: false });
   return new Promise(resolve => {
     let settled = false;
@@ -49,12 +57,12 @@ async function reviewChoice(signal: AbortSignal): Promise<ReviewChoice> {
     const onAbort = (): void => finish("interrupted");
     lines.once("line", line => {
       const choice = line.trim();
-      finish(choice === "apply" || choice === "discard" ? choice : "other");
+      finish(choice === "apply" || choice === "discard" || choice === "cancel" ? choice : "other");
     });
     lines.once("close", () => finish("eof"));
     signal.addEventListener("abort", onAbort, { once: true });
     if (signal.aborted) finish("interrupted");
-    else void write(process.stderr, "Twin review: type apply or discard, then Enter (EOF or another answer retains copy): ").catch(() => finish("other"));
+    else void write(process.stderr, "Twin review: type apply or discard, then Enter, or cancel to retain (EOF or another answer retains copy): ").catch(() => finish("other"));
   });
 }
 
@@ -123,7 +131,10 @@ function selectedReceipt(receipt: MinimalReceipt): MinimalReceipt {
 }
 
 async function writeReceipt(receipt: MinimalReceipt, format: "json" | "text"): Promise<void> {
-  if (format === "text") { await write(process.stderr, renderReceiptText(receipt)); return; }
+  if (format === "text") {
+    await write(process.stderr, terminalOutput() ? renderCompactReceipt(receipt, terminalColors()) : renderReceiptText(receipt));
+    return;
+  }
   const payload = Buffer.from(JSON.stringify(receipt), "utf8");
   await write(process.stderr, Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`, "ascii"));
   await write(process.stderr, payload);
@@ -138,27 +149,30 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   }
 
   if (argv[0] === "init" && argv.length === 1) {
-    const lines = createInterface({ input: process.stdin, terminal: false });
-    const iterator = lines[Symbol.asyncIterator]();
+    const tty = terminalPrompts();
+    const lines = tty ? undefined : createInterface({ input: process.stdin, terminal: false });
+    const iterator = lines?.[Symbol.asyncIterator]();
     const cancellation = new AbortController();
-    const cancel = (): void => { cancellation.abort(); lines.close(); };
+    const cancel = (): void => { cancellation.abort(); lines?.close(); };
     process.on("SIGINT", cancel);
     process.on("SIGTERM", cancel);
     try {
+      if (tty) await write(process.stderr, renderLogo(process.stderr.columns || 80, terminalColors()));
       await initConfig(process.cwd(), async prompt => {
+        if (tty) return askTerminal(prompt, cancellation.signal);
         await write(process.stderr, prompt);
-        const next = await iterator.next();
+        const next = await iterator!.next();
         if (cancellation.signal.aborted) throw new Error("Twin init cancelled: interrupted; no config published.");
         if (next.done) throw new Error("Twin init cancelled: input ended; no config saved.");
         return next.value;
-      }, cancellation.signal);
+      }, cancellation.signal, tty ? menu => chooseTerminal(menu, cancellation.signal) : undefined);
       await write(process.stdout, "Saved twin.config.json. Run twin from this project directory. Saved one-shot tasks repeat unless a command after -- overrides them.\n");
       return 0;
     } catch (error) {
       await write(process.stderr, `${errorText(error)}\n`);
       return 2;
     } finally {
-      lines.close();
+      lines?.close();
       process.off("SIGINT", cancel);
       process.off("SIGTERM", cancel);
     }
@@ -224,11 +238,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   process.on("SIGTERM", onSigterm);
 
   try {
+    const feedback = preparation(format);
     try {
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
       session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
       const executable = await resolveExecutable(command[0]!, env, session.workspacePath);
+      feedback.stop();
       if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
       const result = await session.run({ executable, argv: command.slice(1), env, timeoutMs,
         interruptSignal: interruption.signal,
@@ -243,6 +259,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     } catch (error) {
       await write(process.stderr, `${errorText(error)}\n`);
     } finally {
+      feedback.stop();
       if (session) {
         try {
           const inspection = session.inspect();
@@ -290,6 +307,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             retainCopy = true;
             await write(process.stderr, `Twin discard ${discarded.status}: ${safeTerminalValue(discarded.reason, 512)}\n`);
             await write(process.stderr, copyLocationMessage(session.workspacePath, discarded.status === "failed"));
+          } else if (review && format === "text") {
+            await write(process.stderr, "Twin discard removed: project copy cleaned up. Outside-project recovery is not established.\n");
           }
         } catch (error) {
           retainCopy = true;

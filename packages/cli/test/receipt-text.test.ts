@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MinimalReceipt } from "@twin-cli/core";
-import { MAX_TEXT_RECEIPT_BYTES, renderReceiptText } from "../src/receipt-text.js";
+import { MAX_TEXT_RECEIPT_BYTES, renderCompactReceipt, renderReceiptText } from "../src/receipt-text.js";
 
 const watchIds = [".gitconfig", ".npmrc", ".bashrc", ".zshrc", ".codex/config.toml",
   ".claude/settings.json", ".gemini/settings.json"] as const;
@@ -102,5 +102,53 @@ describe("human receipt presentation", () => {
     expect(text).not.toContain("\u001b");
     expect(text).not.toContain("\u0085");
     expect(text).not.toContain("\u202e");
+  });
+});
+
+
+describe("compact terminal receipt", () => {
+  it("leads with command, observed changes and attention, without equating success and coverage", () => {
+    const receipt: MinimalReceipt = { ...base, files: { coverage: "partial", issues: [{ reason: "scan-timeout" }], changes: [
+      { path: { encoding: "utf8", value: "file" }, change: "modified", category: "ignored", categoryReason: null },
+    ] }, watch: base.watch.map(item => item.id === ".npmrc" ? { ...item, comparison: "changed" as const } : item) };
+    const text = renderCompactReceipt(receipt, true);
+    const plain = text.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain.split("\n").slice(0, 4).join("\n")).toMatch(/Command.*COMPLETED.*\nChanges.*1 modified.*\nAttention.*Incomplete.*Outside-project/);
+    expect(text).toContain("\x1b[38;2;116;205;151m✓ COMPLETED");
+    expect(text).toContain("\x1b[38;2;233;187;104m! Incomplete");
+    for (const disclosure of ["INCOMPLETE", "scan-timeout", "modified [ignored] file", "no rollback", "Captured pipes: closed",
+      "Command success is not a safety verdict", "Nested commands: not observed", "Escaped descendants: not observed", "Reads and writes reverted"]) expect(plain).toContain(disclosure);
+    expect(plain).not.toMatch(/safe run|clean run/i);
+  });
+
+  it.each([false, true])("keeps hostile values escaped and all caps including colored=%s bytes", colors => {
+    const hostile = `file\u001b[31m\n\u202e${"x".repeat(1000)}`;
+    const receipt: MinimalReceipt = { ...base, files: { coverage: "partial", issues: [{ reason: hostile }],
+      changes: Array.from({ length: 1000 }, () => ({ path: { encoding: "utf8", value: hostile },
+        change: "deleted" as const, category: "unclassified" as const, categoryReason: hostile })) },
+      dependencies: { ...base.dependencies, issues: [{ phase: "after", path: hostile, reason: hostile }] },
+      globalNpm: { coverage: "incomplete", source: "env-prefix", changes: Array.from({ length: 1000 }, () => ({
+        name: hostile, change: "changed" as const, before: hostile, after: hostile })), issues: [{ phase: "after", name: hostile, reason: hostile }] },
+    };
+    const text = renderCompactReceipt(receipt, colors);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(MAX_TEXT_RECEIPT_BYTES);
+    expect(text).toContain("\\u001b");
+    expect(text).toContain("\\u202e");
+    expect(text).toContain("[truncated]");
+    expect(text).toContain("988 more entries omitted");
+    expect(text).not.toContain("\u202e");
+    if (!colors) expect(text).not.toContain("\x1b");
+  });
+
+  it("shows failure, intervention and uncertainty separately in monochrome", () => {
+    const receipt: MinimalReceipt = { ...base, command: { ...base.command, exitCode: 1 },
+      process: { ...base.process, finalGroup: "unknown", capturedPipes: "open", termination: [{ signal: "SIGTERM", target: "process-group", delivery: "sent" }] } };
+    const text = renderCompactReceipt(receipt);
+    expect(text).toContain("× FAILED");
+    expect(text).toContain("INCOMPLETE");
+    expect(text).toContain("final group: unknown");
+    expect(text).toContain("Captured pipes: open");
+    expect(text).toContain("stop not established by delivery");
+    expect(text).not.toContain("\x1b");
   });
 });

@@ -43,8 +43,9 @@ export async function loadConfig(root: string): Promise<TwinConfig | undefined> 
 }
 
 export type Ask = (prompt: string) => Promise<string>;
+export type Choose = (menu: { message: string; choices: readonly { name: string; value: string }[]; default: string }) => Promise<string | null>;
 
-export async function initConfig(root: string, ask: Ask, signal?: AbortSignal): Promise<TwinConfig> {
+export async function initConfig(root: string, ask: Ask, signal?: AbortSignal, choose?: Choose): Promise<TwinConfig> {
   const checkInterrupted = (): void => {
     if (signal?.aborted) throw new Error("Twin init cancelled: interrupted; no config published.");
   };
@@ -56,9 +57,18 @@ export async function initConfig(root: string, ask: Ask, signal?: AbortSignal): 
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
-  const agent = (await ask("Agent (codex/claude): ")).trim();
+  const choice = async (prompt: string, message: string, values: readonly [string, string][], initial: string): Promise<string> => {
+    if (!choose) return (await ask(prompt)).trim();
+    const selected = await choose({ message, choices: [...values.map(([name, value]) => ({ name, value })),
+      { name: "Cancel setup", value: "cancel" }], default: initial });
+    if (selected === null || selected === "cancel") throw new Error("Twin init cancelled; no config published.");
+    checkInterrupted();
+    return selected;
+  };
+  const agent = await choice("Agent (codex/claude): ", "Agent", [["Codex", "codex"], ["Claude", "claude"]], "codex");
   if (agent !== "codex" && agent !== "claude") throw new Error("Choose codex or claude.");
-  const mode = (await ask("Mode: interactive chat or one-shot execution? (interactive/one-shot): ")).trim();
+  const mode = await choice("Mode: interactive chat or one-shot execution? (interactive/one-shot): ", "Execution mode",
+    [["Interactive chat", "interactive"], ["One-shot execution", "one-shot"]], "interactive");
   if (mode !== "interactive" && mode !== "one-shot") throw new Error("Choose interactive or one-shot.");
   const command = [agent];
   if (mode === "one-shot") {
@@ -70,9 +80,11 @@ export async function initConfig(root: string, ask: Ask, signal?: AbortSignal): 
   const extra: unknown = JSON.parse(await ask('Additional arguments as a JSON string array (e.g. ["--skip-git-repo-check"] for Codex; [] for none): ')) as unknown;
   if (!Array.isArray(extra) || extra.some(arg => typeof arg !== "string" || arg.includes("\0"))) throw new Error("Additional arguments must be a JSON string array.");
   command.push(...extra as string[]);
-  const review = (await ask("Review changes after execution? (yes/no): ")).trim();
+  const review = await choice("Review changes after execution? (yes/no): ", "Review preference",
+    [["Review changes", "yes"], ["Auto-discard after settlement", "no"]], "yes");
   if (review !== "yes" && review !== "no") throw new Error("Choose yes or no for review.");
-  const receipt = (await ask("Receipt format (json/text): ")).trim();
+  const receipt = await choice("Receipt format (text/json; default text): ", "Receipt preference",
+    [["Text — readable receipt", "text"], ["JSON — automation output", "json"]], "text") || "text";
   if (receipt !== "json" && receipt !== "text") throw new Error("Choose json or text for receipts.");
   const config = parseConfig({ command, interactive: mode === "interactive", review: review === "yes", receipt });
   checkInterrupted();

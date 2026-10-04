@@ -1,4 +1,5 @@
 import type { MinimalReceipt, ReceiptPath, WatchObservation } from "@twin-cli/core";
+import { color, type Tone } from "./terminal-ui.js";
 
 export const MAX_TEXT_RECEIPT_BYTES = 32 * 1024;
 const MAX_ITEMS = 12;
@@ -113,5 +114,74 @@ export function renderReceiptText(receipt: MinimalReceipt): string {
     "No Twin termination signal attempt observed.");
   lines.push("  Escaped descendants: not observed. Group absence does not establish their absence.",
     "  Twin discard is clone cleanup; outside-project recovery is not established by this receipt.");
+  return bounded(lines);
+}
+
+// Terminal-only projection. Plain/HTML retain the established renderer above.
+// All dynamic values use the same escaping, collection caps and byte budget.
+export function renderCompactReceipt(receipt: MinimalReceipt, colors = false): string {
+  const lines: string[] = [];
+  const paint = (tone: Tone, text: string): string => color(colors, tone, text);
+  const group = (label: string, text: string, tone: Tone = "white"): void => {
+    lines.push(`${paint("muted", label.padEnd(11))}${paint(tone, text)}`);
+  };
+  const command = receipt.command;
+  const process = receipt.process;
+  const allComplete = complete(receipt);
+  const success = command.disposition === "exited" && command.exitCode === 0 && command.directChildSettled === true;
+  const failed = command.disposition === "spawn-failed" || command.disposition === "signaled"
+    || command.disposition === "timed-out" || command.disposition === "exited" && command.exitCode !== 0;
+  const outcome = success ? "✓ COMPLETED" : failed ? "× FAILED" : "! NOT CONFIRMED";
+  const commandTone = success ? "green" : failed ? "red" : "amber";
+  lines.push(paint("orchid", `Twin receipt (schema ${receipt.schemaVersion})`));
+  group("Command", `${outcome} · ${command.disposition} · exit ${command.exitCode ?? "unknown"}`
+    + ` · direct child ${command.directChildSettled === true ? "settled" : "settlement unknown"}`, commandTone);
+  const count = (kind: "modified" | "added" | "deleted"): number => receipt.files.changes.filter(change => change.change === kind).length;
+  group("Changes", `${count("modified")} modified · ${count("added")} added · ${count("deleted")} deleted (observed)`, "cyan");
+  const attention = [
+    ...(!success ? ["Command completion not successful/confirmed"] : []),
+    ...(!allComplete ? ["Incomplete observations; see coverage/issues"] : []),
+    ...(receipt.watch.some(item => item.comparison === "changed") ? ["Outside-project watch changed; no rollback"] : []),
+    ...(receipt.globalNpm.changes.length ? ["Global npm changes observed; no rollback"] : []),
+    ...(process.termination.length ? ["Twin signal attempts observed; delivery is not proof of termination"] : []),
+  ];
+  group("Attention", attention.length ? `! ${attention.join(" · ")}` : "— None observed within covered scope",
+    attention.length ? failed ? "red" : "amber" : "muted");
+  lines.push("");
+  group("Files", receipt.files.coverage, receipt.files.coverage === "complete" ? "muted" : "amber");
+  items(lines, receipt.files.changes, change => paint("cyan", `${change.change} [${change.category}] ${path(change.path)}`
+    + (change.categoryReason ? ` (${safe(change.categoryReason)})` : "")),
+  allComplete ? "No file changes observed." : "No file changes observed; coverage may be incomplete.");
+  if (receipt.files.issues.length) items(lines, receipt.files.issues,
+    issue => paint("amber", `Issue: ${issue.path ? `${path(issue.path)}: ` : ""}${safe(issue.reason)}`), "");
+  lines.push("");
+  group("Coverage", allComplete ? "COMPLETE for stated observations" : "INCOMPLETE — see coverage and issues below", allComplete ? "muted" : "amber");
+  group("Deps", `Declarations ${receipt.dependencies.declarations.coverage} · lockfiles ${receipt.dependencies.lockfiles.coverage}`, "muted");
+  items(lines, receipt.dependencies.declarations.changes, change => `${change.change} ${change.field} ${safe(change.name)} (specifier values omitted)`,
+    allComplete ? "No declaration changes observed." : "No declaration changes observed; coverage may be incomplete.");
+  items(lines, receipt.dependencies.lockfiles.changes, change => `${change.change} ${safe(change.path)} (whole-file digest change)`,
+    allComplete ? "No lockfile changes observed." : "No lockfile changes observed; coverage may be incomplete.");
+  if (receipt.dependencies.issues.length) items(lines, receipt.dependencies.issues,
+    issue => paint("amber", `Issue ${issue.phase}: ${safe(issue.path)}: ${safe(issue.reason)}`), "");
+  group("Global npm", `${receipt.globalNpm.coverage} (${receipt.globalNpm.source})`, receipt.globalNpm.coverage === "complete" ? "muted" : "amber");
+  items(lines, receipt.globalNpm.changes, change => paint("amber", `${change.change} ${safe(change.name)}: ${safe(change.before ?? "absent")} → ${safe(change.after ?? "absent")}`),
+    allComplete ? "No global package changes observed." : "No global package changes observed; coverage may be incomplete.");
+  if (receipt.globalNpm.issues.length) items(lines, receipt.globalNpm.issues,
+    issue => paint("amber", `Issue ${issue.phase}: ${safe(issue.name || "inventory")}: ${safe(issue.reason)}`), "");
+  group("Watches", "Outside-project observations only; no rollback", "muted");
+  items(lines, receipt.watch, item => paint(item.comparison === "unchanged" ? "muted" : "amber",
+    `${safe(item.id)}: ${item.comparison}; ${observation(item.before)} → ${observation(item.after)}`), "No watch observations available.");
+  group("Process", `Direct child: start ${process.directChild.start}; settlement ${process.directChild.settlement}`, "muted");
+  group("", `Group after direct-child exit: ${process.groupAfterDirectExit}; final group: ${process.finalGroup}`, "muted");
+  group("", `Captured pipes: ${process.capturedPipes}`, "muted");
+  items(lines, process.termination, attempt => paint("amber", `Twin signal attempt: ${attempt.signal} to ${attempt.target}; delivery ${attempt.delivery} (stop not established by delivery)`),
+    "No Twin termination signal attempt observed.");
+  group("Disclosure", `Executable: ${command.executable.status === "allowlisted-basename" ? safe(command.executable.value) : "omitted"}; arguments: omitted (${command.arguments.count === null ? "count unknown" : `${command.arguments.count}${command.arguments.capped ? "+" : ""} counted`})`, "muted");
+  group("", `Admission: ${command.admitted === null ? "unknown" : command.admitted ? "admitted" : "not attempted"}; process start: ${command.processStart}`, "muted");
+  group("", `Signal: ${command.signal ?? "none observed"}; timeout: ${command.timeoutObserved === null ? "unknown" : command.timeoutObserved ? "observed" : "not observed"}`, "muted");
+  group("Boundary", "Copy isolation, not an OS sandbox. Command success is not a safety verdict.", "muted");
+  group("", "Nested commands: not observed. Reads and writes reverted during a run: not observed.", "muted");
+  group("", "Escaped descendants: not observed. Group absence does not establish their absence.", "muted");
+  group("", "Twin discard is clone cleanup; outside-project recovery is not established by this receipt.", "muted");
   return bounded(lines);
 }

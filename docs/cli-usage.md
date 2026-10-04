@@ -61,8 +61,10 @@ compatibility, which remains unverified. Claude's funded conversation rerun
 remains on budget hold.
 
 For a settled command, `twin run --review -- <executable> [args...]` prints the
-receipt and then reads one line from stdin. Enter `apply` to run the three-state
-apply checks, or `discard` to remove the copy. EOF, interruption, or any other
+receipt and then asks for a review choice. In a supported terminal, use the
+arrow-key selector for **Apply changes**, **Discard copy**, or **Cancel and retain
+copy** (the default). Without a TTY, Twin reads one line from stdin. Enter `apply` to run the three-state
+apply checks, or `discard` to remove the copy; `cancel` retains it. EOF, interruption, or any other
 answer retains the copy and exits nonzero. A conflict refuses the complete plan
 before writing to the original and retains the copy. An I/O failure during
 apply may leave earlier paths changed; inspect the original and retained copy.
@@ -155,3 +157,44 @@ and additional arguments; other config preferences still apply. Tokens after
 options never modify the config. Execution continues through the existing
 resolution, core validation, environment forwarding, launch, signal,
 settlement, receipt, review and cleanup lifecycle.
+
+
+## Terminal presentation (unreleased Tier C)
+
+This checkout uses the approved orchid/plum square TWIN wordmark, including a
+faint reflected wordmark and its shadow. Text-mode TTY runs show that static
+identity and a stationary `twin  Preparing project copy…` while the existing
+preparation runs. This does not show stages or progress percentages, insert a
+waiting period, change copying or cancellation timing, or add execution authority.
+There are no animation timers or preparation keyboard listeners; the display
+ends before command handoff, including inherited-stdio commands.
+
+On a supported TTY, init uses compact vertical arrow-key menus for agent,
+execution mode, review and receipt preferences. Completed menus collapse into
+short summaries. One-shot task text and additional argv remain typed inputs;
+nonblank task bytes and JSON-array argument boundaries are preserved. The receipt
+menu defaults to **Text — readable receipt** and also offers **JSON — automation
+output**. Setup always offers cancellation and never launches a workload.
+Non-TTY or `TERM=dumb` setup keeps typed prompts; an empty receipt answer selects
+text. Existing configs are neither migrated nor overwritten. Explicit runs still
+default to JSON when no config/option selects another format.
+
+TTY text receipts lead with command outcome, observed project change counts,
+and attention items, then bounded file/dependency/global/watch/process details.
+Orchid/plum is identity color; green is confirmed command completion, amber is
+incomplete observations or intervention, red is command failure, and cyan is file
+information. Every state has words/symbols; command success is never a safety
+verdict. All previous collection/value/UTF-8-byte limits, escaping and disclosure
+limits remain. Empty incomplete observations do not establish an absence of
+changes. Non-TTY text and HTML use the established plain renderer; HTML includes
+no terminal ANSI sequences. Set `NO_COLOR=1` for readable monochrome TTY output.
+
+JSON runs suppress the logo/preparation display, preserving the existing
+`TWIN-RECEIPT/1` exact-byte frame on stderr. Captured/inherited command output is
+still separate, and explicitly requested `--review` still adds an interactive
+prompt after the receipt. For unattended frame consumers, omit review. Review
+menus default to **Cancel and retain copy**; Enter on that default, Esc, Ctrl-C,
+EOF or interruption retains rather than requesting apply/discard. Input/raw-mode
+ownership is released when prompts settle. Apply/discard still use the same
+existing validation and cleanup paths, including conflict/partial-apply limits.
+Claude's funded conversation verification remains on budget hold.

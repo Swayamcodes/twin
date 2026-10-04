@@ -51,7 +51,8 @@ Codex commands are `["codex"]` or `["codex", "exec", "task"]`; Claude commands
 are `["claude"]` or `["claude", "-p", "task"]`. Additional arguments such as
 Codex's `--skip-git-repo-check` remain separate array elements. Task spaces are
 preserved; empty or whitespace-only tasks are rejected. A saved one-shot task
-repeats unless explicitly overridden. Prompts are typed; custom commands require
+repeats unless explicitly overridden. TTY choices use arrow-key menus, with typed task text and JSON argv; non-TTY
+prompts are typed. Custom commands require
 manually authored config or an explicit command after `--`.
 
 Use bare `twin` or commandless `twin run` from that directory. Explicit CLI
@@ -67,3 +68,25 @@ use `twin init` or `twin run -- <executable> [args...]`.
 These conveniences are not in published 0.1.0. Claude's funded conversation
 verification remains on budget hold. See the CLI guide for example configs
 and the unchanged execution and safety limits.
+
+
+## Terminal presentation (unreleased Tier C)
+
+TTY text runs use the approved orchid/plum static wordmark, stationary
+“Preparing project copy…” feedback, and compact receipts with command outcome,
+observed changes and attention first. Brand colors remain separate from outcome
+colors; successful command completion does not establish safety. No copying,
+execution, cancellation timing or cleanup policy changes accompany the display.
+
+TTY init defaults its receipt menu to Text. Existing configs and explicit-run
+JSON defaults are preserved. TTY review offers Apply changes, Discard copy, and
+**Cancel and retain copy** (default); non-TTY review keeps typed `apply`,
+`discard` or `cancel`. Esc, EOF and interruption retain the copy. Menus release
+terminal input before workload handoff. `NO_COLOR=1` keeps the TTY layout in
+monochrome; `TERM=dumb` uses plain output/typed fallback.
+
+JSON runs have no decorative startup/preparation output on stderr; the existing
+exact-byte frame is unchanged. Explicit review still prompts after that frame.
+The existing plain/HTML receipts retain bounds, escaping and disclosures; HTML
+never receives terminal colors. No agent verification is inferred from this
+presentation checkpoint; Claude's funded conversation rerun remains on hold.

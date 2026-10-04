@@ -119,3 +119,39 @@ describe("project config", () => {
     expect(parseConfig({ command: ["node"], timeoutMs }).timeoutMs).toBe(timeoutMs);
   });
 });
+
+
+it.each(["codex", "claude"])("menu values preserve %s argv, and receipt defaults to Text", async agent => {
+  for (const mode of ["interactive", "one-shot"]) {
+    const path = await root();
+    const task = "  λ 'quoted' $(never-run)  ";
+    const answers = [...(mode === "one-shot" ? [task] : []), '["two words", "\\\"quoted\\\"", ""]'];
+    const menus = [agent, mode, "yes", "text"];
+    const choose = vi.fn(async () => menus.shift()!);
+    const config = await initConfig(path, async () => answers.shift()!, undefined, choose);
+    expect(choose.mock.calls).toHaveLength(4);
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ default: "text", choices: expect.arrayContaining([
+      { name: "Text — readable receipt", value: "text" }, { name: "JSON — automation output", value: "json" },
+    ]) }));
+    expect(config.command).toEqual([agent, ...(mode === "one-shot" ? [agent === "codex" ? "exec" : "-p", task] : []), "two words", '"quoted"', ""]);
+    expect(config.receipt).toBe("text");
+  }
+});
+
+it.each([0, 1, 2, 3])("menu cancellation at selection %s publishes nothing", async at => {
+  const path = await root();
+  let index = 0;
+  const values = ["codex", "interactive", "yes", "text"];
+  await expect(initConfig(path, async () => "[]", undefined,
+    async () => index++ === at ? null : values[index - 1]!)).rejects.toThrow("cancelled");
+  expect(await readdir(path)).toEqual([]);
+});
+
+it("uses Text for an empty typed receipt preference and refuses overwrite before menus", async () => {
+  const path = await root();
+  const answers = ["claude", "interactive", "[]", "no", ""];
+  expect((await initConfig(path, async () => answers.shift()!)).receipt).toBe("text");
+  const choose = vi.fn();
+  await expect(initConfig(path, vi.fn(), undefined, choose)).rejects.toThrow("Refusing to overwrite");
+  expect(choose).not.toHaveBeenCalled();
+});

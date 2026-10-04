@@ -7,6 +7,7 @@ import { PassThrough, Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTwin, type MinimalReceipt, type RunResult, type TwinSession } from "@twin-cli/core";
 import { main } from "../src/index.js";
+import * as terminal from "../src/terminal-ui.js";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
@@ -57,8 +58,10 @@ function result(exitCode: number): RunResult {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  // Personal project config must not select review/stdio policy in unit tests.
+  vi.spyOn(process, "cwd").mockReturnValue(await htmlRoot());
   vi.stubEnv("PATH", dirname(process.execPath));
   vi.mocked(createTwin).mockResolvedValue({ workspacePath: "/tmp/twin", run, inspect, apply, discard } as unknown as TwinSession);
   run.mockResolvedValue(result(0));
@@ -625,4 +628,62 @@ describe("twin run", () => {
     expect(text).toContain("final group: absent");
     expect(text).not.toContain("TWIN-RECEIPT/1");
   });
+});
+
+
+it.each(["text", "json"] as const)("releases preparation before the sole run call with %s receipt", async format => {
+  const order: string[] = [];
+  vi.spyOn(terminal, "preparation").mockImplementation(() => { order.push("prepare"); return { stop: () => { order.push("stop"); } }; });
+  run.mockImplementation(async () => { order.push("run"); return result(0); });
+  expect(await main(["run", `--receipt=${format}`, "--", "/tool"])).toBe(0);
+  expect(order.slice(0, 3)).toEqual(["prepare", "stop", "run"]);
+  expect(run).toHaveBeenCalledOnce();
+  expect(discard).toHaveBeenCalledOnce();
+});
+
+it("keeps JSON frame bytes identical on a TTY and exports HTML without terminal colors", async () => {
+  const root = await htmlRoot();
+  vi.spyOn(terminal, "terminalOutput").mockReturnValue(true);
+  vi.spyOn(terminal, "terminalColors").mockReturnValue(true);
+  expect(await main(["run", "--receipt=json", `--receipt-html=${join(root, "receipt.html")}`, "--", "/tool"])).toBe(0);
+  const chunks = vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array));
+  const payload = JSON.stringify(receipt);
+  expect(Buffer.concat(chunks).toString()).toBe(`from stderr\x1eTWIN-RECEIPT/1 ${Buffer.byteLength(payload)}\n${payload}\n`);
+  expect(await readFile(join(root, "receipt.html"), "utf8")).not.toContain("\x1b");
+});
+
+it("selects compact colored TTY text and retains the uncolored HTML projection", async () => {
+  const root = await htmlRoot();
+  vi.spyOn(terminal, "terminalOutput").mockReturnValue(true);
+  vi.spyOn(terminal, "terminalColors").mockReturnValue(true);
+  expect(await main(["run", "--receipt=text", `--receipt-html=${join(root, "receipt.html")}`, "--", "/tool"])).toBe(0);
+  const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+  expect(text).toContain("Command");
+  expect(text).toContain("\x1b[38;2;182;140;255mTwin receipt");
+  expect(text).not.toContain("TWIN-RECEIPT/1");
+  expect(await readFile(join(root, "receipt.html"), "utf8")).not.toContain("\x1b");
+});
+
+it.each(["apply", "discard", "cancel", null])("TTY review selection %s uses the existing operations", async selected => {
+  vi.spyOn(terminal, "terminalPrompts").mockReturnValue(true);
+  const choose = vi.spyOn(terminal, "chooseTerminal").mockResolvedValue(selected);
+  apply.mockResolvedValue({ status: "applied", changes: 0 });
+  expect(await main(["run", "--review", "--", "/tool"])).toBe(selected === "apply" || selected === "discard" ? 0 : 1);
+  expect(choose).toHaveBeenCalledWith(expect.objectContaining({ default: "cancel", choices: [
+    { name: "Apply changes", value: "apply" }, { name: "Discard copy", value: "discard" },
+    { name: "Cancel and retain copy", value: "cancel" },
+  ] }), expect.any(AbortSignal));
+  expect(apply).toHaveBeenCalledTimes(selected === "apply" ? 1 : 0);
+  expect(discard).toHaveBeenCalledTimes(selected === "apply" || selected === "discard" ? 1 : 0);
+});
+
+it("init menu cancellation never launches a workload or publishes config", async () => {
+  const root = await htmlRoot();
+  vi.spyOn(process, "cwd").mockReturnValue(root);
+  vi.spyOn(terminal, "terminalPrompts").mockReturnValue(true);
+  vi.spyOn(terminal, "chooseTerminal").mockResolvedValue(null);
+  expect(await main(["init"])).toBe(2);
+  expect(await readdir(root)).toEqual([]);
+  expect(createTwin).not.toHaveBeenCalled();
+  expect(run).not.toHaveBeenCalled();
 });

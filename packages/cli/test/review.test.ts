@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it.each(["apply", "discard", "eof", "other", "conflict"] as const)("prints a live receipt before %s and settles the review choice", async selected => {
+it.each(["apply", "discard", "cancel", "eof", "other", "conflict"] as const)("prints a live receipt before %s and settles the review choice", async selected => {
   const base = await mkdtemp(join(tmpdir(), "twin-cli-review-test-"));
   const source = join(base, "source");
   const scratch = join(base, "scratch");
@@ -55,13 +55,14 @@ it.each(["apply", "discard", "eof", "other", "conflict"] as const)("prints a liv
       } finally { if (completionTimeout) clearTimeout(completionTimeout); }
     } finally { await choice.close(); await log.close(); }
     const output = await readFile(join(source, "receipt.log"), "utf8");
-    const retained = selected === "eof" || selected === "other" || selected === "conflict";
+    const retained = selected === "cancel" || selected === "eof" || selected === "other" || selected === "conflict";
     if (code !== (retained ? 1 : 0)) throw new Error(`CLI exited ${code}: ${output}`);
     expect(output).toContain("Twin receipt (schema 5)");
     expect(output).toContain("Twin review:");
     if (selected === "apply") expect(output).toContain("Twin apply applied");
     if (selected === "conflict") expect(output).toContain("Twin apply conflict");
     if (selected === "eof") expect(output).toContain("Twin review eof; no apply or discard requested.");
+    if (selected === "cancel") expect(output).toContain("Twin review cancel; no apply or discard requested.");
     if (selected === "other") expect(output).toContain("Twin review other; no apply or discard requested.");
     if (retained) {
       expect(output).toContain("Twin copy retained:");
@@ -129,6 +130,6 @@ it("retains the copy when interrupted at the review prompt", async () => {
     try { await within(close, 8000); }
     catch (error) { throw new Error(`CLI closure unconfirmed; retained ${base}`, { cause: error }); }
   }
-  if (failure) throw new Error(`Review interruption failed; retained ${base}`, { cause: failure });
+  if (failure) throw new Error(`Review interruption failed; retained ${base}; stderr: ${Buffer.concat(stderr).toString()}`, { cause: failure });
   await rm(base, { recursive: true });
 }, 25000);

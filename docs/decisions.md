@@ -185,3 +185,10 @@ I learned that saving an argument array requires an explicit choice between inte
 Status: `pending commit`.
 
 I learned that refusing overwrite is separate from keeping partial writes invisible: a closed private sibling and an exclusive hard link provide both. Explicit false options also need the same duplicate key as their positive forms so saved preferences cannot silently win or depend on flag order.
+
+
+## Tier C terminal presentation — unreleased checkpoint
+
+Status: `pending commit`.
+
+I learned that terminal ownership and observation authority are separate: menus can release raw input and a static identity can explain the existing startup wait without changing the runner. A successful command deserves a clear outcome, while incomplete coverage and outside-project limits must remain prominent; JSON and HTML keep their independent output contracts.

@@ -13,7 +13,8 @@
     "twin": "./dist/index.js"
   },
   "dependencies": {
-    "@twin-cli/core": "workspace:*"
+    "@twin-cli/core": "workspace:*",
+    "@inquirer/select": "5.2.5"
   },
   "files": ["dist/*.js", "dist/*.d.ts", "README.md", "LICENSE"],
   "engines": { "node": ">=24.2.0" },
