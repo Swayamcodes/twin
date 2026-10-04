@@ -84,6 +84,64 @@ afterEach(async () => {
 });
 
 describe("twin run", () => {
+  it("forwards the default inventory budget and the existing interruption signal independently of command timeout", async () => {
+    expect(await main(["run", "--timeout-ms=17", "--", "/tool", "--scan-timeout-ms=1"])).toBe(0);
+    const options = vi.mocked(createTwin).mock.calls[0]![0];
+    expect(options.scanTimeoutMs).toBe(30000);
+    expect(options.scanSignal).toBe(run.mock.calls[0]![0].interruptSignal);
+    expect(options.scanSignal?.aborted).toBe(false);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 17, argv: ["--scan-timeout-ms=1"] }));
+  });
+
+  it.each([false, true])("uses config scan budget with flag override=%s without modifying config", async override => {
+    const root = await htmlRoot();
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    const saved = JSON.stringify({ command: ["/tool"], timeoutMs: 17, scanTimeoutMs: 23 });
+    await writeFile(join(root, "twin.config.json"), saved);
+    expect(await main(override ? ["run", "--scan-timeout-ms=31"] : [])).toBe(0);
+    expect(createTwin).toHaveBeenCalledWith(expect.objectContaining({ scanTimeoutMs: override ? 31 : 23 }));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 17 }));
+    expect(await readFile(join(root, "twin.config.json"), "utf8")).toBe(saved);
+  });
+
+  it.each(["1", "3600000"])("accepts boundary scan timeout %s", value => {
+    return main(["run", `--scan-timeout-ms=${value}`, "--", "/tool"]).then(status => {
+      expect(status).toBe(0);
+      expect(createTwin).toHaveBeenCalledWith(expect.objectContaining({ scanTimeoutMs: Number(value) }));
+    });
+  });
+
+  it.each(["", "0", "-1", "3600001", "1.5", "+1", " 1", "1e3", "Infinity", "NaN"])("rejects malformed scan timeout %s before copying", async value => {
+    expect(await main(["run", `--scan-timeout-ms=${value}`, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate scan budgets before copying", async () => {
+    expect(await main(["run", "--scan-timeout-ms=1", "--scan-timeout-ms=2", "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+  });
+
+  it("forwards interruption to an in-progress preparation scan and waits for its failure", async () => {
+    let settle: (() => void) | undefined;
+    let signal: AbortSignal | undefined;
+    vi.mocked(createTwin).mockImplementationOnce(options => new Promise((_resolve, reject) => {
+      signal = options.scanSignal;
+      signal?.addEventListener("abort", () => { settle = () => reject(new Error("scan aborted")); }, { once: true });
+    }));
+    let finished = false;
+    const pending = main(["run", "--", "/tool"]).then(status => { finished = true; return status; });
+    await vi.waitFor(() => expect(createTwin).toHaveBeenCalledOnce());
+    process.emit("SIGINT");
+    expect(signal?.aborted).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    settle!();
+    expect(await pending).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("prints scratch allocation OS evidence without creating a session", async () => {
     vi.mocked(mkdtemp).mockRejectedValueOnce(Object.assign(new Error("allocation failed"), {
       code: "ENOSPC", errno: -28, syscall: "mkdtemp", path: "/tmp/twin-cli-probe",
@@ -173,7 +231,7 @@ describe("twin run", () => {
     expect(createTwin).not.toHaveBeenCalled();
   });
 
-  it.each(["{", '{"command":[]}', '{"command":["/tool"],"timeoutMs":0}'])("rejects invalid saved config before even an explicit workload: %s", async saved => {
+  it.each(["{", '{"command":[]}', '{"command":["/tool"],"timeoutMs":0}', '{"command":["/tool"],"scanTimeoutMs":0}'])("rejects invalid saved config before even an explicit workload: %s", async saved => {
     const root = await htmlRoot();
     vi.spyOn(process, "cwd").mockReturnValue(root);
     await writeFile(join(root, "twin.config.json"), saved);

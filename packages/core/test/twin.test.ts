@@ -4,6 +4,8 @@ import fsPromises, { chmod, mkdir, readdir, readFile, rename, symlink, unlink } 
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createTwin, type TwinSession } from "../src/index.js";
+import * as globalNpm from "../src/global-npm.js";
+import * as manifests from "../src/manifest.js";
 import { fixtureTest, fingerprint, nodeOptions, put } from "./support.js";
 
 describe("session", () => {
@@ -101,3 +103,77 @@ describe("session", () => {
     await expect(createTwin({ sourceDirectory: join(f.path, "source-link"), scratchParent: f.scratch })).rejects.toThrow("ordinary directory");
   }));
 });
+
+
+describe("inventory policy and cancellation", () => {
+  it("captures one policy for every preparation, receipt and apply inventory", async () => fixtureTest(async f => {
+    await put(f.source, "file", "base");
+    const controller = new AbortController();
+    const options = { sourceDirectory: f.source, scratchParent: f.scratch, scanTimeoutMs: 45678, scanSignal: controller.signal };
+    const scan = vi.spyOn(manifests, "captureManifest");
+    try {
+      const session = await createTwin(options); f.sessions.push(session);
+      options.scanTimeoutMs = 1;
+      await session.run(nodeOptions("edit"));
+      expect(await session.apply()).toMatchObject({ status: "applied" });
+      expect(scan.mock.calls.length).toBeGreaterThanOrEqual(10);
+      for (const call of scan.mock.calls) expect(call[2]).toEqual({ timeoutMs: 45678, signal: controller.signal });
+    } finally { scan.mockRestore(); }
+  }));
+  it("rejects invalid budgets and pre-aborted preparation before allocation", async () => fixtureTest(async f => {
+    const controller = new AbortController(); controller.abort();
+    await expect(createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanTimeoutMs: 0 })).rejects.toThrow("Invalid Twin scan timeout");
+    await expect(createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal })).rejects.toThrow("Scan cancelled");
+    await expect(createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: { aborted: false } as AbortSignal })).rejects.toThrow("Invalid Twin scan signal");
+    expect(await readdir(f.scratch)).toEqual([]);
+  }));
+  it("settles preparation and guarded cleanup after cancellation during inventory", async () => fixtureTest(async f => {
+    await put(f.source, "file", "base");
+    const controller = new AbortController(); const real = manifests.captureManifest;
+    const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+      const result = await real(...args); controller.abort(); return result;
+    });
+    try {
+      await expect(createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal })).rejects.toThrow('cleanup={"status":"removed"}');
+      expect(await readdir(f.scratch)).toEqual([]);
+    } finally { scan.mockRestore(); }
+  }));
+  it("pre-handoff scan cancellation leaves the child settled and permits discard", async () => fixtureTest(async f => {
+    const controller = new AbortController();
+    const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal }); f.sessions.push(session);
+    controller.abort();
+    await expect(session.run(nodeOptions("echo"))).rejects.toThrow("Scan cancelled");
+    expect(session.inspect().state).toBe("ready");
+    expect(await session.discard()).toMatchObject({ status: "removed" });
+  }));
+});
+
+it.each(["scan", "command"])("rechecks %s interruption after the pre-launch observer", async kind => fixtureTest(async f => {
+  const controller = new AbortController();
+  const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, ...(kind === "scan" ? { scanSignal: controller.signal } : {}) }); f.sessions.push(session);
+  const observer = vi.spyOn(globalNpm, "captureGlobalNpm").mockImplementation(async () => {
+    controller.abort(); return { versions: new Map(), coverage: "complete", issues: [] };
+  });
+  const spawn = vi.spyOn(childProcess, "spawn"); syncBuiltinESMExports();
+  try {
+    await expect(session.run({ ...nodeOptions("echo"), env: { NPM_CONFIG_PREFIX: join(f.path, "prefix") }, ...(kind === "command" ? { interruptSignal: controller.signal } : {}) })).rejects.toThrow(kind === "scan" ? "Scan cancelled" : "Interrupted before command launch");
+    expect(observer).toHaveBeenCalledOnce(); expect(spawn).not.toHaveBeenCalled();
+    expect(session.inspect().state).toBe("ready");
+    expect(await session.discard()).toMatchObject({ status: "removed" });
+  } finally { observer.mockRestore(); spawn.mockRestore(); syncBuiltinESMExports(); }
+}));
+it("scan-only cancellation after handoff preserves independent command execution", async () => fixtureTest(async f => {
+  const controller = new AbortController();
+  const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal }); f.sessions.push(session);
+  const spawnReal = childProcess.spawn;
+  const spawn = vi.spyOn(childProcess, "spawn").mockImplementation((...args: Parameters<typeof spawnReal>) => {
+    const child = spawnReal(...args); controller.abort(); return child;
+  }); syncBuiltinESMExports();
+  try {
+    expect((await session.run(nodeOptions("echo"))).exitCode).toBe(0);
+    expect(session.inspect().state).toBe("finished");
+    expect(session.inspect().receipt?.files).toMatchObject({ coverage: "partial", issues: expect.arrayContaining([expect.objectContaining({ reason: "scan-cancelled" })]) });
+    expect(await session.apply()).toMatchObject({ status: "refused" });
+    expect(await session.discard()).toMatchObject({ status: "removed" });
+  } finally { spawn.mockRestore(); syncBuiltinESMExports(); }
+}));

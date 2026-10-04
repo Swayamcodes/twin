@@ -827,3 +827,35 @@ Only public sanitized tool/adapter identities enter the output. Validation and
 rendering finish before stdout is written; failures produce a closed stderr code.
 This reader invokes no producer, process, root allocation or cleanup. The report
 is current Twin-only evidence, not the final AgentTX/plain-Git comparison report.
+
+## Per-inventory budgets and cooperative cancellation
+
+Core normalizes and freezes `CreateTwinOptions.scanTimeoutMs` (default 30,000;
+integer 1–3,600,000) and `scanSignal` before allocation. Every production
+`captureManifest` caller, including apply parent inventories, receives that
+policy. Each call creates a fresh `performance.now()` deadline. Command timeout
+and interruption remain independent core options; CLI forwards its existing
+interruption signal to both command and scan cancellation.
+
+The serial scanner checks termination around awaited operations and before
+claiming completion. It closes file descriptors and performs post-read identity
+checks even after interrupted reads. Only confirmed identity/metadata changes
+produce `entry-changed-during-scan`; termination and unchanged short EOF have
+separate closed reasons. Coverage limits, byte-safe paths, no-follow reads,
+fresh hashes, symlink policy and `.git` handling remain intact. No observer
+deduplication or bounded concurrency is added.
+
+Preparation settles all started observers before guarded cleanup. Cancellation
+may wait for copying, link discovery, other observers and native operations.
+Session run checks cancellation before handoff and marks the child unsettled
+only when handing it to the runner. Apply keeps all raw coverage and link
+reconciliation guards, checks cancellation before mutation attempts, and records
+possible partial application after any issued original mutation (including
+temporary sibling open). Guarded temporary cleanup and discard still run when
+the scan signal is aborted.
+
+Budgets apply separately to each inventory, not the whole run; larger budgets
+can multiply total waiting time. Incomplete preparation baselines still forbid
+apply. This is an interim reliability checkpoint, not evidence of acceptable
+real-repository performance, universal project compatibility or an OS sandbox.
+Prizzle's DrvFS timeout remains a separate unresolved issue.

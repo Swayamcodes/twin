@@ -7,7 +7,7 @@ import { mkdtemp, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
-import { createTwin, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
+import { createTwin, DEFAULT_SCAN_TIMEOUT_MS, validScanTimeoutMs, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
 import { renderReceiptText, renderCompactReceipt, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
 import { resolveExecutable } from "./executable.js";
@@ -15,7 +15,7 @@ import { preparationErrorDiagnostic } from "./error-diagnostics.js";
 import { initConfig, loadConfig, validTimeout } from "./config.js";
 import { askTerminal, chooseTerminal, preparation, renderLogo, terminalColors, terminalOutput, terminalPrompts } from "./terminal-ui.js";
 
-const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--scan-timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
 
 twin init saves project-root twin.config.json without launching a command.
 Bare twin and commandless twin run use that config.
@@ -28,6 +28,7 @@ Bare names use the command's PATH in order; missing PATH has no candidates.
 Empty/relative PATH entries use the copy's working directory; executable symlinks are followed.
 --interactive inherits stdin, stdout and stderr; command output is not captured.
 --timeout-ms=<integer> sets the command deadline (1–3600000 ms); defaults: captured 60000 ms, interactive 3600000 ms.
+--scan-timeout-ms=<integer> sets each inventory's independent elapsed-time budget (1–3600000 ms; default 30000 ms).
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 --receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
 --review prints the receipt, then asks on stdin to apply, discard, or cancel and retain in this invocation.
@@ -183,13 +184,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   let review: boolean;
   let format: "json" | "text";
   let timeoutMs: number;
+  let scanTimeoutMs: number;
   let htmlDestination: string | undefined;
   let command: readonly string[];
   try {
     const input = argv[0] === "run" ? argv.slice(1) : argv;
     const separator = input.indexOf("--");
     const flags = input.slice(0, separator < 0 ? undefined : separator);
-    const options: { interactive?: boolean; review?: boolean; receipt?: "json" | "text"; timeoutMs?: number } = {};
+    const options: { interactive?: boolean; review?: boolean; receipt?: "json" | "text"; timeoutMs?: number; scanTimeoutMs?: number } = {};
     const seen = new Set<string>();
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i]!;
@@ -206,6 +208,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         const value = flag.slice("--timeout-ms=".length);
         if (!/^[0-9]+$/.test(value) || !validTimeout(Number(value))) throw new Error("Invalid Twin timeout.");
         options.timeoutMs = Number(value);
+      } else if (flag.startsWith("--scan-timeout-ms=")) {
+        key = "scan-timeout";
+        const value = flag.slice("--scan-timeout-ms=".length);
+        if (!/^[0-9]+$/.test(value) || !validScanTimeoutMs(Number(value))) throw new Error("Invalid Twin scan timeout.");
+        options.scanTimeoutMs = Number(value);
       } else if (flag.startsWith("--receipt-html=")) {
         key = "html"; htmlDestination = flag.slice("--receipt-html=".length);
         if (!htmlDestination) throw new Error("Invalid Twin HTML destination.");
@@ -220,6 +227,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     review = options.review ?? config?.review ?? false;
     format = options.receipt ?? config?.receipt ?? "json";
     timeoutMs = options.timeoutMs ?? config?.timeoutMs ?? (interactive ? 3600000 : 60000);
+    scanTimeoutMs = options.scanTimeoutMs ?? config?.scanTimeoutMs ?? DEFAULT_SCAN_TIMEOUT_MS;
   } catch (error) {
     await write(process.stderr, `${errorText(error)}\n`);
     return 2;
@@ -243,7 +251,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     let phase: "preparation" | "execution" = "preparation";
     try {
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
-      session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
+      session = await createTwin({ sourceDirectory: process.cwd(), scratchParent, scanTimeoutMs, scanSignal: interruption.signal });
       phase = "execution";
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
       const executable = await resolveExecutable(command[0]!, env, session.workspacePath);

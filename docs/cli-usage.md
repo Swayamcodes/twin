@@ -11,6 +11,26 @@ changes are not in published core 0.1.0. The current [copy boundary](phase-3-min
 defines newly rejected target forms, discovery limits, and incomplete/race limits.
 No universal pnpm compatibility or OS sandbox claim is made.
 
+## Unreleased inventory budget
+
+The checkout accepts `--scan-timeout-ms=<integer>` before `--` and an optional
+`scanTimeoutMs` field in `twin.config.json`. Both accept 1–3,600,000 ms; the
+default is 30,000 ms. The flag overrides config, which overrides the default.
+For example, `twin run --scan-timeout-ms=120000 -- node script.js` sets a two-minute cooperative budget for each
+inventory. This budget is independent of `--timeout-ms`,
+which limits command execution. Options after `--` remain command arguments.
+Init adds no scan-budget prompt and one-off options never rewrite config.
+
+The elapsed-time budget resets for each inventory. Preparation, receipt
+collection and apply perform multiple inventories, so total waiting can exceed
+one budget. An exhausted inventory has incomplete coverage; incomplete
+baselines refuse apply rather than proving an absence of changes. SIGINT or
+SIGTERM forwards cancellation to scans. Twin awaits in-progress copy and native
+filesystem operations before guarded cleanup; this is not immediate cancellation
+of those operations. The higher budget has not been verified as a performance
+solution on a large real repository. Entry, depth, path and link-target limits
+remain separate from the time budget.
+
 ## Unreleased preparation diagnostics
 
 Scratch allocation and copy preparation failures print a bounded local cause

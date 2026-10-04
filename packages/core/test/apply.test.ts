@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { createTwin } from "../src/index.js";
+import * as manifests from "../src/manifest.js";
 import { fixtureTest, put } from "./support.js";
 
 const command = (script: string) => ({ executable: process.execPath, argv: ["-e", script], env: {}, timeoutMs: 5000 });
@@ -307,3 +309,76 @@ describe("three-state apply", () => {
     await chmod(join(session.workspacePath, "locked"), 0o700);
   }));
 });
+
+
+describe("apply inventory termination", () => {
+  it.each(["before-temp", "after-temp", "issued-open"])("accounts for cancellation at %s", async kind => fixtureTest(async f => {
+    await put(f.source, "file", "base");
+    const controller = new AbortController();
+    const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal }); f.sessions.push(session);
+    await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+    let inScan = 0; let hooked = false; let tempOpens = 0;
+    const realScan = manifests.captureManifest;
+    const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+      inScan++;
+      try { return await realScan(...args); } finally { inScan--; }
+    });
+    const original = fsPromises.open;
+    const spy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const path = String(args[0]);
+      if (path.includes("/.twin-apply-")) tempOpens++;
+      if (path.includes("/.twin-apply-") && kind === "issued-open") {
+        controller.abort(); throw Object.assign(new Error("issued open failed"), { code: "EIO" });
+      }
+      const handle = await original(...args);
+      if (path.includes("/.twin-apply-") && kind === "after-temp") controller.abort();
+      if (path === join(session.workspacePath, "file") && kind === "before-temp" && inScan === 0) {
+        // Only the apply copy reader follows its own independent verification scans.
+        const stat = handle.stat.bind(handle);
+        Object.defineProperty(handle, "stat", { value: async (...values: Parameters<typeof stat>) => {
+          const result = await stat(...values); hooked = true; controller.abort(); return result;
+        } });
+      }
+      return handle;
+    }); syncBuiltinESMExports();
+    try {
+      const result = await session.apply();
+      if (kind === "before-temp") { expect(hooked).toBe(true); expect(tempOpens).toBe(0); }
+      else expect(tempOpens).toBe(1);
+      expect(result).toMatchObject(kind === "before-temp" ? { status: "refused" } : { status: "failed", partialApplicationPossible: true });
+      expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+      expect((await fsPromises.readdir(f.source)).some(name => name.startsWith(".twin-apply-"))).toBe(false);
+    } finally { scan.mockRestore(); spy.mockRestore(); syncBuiltinESMExports(); }
+    expect(await session.discard()).toMatchObject({ status: "removed" });
+  }));
+  it("refuses incomplete verification inventories before original writes", async () => fixtureTest(async f => {
+    await put(f.source, "file", "base"); const session = await f.create();
+    await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+    const real = manifests.captureManifest; let calls = 0;
+    const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+      const result = await real(...args);
+      return ++calls === 5 ? { ...result, coverage: "partial", issues: [{ reason: "scan-timeout" }] } : result;
+    });
+    try {
+      expect(await session.apply()).toMatchObject({ status: "refused", reason: "Incomplete inventory" });
+      expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+    } finally { scan.mockRestore(); }
+  }));
+});
+
+it("reports cancellation after an original rename as potentially partial and cleans safely", async () => fixtureTest(async f => {
+  await put(f.source, "file", "base");
+  const controller = new AbortController();
+  const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal }); f.sessions.push(session);
+  await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+  const original = fsPromises.rename;
+  const spy = vi.spyOn(fsPromises, "rename").mockImplementation(async (...args) => {
+    await original(...args); if (String(args[0]).includes("/.twin-apply-")) controller.abort();
+  }); syncBuiltinESMExports();
+  try {
+    expect(await session.apply()).toMatchObject({ status: "failed", partialApplicationPossible: true });
+    expect(await readFile(join(f.source, "file"), "utf8")).toBe("copy");
+    expect((await fsPromises.readdir(f.source)).some(name => name.startsWith(".twin-apply-"))).toBe(false);
+  } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  expect(await session.discard()).toMatchObject({ status: "removed" });
+}));

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { fixtureTest, put } from "./support.js";
 import type { MinimalReceipt } from "../src/index.js";
+import * as manifests from "../src/manifest.js";
 import { captureManifest } from "../src/manifest.js";
 import { captureGitCategories } from "../src/git-classification.js";
 
@@ -421,3 +422,19 @@ describe("minimal receipt", () => {
     await session.discard();
   }));
 });
+
+
+it("executes with a partial preparation receipt but never admits its partial apply baseline", async () => fixtureTest(async f => {
+  await put(f.source, "file", "base");
+  const real = manifests.captureManifest;
+  const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+    const result = await real(...args);
+    return { ...result, coverage: "partial", issues: [{ reason: "scan-timeout" }] };
+  });
+  let session;
+  try { session = await f.create(); } finally { scan.mockRestore(); }
+  expect((await session.run(command('require("fs").writeFileSync("file","copy")'))).exitCode).toBe(0);
+  expect(session.inspect().receipt?.files).toMatchObject({ coverage: "partial", issues: expect.arrayContaining([expect.objectContaining({ reason: "scan-timeout" })]) });
+  expect(await session.apply()).toMatchObject({ status: "refused", reason: "Incomplete inventory" });
+  expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+}));

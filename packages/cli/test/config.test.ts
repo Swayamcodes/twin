@@ -118,6 +118,14 @@ describe("project config", () => {
   it.each([1, 60000, 3600000])("accepts timeoutMs %s", timeoutMs => {
     expect(parseConfig({ command: ["node"], timeoutMs }).timeoutMs).toBe(timeoutMs);
   });
+
+  it.each([1, 30000, 3600000])("accepts independent scanTimeoutMs %s", scanTimeoutMs => {
+    expect(parseConfig({ command: ["node"], timeoutMs: 7, scanTimeoutMs })).toEqual({ command: ["node"], timeoutMs: 7, scanTimeoutMs });
+  });
+
+  it.each([0, -1, 3600001, 1.5, Infinity, NaN, "100", null, true])("rejects invalid scanTimeoutMs %s", scanTimeoutMs => {
+    expect(() => parseConfig({ command: ["node"], scanTimeoutMs })).toThrow("Invalid twin.config.json");
+  });
 });
 
 

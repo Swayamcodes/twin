@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { validScanTimeoutMs } from "@twin-cli/core";
 
 export interface TwinConfig {
   command: string[];
@@ -8,6 +9,7 @@ export interface TwinConfig {
   review?: boolean;
   receipt?: "json" | "text";
   timeoutMs?: number;
+  scanTimeoutMs?: number;
 }
 
 export function validTimeout(value: number): boolean {
@@ -17,14 +19,15 @@ export function validTimeout(value: number): boolean {
 export function parseConfig(value: unknown): TwinConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Invalid twin.config.json: expected an object.");
   const config = value as Record<string, unknown>;
-  if (Object.keys(config).some(key => !["command", "interactive", "review", "receipt", "timeoutMs"].includes(key))
+  if (Object.keys(config).some(key => !["command", "interactive", "review", "receipt", "timeoutMs", "scanTimeoutMs"].includes(key))
       || !Array.isArray(config.command) || config.command.length === 0
       || config.command.some(arg => typeof arg !== "string" || arg.includes("\0")) || !config.command[0]
       || (config.interactive !== undefined && typeof config.interactive !== "boolean")
       || (config.review !== undefined && typeof config.review !== "boolean")
       || (config.receipt !== undefined && config.receipt !== "json" && config.receipt !== "text")
-      || (config.timeoutMs !== undefined && (typeof config.timeoutMs !== "number" || !validTimeout(config.timeoutMs)))) {
-    throw new Error("Invalid twin.config.json: expected command argv, boolean interactive/review, receipt json/text, and optional timeoutMs (1–3600000).");
+      || (config.timeoutMs !== undefined && (typeof config.timeoutMs !== "number" || !validTimeout(config.timeoutMs)))
+      || (config.scanTimeoutMs !== undefined && (typeof config.scanTimeoutMs !== "number" || !validScanTimeoutMs(config.scanTimeoutMs)))) {
+    throw new Error("Invalid twin.config.json: expected command argv, boolean interactive/review, receipt json/text, and optional timeoutMs/scanTimeoutMs (1–3600000).");
   }
   return config as unknown as TwinConfig;
 }

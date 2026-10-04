@@ -331,3 +331,27 @@ core/CLI builds passed. The bounded real-terminal smoke passed on Linux. All
 core fixture reports showed empty before/after root sets, empty remaining Twin
 allocations and empty fixture registries; live CLI tests verified their action
 PIDs stopped before fixture removal. No retained root was reported.
+
+## Interim scanner reliability checkpoint (unreleased)
+
+The 30-second default remains. Core `scanTimeoutMs` and CLI
+`--scan-timeout-ms=N` accept integer milliseconds from 1 to 3,600,000; flag
+precedence is flag, saved configuration, default. Configuration initialization
+adds no prompt and existing personal configuration is not rewritten.
+
+Every preparation, receipt and apply inventory receives a fresh deadline,
+including apply parent checks. This is not a whole-run budget: longer budgets
+can multiply total waiting time. Command timeout remains separate. Timeout and
+cancellation report their own reasons; unfinished stable reads do not claim a
+metadata mutation or emit a partial hash. Actual detected changes still report
+`entry-changed-during-scan`, including when termination also occurs.
+
+Partial preparation baselines still prevent apply. Cancellation may wait for
+copying or pending native operations; started observations settle before
+guarded cleanup. Apply cancellation before mutation refuses, while cancellation
+after any original mutation attempt reports possible partial application and
+retains the copy. Existing symlink, `.git`, coverage and cleanup guards remain.
+
+No large Prizzle verification was run for this checkpoint. The DrvFS inventory
+timeout is a separate unresolved performance issue, and this work does not
+establish acceptable performance across real repositories.

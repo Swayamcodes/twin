@@ -156,3 +156,34 @@ and their closed reasons in the five-dimension order above. Fixed limitations an
 sanitized public tool/adapter identities are included. This is not the final
 AgentTX/plain-Git comparison report. It performs no producer work or cleanup and
 does not authenticate the saved file or retained artifacts.
+
+## Interim inventory reliability policy
+
+`scanTimeoutMs` defaults to 30,000 milliseconds and accepts an integer from 1
+to 3,600,000. Each preparation, receipt and apply inventory receives its own
+fresh monotonic deadline; this is not a budget for the entire run. Longer
+budgets can multiply total waiting time, especially when apply verifies paths
+with additional inventories. Command `timeoutMs` remains separate.
+
+Coverage limits remain 100,000 entries, 2 GiB hashed content, 128 directory
+levels and 4,096 path bytes. Ignored files and `.git` remain included, with fresh
+hashes and identity checks. Timeout, cancellation and stable unfinished reads
+are reported as `scan-timeout`, `scan-cancelled` and `file-read-incomplete`.
+`entry-changed-during-scan` requires detected metadata or identity differences;
+a confirmed change and termination can both be reported. Partial reads never
+produce a file digest. Partial preparation inventories permit execution, but
+partial baselines still prevent apply even if later inventories complete.
+
+Cancellation is cooperative. Preparation waits for started observations before
+guarded cleanup; copying and pending native operations may delay cancellation.
+Before command handoff, cancellation prevents launch and leaves the child
+settled. Once handed off, command interruption uses its separate signal. Apply
+refuses cancellation or incomplete verification before original mutation
+attempts; after any mutation attempt, including temporary sibling creation,
+failure reports possible partial application and retains the copy. Cleanup
+retains its authority checks and does not depend on an un-aborted scan signal.
+
+This checkpoint does not establish acceptable performance across real
+repositories. The observed Prizzle DrvFS inventory timeout remains unresolved;
+Prizzle compatibility has not passed. No concurrency, exclusions, stale hashes
+or partial-to-complete coverage promotion are introduced.
