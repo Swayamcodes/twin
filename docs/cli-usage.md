@@ -1,5 +1,7 @@
 # Twin CLI review flow
 
+This guide includes the **unpublished CLI 0.1.1 candidate** prepared at `1ace058`, using unchanged core 0.1.0. Registry installation instructions remain at 0.1.0 until publication is confirmed.
+
 Run a command from the project directory:
 
 ```sh
@@ -32,7 +34,7 @@ by presentation limits.
 output. Twin does not allocate a PTY. `twin --help` and `twin run --help` show
 the CLI options.
 
-In this unreleased checkout, captured commands default to a 60,000 ms deadline
+In the unpublished 0.1.1 candidate, captured commands default to a 60,000 ms deadline
 and `--interactive` commands default to 3,600,000 ms (one hour). Set an explicit
 deadline before `--` to override either default:
 
@@ -77,7 +79,7 @@ session. A new `--review` run creates a new copy. The [apply boundary](../ARCHIT
 describes conflict checks and the remaining same-user check/write race and
 non-atomic multi-path limit.
 
-## Project convenience setup (unreleased)
+## Project convenience setup (0.1.1 candidate, unpublished)
 
 These conveniences are available in this checkout, not published Twin 0.1.0.
 From the project root, run `twin init`. Setup asks for Codex or Claude, then

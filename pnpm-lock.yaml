@@ -24,7 +24,7 @@ importers:
         specifier: 5.2.5
         version: 5.2.5(@types/node@26.6.2)
       '@twin-cli/core':
-        specifier: workspace:*
+        specifier: workspace:0.1.0
         version: link:../core
 
   packages/core: {}

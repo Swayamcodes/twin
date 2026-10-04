@@ -1,6 +1,6 @@
 {
   "name": "@twin-cli/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "description": "Run commands in a full project copy, inspect receipts, and apply or discard changes.",
   "type": "module",
@@ -13,7 +13,7 @@
     "twin": "./dist/index.js"
   },
   "dependencies": {
-    "@twin-cli/core": "workspace:*",
+    "@twin-cli/core": "workspace:0.1.0",
     "@inquirer/select": "5.2.5"
   },
   "files": ["dist/*.js", "dist/*.d.ts", "README.md", "LICENSE"],

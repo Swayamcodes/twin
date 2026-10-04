@@ -3,11 +3,11 @@
 Twin runs a command in a full copy of the current project, including ignored files
 and folders without Git. It prints a receipt and discards the copy after confirmed
 settlement. Requires Node.js 24.2 or later.
-`@twin-cli/cli@0.1.0` is publicly available on npm.
+This checkout prepares `@twin-cli/cli@0.1.1`, **unpublished** until registry publication is confirmed. It requires exact `@twin-cli/core@0.1.0` and `@inquirer/select@5.2.5`. Published CLI 0.1.0 remains available.
 
 Licensed under MIT; see [LICENSE](LICENSE).
 
-Install globally or use npx:
+Install the currently published version globally or use npx:
 
 ```sh
 npm install --global @twin-cli/cli@0.1.0
@@ -39,7 +39,7 @@ The [release record](https://github.com/Swayamcodes/twin/blob/main/docs/npm-rele
 notes the registry smoke's expected incomplete coverage and repeated `prefix-unset`
 text issue, which remains deferred.
 
-## Project shortcuts (unreleased checkout)
+## Project shortcuts (0.1.1 candidate, unpublished)
 
 `twin init` creates project-root `twin.config.json` without launching an agent
 or making network calls. It writes a private sibling file, closes it, and
@@ -70,7 +70,7 @@ verification remains on budget hold. See the CLI guide for example configs
 and the unchanged execution and safety limits.
 
 
-## Terminal presentation (unreleased Tier C)
+## Terminal presentation (0.1.1 candidate, unpublished)
 
 TTY text runs use the approved orchid/plum static wordmark, stationary
 “Preparing project copy…” feedback, and compact receipts with command outcome,
@@ -90,3 +90,14 @@ exact-byte frame is unchanged. Explicit review still prompts after that frame.
 The existing plain/HTML receipts retain bounds, escaping and disclosures; HTML
 never receives terminal colors. No agent verification is inferred from this
 presentation checkpoint; Claude's funded conversation rerun remains on hold.
+
+## Install the unpublished candidate locally
+
+After packing this checkout with pnpm, install the inspected tarball:
+
+```sh
+npm install --global /absolute/path/to/twin-cli-cli-0.1.1.tgz
+twin --help
+```
+
+The install fetches published core 0.1.0 and the menu dependency from npm. Do not use a registry `@twin-cli/cli@0.1.1` install until publication is confirmed. Captured runs default to 60,000 ms; interactive runs default to 3,600,000 ms. `--timeout-ms=<integer>` overrides config `timeoutMs` and accepts 1–3,600,000 ms. Deadlines cover command runtime, not preparation or review.

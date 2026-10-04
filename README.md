@@ -35,6 +35,8 @@ npx --package=@twin-cli/cli@0.1.0 twin --help
 
 For the reusable engine, install `npm install @twin-cli/core@0.1.0`. The [release record](docs/npm-release.md) documents publication, registry-install verification, and the smoke check's expected incomplete coverage and repeated `prefix-unset` text issue.
 
+CLI **0.1.1 is an unpublished release candidate** at this checkout. It adds timeout selection, project config/init, aliases and false overrides, and terminal presentation while retaining exact core 0.1.0. See the [release preparation record](docs/npm-release.md) for local tarball installation and verification; the registry commands above remain for published 0.1.0.
+
 ## Build and run from this checkout
 
 Use Node 24 and the repository-pinned pnpm 12.6.0. From this repository:
@@ -66,7 +68,7 @@ To inspect a settled copy before deciding, use review mode:
 node /path/to/twin/packages/cli/dist/index.js run --receipt=text --review -- /absolute/path/to/command arg1 arg2
 ```
 
-At the prompt, type `apply` to run Twin's three-state conflict checks and apply the copy's changes, or `discard` to remove it. EOF, interruption, or another answer retains the copy for manual inspection. Review and apply are available only during that invocation; a later Twin command cannot resume a retained session. Apply plans all changes before writing, but a later I/O failure can leave earlier paths changed. See the [CLI usage guide](docs/cli-usage.md) and `node packages/cli/dist/index.js run --help` from this checkout.
+In a supported TTY, select Apply changes, Discard copy, or Cancel and retain copy (default). Without a TTY, type `apply` to run Twin's three-state conflict checks and apply the copy's changes, or `discard` to remove it. EOF, interruption, or another answer retains the copy for manual inspection. Review and apply are available only during that invocation; a later Twin command cannot resume a retained session. Apply plans all changes before writing, but a later I/O failure can leave earlier paths changed. See the [CLI usage guide](docs/cli-usage.md) and `node packages/cli/dist/index.js run --help` from this checkout.
 
 ## Fixed-action comparison
 

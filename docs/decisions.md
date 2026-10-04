@@ -192,3 +192,9 @@ I learned that refusing overwrite is separate from keeping partial writes invisi
 Status: `pending commit`.
 
 I learned that terminal ownership and observation authority are separate: menus can release raw input and a static identity can explain the existing startup wait without changing the runner. A successful command deserves a clear outcome, while incomplete coverage and outside-project limits must remain prominent; JSON and HTML keep their independent output contracts.
+
+## CLI 0.1.1 release preparation
+
+Status: `pending commit`; unpublished.
+
+I learned that a CLI-only release must be verified against the published engine rather than a second local tarball: exact core metadata and installed-package checks distinguish packaging compatibility from checkout test success. Packing and terminal inspection remain separate from registry publication and user visual acceptance.

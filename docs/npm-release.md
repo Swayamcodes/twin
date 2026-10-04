@@ -1,4 +1,4 @@
-# npm 0.1.0 release
+# npm release record
 
 `@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm.
 Publication and the registry-installed smoke are recorded at checkout
@@ -9,7 +9,117 @@ Preparation began at `d7c20429c9342956bc8785126f050310188e928a`; the rebuild
 including CLI PATH support used `6528363a8d8d9d4a757e5aaf9491aa2b6207b200`.
 The local packing instructions below remain available for checkout verification.
 
-## Confirmed release decisions
+## CLI 0.1.1 preparation — unpublished
+
+Prepared from HEAD `1ace058d625a69050803aaf6b378cab11443b42a` on 2026-10-04.
+**CLI 0.1.1 is unpublished.** Anonymous npm metadata lists only CLI 0.1.0;
+packing and installing this local candidate do not confirm publication.
+Core stays at published 0.1.0, with unchanged code and version. The checkout
+uses `workspace:0.1.0`; pnpm packs the exact dependency `0.1.0`.
+
+The candidate includes the committed CLI timeout defaults/options and config
+`timeoutMs`, exclusive `twin init`, config-backed bare/commandless runs, aliases,
+positive/negative overrides, and Tier C orchid/plum terminal presentation.
+It preserves the existing execution, validation, settlement, apply, cleanup,
+JSON framing, plain fallback, observation boundaries and HTML escaping paths.
+Init defaults to Text; explicit runs retain JSON defaults. Claude's funded
+conversation verification remains on indefinite budget hold; fixed Node checks
+are not agent compatibility or safety evidence.
+
+### Artifact and installed-package evidence
+
+The fresh checkout artifact is:
+
+```text
+/tmp/twin-cli-release-ui6ltvdh/twin-cli-cli-0.1.1.tgz
+SHA-256: 9819768e0181bdb46c576cf0c07f875bc190eeb74f1dfe46b5054e177548e53c
+SHA-1: e7dbf667a51e9601c6fc31f51b8265f4b8e42658
+Integrity: sha512-9jvWjX/KIr0eNkO9wGqRBAXRn7aH98yEFRxjWSweLB7jVmsvH2pK2ZkR5aY4ONuZd3tJ0N0Rb7BXjlmraChikw==
+```
+
+Inventory: **15 files**, `package/package.json`, `package/README.md`,
+`package/LICENSE`, and `.js`/`.d.ts` pairs under `package/dist/` for `config`,
+`executable`, `index`, `receipt-html`, `receipt-text`, and `terminal-ui`.
+The full inventory, sizes, modes and per-file SHA-256 hashes are retained in
+`/tmp/twin-cli-release-ui6ltvdh/pack-inventory.json`.
+No source, tests, source maps, checkout config, web assets or recorded demo
+output are packed. All relative runtime imports and manifest entry targets
+resolve inside the tarball. The only external runtime imports are Node built-ins,
+exact core 0.1.0 and pinned `@inquirer/select@5.2.5`. The packed MIT license
+matches the root license, and the hashbang bin has executable mode `0755`.
+Both packages require Node `>=24.2.0`. pnpm removes the checkout-only
+`prepack` script from the packed manifest; consumer installation needs no build.
+
+The menu package's registry metadata declares Node
+`>=23.5.0 || ^22.13.0 || ^20.17.0`, dependencies `@inquirer/ansi ^2.0.8`,
+`@inquirer/core ^12.0.3`, `@inquirer/type 4.1.1`, and
+`@inquirer/figures ^2.0.9`, and no deprecated status. Its transitive ranges are
+not consumer lock pins; the observed installed tree is retained in
+`/tmp/twin-cli-release-ui6ltvdh/installed-dependencies.json`.
+
+Installed the **CLI tarball alone** into an owned disposable prefix with
+`--ignore-scripts --no-audit --no-fund`, fetching published core 0.1.0 from
+npm rather than installing a checkout core tarball. Installed CLI files match
+the packed bytes; all 27 installed core files match the registry tarball whose
+integrity is `sha512-7SeHCZLwvXQEuDzZ9iBomDLQcXnYn/ywhQZQb2lzRs8HA05FtdhLB+carEiEpV3EyTEltceP4Uqo0NbVg52loQ==`.
+`published-core-provenance.json` records that comparison.
+
+Installed non-TTY checks passed: help; interactive and one-shot init (no workload
+launch), task/argv bytes, default Text and refusal to overwrite; config-backed
+bare and commandless runs; false overrides and one-off precedence; complete
+command replacement; arguments containing spaces, quotes, an empty string and
+option-like tokens; text and schema-5 byte-counted JSON receipts; valid explicit
+and configured deadlines, malformed/out-of-range/duplicate timeout rejection,
+and an actual timed-out fixed Node command; text review apply and JSON review
+discard; standalone HTML export with matching file observations and no ANSI.
+
+Before each review decision, checks established unchanged originals, changed
+copies, absent direct child/process groups and observed settlement. Apply produced
+the expected original changes; discard preserved the original. Both copies and
+owned scratch roots disappeared. Independent installed PTY checks passed for
+init's arrow-key menus/Text default, compact colored text/preparation output,
+JSON without startup decoration and with interactive review, default Cancel and
+retain, apply/discard navigation, and readable monochrome presentation. PTY
+transcripts are separate from the non-TTY exact JSON byte check; terminal newline
+translation is not a change to the frame protocol. Visual acceptance remains a
+user decision. No AI agents or comparison scenarios were run.
+
+All 213 CLI tests in 10 files passed; strict source and test TypeScript checks,
+CLI build, whitespace and exact seven-file release scope checks passed.
+Disposable fixtures were removed only after ownership, settlement and outcome
+checks; artifact evidence is retained outside the repository. The existing web
+style edit, personal config, core, historical evidence and stash are preserved.
+
+### Reproduce candidate packing and installation
+
+From this checkout with Node 24 and pnpm 12.6.0, use a new owned release directory:
+
+```sh
+release_dir="$(mktemp -d /tmp/twin-cli-011-XXXXXX)"
+pnpm --filter @twin-cli/cli pack --pack-destination "$release_dir"
+npm install --global --prefix "$release_dir/prefix" \
+  --cache "$release_dir/npm-cache" --ignore-scripts --no-audit --no-fund \
+  "$release_dir/twin-cli-cli-0.1.1.tgz"
+"$release_dir/prefix/bin/twin" --help
+npm ls --global --prefix "$release_dir/prefix" --all
+```
+
+Run smoke workloads only from owned disposable projects. Keep originals and
+copies available until the review decision, check settlement before cleanup,
+and retain allocations when settlement or ownership is uncertain.
+
+### Publication prerequisites — not performed
+
+Review the final inspected tarball and this preparation diff before staging or
+committing. Publication needs separate explicit authorization, current npm
+identity/org access, and any required OTP or approved publishing token. Recheck
+that CLI 0.1.1 remains unused immediately before publishing. Publish only the
+inspected CLI artifact; **do not republish core 0.1.0**. Confirm registry version,
+exact dependency/bin/license and artifact integrity, then perform a registry
+installation check before marking 0.1.1 published or updating website install
+instructions. No staging, tags, commits, pushes or publication occurred here.
+
+## Confirmed 0.1.0 release decisions
 
 The user confirmed `@twin-cli/core` and `@twin-cli/cli`, version `0.1.0`, with
 executable `twin` and the MIT license. The copyright attribution is
@@ -41,8 +151,8 @@ successful npx help. A registry-installed fixed Node run using a bare `node`
 name, `--receipt=text`, and `--receipt-html=<new-file>` exited zero, reported
 the copy modification, and preserved the original baseline. This is a real
 registry-installed run, separate from the earlier local-tarball smoke below.
-These execution results are user-reported; no additional smoke run is performed
-for this documentation checkpoint. Anonymous read-only registry queries also
+These 0.1.0 execution results are user-reported; that documentation checkpoint
+performed no additional smoke run. Anonymous read-only registry queries also
 confirm the two versions, MIT licenses, CLI executable and exact core dependency.
 
 **Expected incomplete coverage:** the registry smoke fixture had no `package.json`
@@ -58,7 +168,7 @@ apply, and compatibility limits remain unchanged, including Claude's budget hold
 
 ## Package arrangement
 
-Core has no runtime dependencies. CLI depends only on core. The unused Commander
+Core has no runtime dependencies. CLI 0.1.1 depends on exact core 0.1.0 and `@inquirer/select@5.2.5`. The unused Commander
 dependency was removed. Both packages are ESM, require Node.js `>=24.2.0`, expose
 their entry point and TypeScript declarations, and carry repository metadata with
 their workspace directory. CLI provides the `twin` executable.
@@ -68,13 +178,16 @@ package README, and the MIT LICENSE. This excludes
 `core/dist/test-harness`, source tests, scenarios, web assets, skills, environment
 files, and checkout configuration. The repository root remains private.
 
-Use **pnpm pack**: it replaces CLI's checkout `workspace:*` dependency with the
+Use **pnpm pack**: it replaces CLI's checkout `workspace:0.1.0` dependency with the
 exact core version `0.1.0` in the packed manifest. Do not use `npm pack` directly
 on the CLI workspace manifest. See [pnpm's workspace publication behavior](https://pnpm.io/workspaces#publishing-workspace-packages).
 Package `prepack` scripts build the necessary packages before packing; published
 consumers require neither TypeScript nor pnpm to run Twin.
 
-## Build, check, and pack locally
+## Historical 0.1.0 build, check, and pack
+
+The commands and inventory below describe the then-current 0.1.0 checkout.
+For the current candidate, use the 0.1.1 instructions above.
 
 From the repository, using Node 24 and pnpm 12.6.0:
 
