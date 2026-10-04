@@ -1,19 +1,63 @@
 # npm release record
 
-`@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm.
-Publication and the registry-installed smoke are recorded at checkout
-`c7f4bae0e5a0ccad9cbc3f140789fde262e8a0bf`. This documentation checkpoint does
-not republish packages or create Git tags.
+`@twin-cli/cli@0.1.1` and unchanged `@twin-cli/core@0.1.0` are published on npm.
+This documentation update records user-confirmed publication and a registry smoke;
+it performs no installation, workload execution or publication.
 
+## Confirmed CLI 0.1.1 publication
+
+The user confirmed registry version `0.1.1`, executable mapping
+`twin -> dist/index.js`, and exact dependencies `@twin-cli/core: 0.1.0` and
+`@inquirer/select: 5.2.5`. The confirmed registry integrity matches the verified
+candidate tarball exactly:
+
+```text
+sha512-9jvWjX/KIr0eNkO9wGqRBAXRn7aH98yEFRxjWSweLB7jVmsvH2pK2ZkR5aY4ONuZd3tJ0N0Rb7BXjlmraChikw==
+```
+
+The user installed CLI 0.1.1 globally **from npm** and ran `twin --help`
+successfully. In the published fixed-Node text/review smoke, the original still
+contained `before` at review. Apply reported success, the invocation exited 0,
+and the original then contained `after`. The receipt reported direct-child
+settlement and an absent final process group. The user removed the smoke fixture.
+These are user-observed registry results, distinct from the earlier local-tarball
+installation and PTY tests recorded below; this update does not rerun them or
+extend their claims to other agents, modes or workloads.
+
+**Expected incomplete coverage:** the registry smoke fixture had no
+`package.json` and no explicit npm prefix. Declaration coverage was incomplete; global npm coverage was unavailable
+with `prefix-unset`. These warnings remain expected, not command failures. Successful
+execution and apply do not establish complete observation or safety. Outside-project
+rollback and escaped-descendant observation remain unsupported; Claude's
+funded conversation verification remains on indefinite budget hold. The historical
+0.1.0 repeated `prefix-unset` text issue remains recorded below.
+
+## Install the current published release
+
+Requires Node.js 24.2 or later:
+
+```sh
+npm install --global @twin-cli/cli@0.1.1
+twin --help
+npx --package=@twin-cli/cli@0.1.1 twin --help
+npx --package=@twin-cli/cli@0.1.1 twin run -- node script.js
+npm install @twin-cli/core@0.1.0
+```
+
+## Historical 0.1.0 publication context
+
+Core and CLI 0.1.0 publication and the registry-installed smoke were recorded at
+checkout `c7f4bae0e5a0ccad9cbc3f140789fde262e8a0bf`.
 Preparation began at `d7c20429c9342956bc8785126f050310188e928a`; the rebuild
 including CLI PATH support used `6528363a8d8d9d4a757e5aaf9491aa2b6207b200`.
-The local packing instructions below remain available for checkout verification.
+The historical records and local packing instructions are preserved below.
 
-## CLI 0.1.1 preparation — unpublished
+## Historical CLI 0.1.1 preparation — before publication
 
 Prepared from HEAD `1ace058d625a69050803aaf6b378cab11443b42a` on 2026-10-04.
-**CLI 0.1.1 is unpublished.** Anonymous npm metadata lists only CLI 0.1.0;
-packing and installing this local candidate do not confirm publication.
+At preparation time, CLI 0.1.1 was unpublished and anonymous npm metadata
+listed only CLI 0.1.0. Local packing/install checks did not establish publication;
+the later user-confirmed registry evidence above supersedes that release status.
 Core stays at published 0.1.0, with unchanged code and version. The checkout
 uses `workspace:0.1.0`; pnpm packs the exact dependency `0.1.0`.
 
@@ -26,7 +70,7 @@ Init defaults to Text; explicit runs retain JSON defaults. Claude's funded
 conversation verification remains on indefinite budget hold; fixed Node checks
 are not agent compatibility or safety evidence.
 
-### Artifact and installed-package evidence
+### Earlier local-tarball artifact and installed-package evidence
 
 The fresh checkout artifact is:
 
@@ -90,7 +134,7 @@ Disposable fixtures were removed only after ownership, settlement and outcome
 checks; artifact evidence is retained outside the repository. The existing web
 style edit, personal config, core, historical evidence and stash are preserved.
 
-### Reproduce candidate packing and installation
+### Reproduce local packing and tarball installation
 
 From this checkout with Node 24 and pnpm 12.6.0, use a new owned release directory:
 
@@ -108,16 +152,16 @@ Run smoke workloads only from owned disposable projects. Keep originals and
 copies available until the review decision, check settlement before cleanup,
 and retain allocations when settlement or ownership is uncertain.
 
-### Publication prerequisites — not performed
+### Historical publication prerequisites
 
-Review the final inspected tarball and this preparation diff before staging or
-committing. Publication needs separate explicit authorization, current npm
-identity/org access, and any required OTP or approved publishing token. Recheck
-that CLI 0.1.1 remains unused immediately before publishing. Publish only the
-inspected CLI artifact; **do not republish core 0.1.0**. Confirm registry version,
-exact dependency/bin/license and artifact integrity, then perform a registry
-installation check before marking 0.1.1 published or updating website install
-instructions. No staging, tags, commits, pushes or publication occurred here.
+Preparation required review of the inspected tarball, separate publication
+authorization, current npm identity/org access, any required OTP or publishing
+token, and a check that CLI 0.1.1 was unused. The instruction was to publish only
+the inspected CLI artifact and never republish core 0.1.0. Registry metadata,
+artifact integrity and a registry-install smoke were required before describing
+0.1.1 as published or updating website install guidance. The user confirmation
+above now establishes those reported publication results. No publication command
+was executed by the preparation work or this documentation update.
 
 ## Confirmed 0.1.0 release decisions
 
@@ -133,7 +177,7 @@ The user confirmed npm identity `swayamshinde` and reported that
 was occupied by another project. Those observations predate the completed scoped
 publication. Packing and local installation alone do not publish a package.
 
-## Install the published release
+## Historical 0.1.0 install instructions
 
 Requires Node.js 24.2 or later. These commands use the public `0.1.0` packages:
 
@@ -144,7 +188,7 @@ npx --package=@twin-cli/cli@0.1.0 twin run -- node script.js
 npm install @twin-cli/core@0.1.0
 ```
 
-## Published-release verification
+## Historical 0.1.0 published-release verification
 
 The user confirmed both public packages, a successful global installation, and
 successful npx help. A registry-installed fixed Node run using a bare `node`
@@ -187,7 +231,7 @@ consumers require neither TypeScript nor pnpm to run Twin.
 ## Historical 0.1.0 build, check, and pack
 
 The commands and inventory below describe the then-current 0.1.0 checkout.
-For the current candidate, use the 0.1.1 instructions above.
+For current registry installation or local packing, use the 0.1.1 instructions above.
 
 From the repository, using Node 24 and pnpm 12.6.0:
 

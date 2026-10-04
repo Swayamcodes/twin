@@ -198,3 +198,9 @@ I learned that terminal ownership and observation authority are separate: menus 
 Status: `pending commit`; unpublished.
 
 I learned that a CLI-only release must be verified against the published engine rather than a second local tarball: exact core metadata and installed-package checks distinguish packaging compatibility from checkout test success. Packing and terminal inspection remain separate from registry publication and user visual acceptance.
+
+## CLI 0.1.1 publication confirmation
+
+Status: `pending commit`; CLI 0.1.1 published, core unchanged at 0.1.0.
+
+I learned that matching registry integrity connects a published package to the inspected artifact, while a user-observed registry install and apply smoke provide separate execution evidence. Earlier unpublished labels describe preparation checkpoints; expected coverage gaps and agent verification limits remain even after publication succeeds.

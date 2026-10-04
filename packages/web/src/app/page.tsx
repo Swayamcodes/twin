@@ -20,8 +20,8 @@ export default function Home() {
           <div className="hero-actions"><Link className="primary-link" href="/results">explore the results <span aria-hidden="true">↗</span></Link><a className="quiet-link" href="https://github.com/Swayamcodes/twin/blob/3019b52bda3ed024f26d19256111797d83de90de/docs/cli-usage.md">read the usage guide</a></div>
           <div className="install-block" aria-label="Install Twin or build from this checkout">
             <div className="install-top"><span>install · checkout setup</span><span>Node 24.2+ · pnpm 12.6.0 for checkout</span></div>
-            <pre><code>npm install --global @twin-cli/cli@0.1.0{"\n"}twin run -- node script.js{"\n\n"}# from this checkout{"\n"}pnpm install --frozen-lockfile{"\n"}pnpm run build:core{"\n"}pnpm exec tsc -p packages/cli/tsconfig.json</code></pre>
-            <p>Twin 0.1.0 is published on npm. For a checkout build, run <code>node /path/to/twin/packages/cli/dist/index.js run -- ...</code> from your project.</p>
+            <pre><code>npm install --global @twin-cli/cli@0.1.1{"\n"}twin run -- node script.js{"\n\n"}# from this checkout{"\n"}pnpm install --frozen-lockfile{"\n"}pnpm run build:core{"\n"}pnpm exec tsc -p packages/cli/tsconfig.json</code></pre>
+            <p>Twin CLI 0.1.1 is published on npm; core remains 0.1.0. For a checkout build, run <code>node /path/to/twin/packages/cli/dist/index.js run -- ...</code> from your project.</p>
           </div>
         </div>
         <div className="hero-product"><div className="product-caption"><span>inside the copy</span><span>real CLI receipt</span></div><TerminalPlayback /></div>

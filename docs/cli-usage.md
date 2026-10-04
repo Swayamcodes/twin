@@ -1,6 +1,9 @@
 # Twin CLI review flow
 
-This guide includes the **unpublished CLI 0.1.1 candidate** prepared at `1ace058`, using unchanged core 0.1.0. Registry installation instructions remain at 0.1.0 until publication is confirmed.
+This guide describes **published CLI 0.1.1**, using unchanged core 0.1.0.
+Install with `npm install --global @twin-cli/cli@0.1.1`. The
+[release record](npm-release.md) separates the user-observed registry smoke
+from the earlier tarball checks and retains the historical 0.1.0 evidence.
 
 Run a command from the project directory:
 
@@ -34,7 +37,7 @@ by presentation limits.
 output. Twin does not allocate a PTY. `twin --help` and `twin run --help` show
 the CLI options.
 
-In the unpublished 0.1.1 candidate, captured commands default to a 60,000 ms deadline
+In CLI 0.1.1, captured commands default to a 60,000 ms deadline
 and `--interactive` commands default to 3,600,000 ms (one hour). Set an explicit
 deadline before `--` to override either default:
 
@@ -79,9 +82,10 @@ session. A new `--review` run creates a new copy. The [apply boundary](../ARCHIT
 describes conflict checks and the remaining same-user check/write race and
 non-atomic multi-path limit.
 
-## Project convenience setup (0.1.1 candidate, unpublished)
+## Project convenience setup (0.1.1)
 
-These conveniences are available in this checkout, not published Twin 0.1.0.
+These conveniences are included in published CLI 0.1.1; they were absent from
+published Twin 0.1.0.
 From the project root, run `twin init`. Setup asks for Codex or Claude, then
 explicitly asks **interactive chat versus one-shot execution**. It asks for
 one-shot task text separately (one nonblank line, with exact task bytes preserved as one argument),
@@ -161,9 +165,9 @@ resolution, core validation, environment forwarding, launch, signal,
 settlement, receipt, review and cleanup lifecycle.
 
 
-## Terminal presentation (unreleased Tier C)
+## Terminal presentation (0.1.1)
 
-This checkout uses the approved orchid/plum square TWIN wordmark, including a
+CLI 0.1.1 uses the approved orchid/plum square TWIN wordmark, including a
 faint reflected wordmark and its shadow. Text-mode TTY runs show that static
 identity and a stationary `twin  Preparing project copy…` while the existing
 preparation runs. This does not show stages or progress percentages, insert a

@@ -3,16 +3,17 @@
 Twin runs a command in a full copy of the current project, including ignored files
 and folders without Git. It prints a receipt and discards the copy after confirmed
 settlement. Requires Node.js 24.2 or later.
-This checkout prepares `@twin-cli/cli@0.1.1`, **unpublished** until registry publication is confirmed. It requires exact `@twin-cli/core@0.1.0` and `@inquirer/select@5.2.5`. Published CLI 0.1.0 remains available.
+`@twin-cli/cli@0.1.1` is published on npm. It requires exact
+`@twin-cli/core@0.1.0` and `@inquirer/select@5.2.5`.
 
 Licensed under MIT; see [LICENSE](LICENSE).
 
 Install the currently published version globally or use npx:
 
 ```sh
-npm install --global @twin-cli/cli@0.1.0
-npx --package=@twin-cli/cli@0.1.0 twin --help
-npx --package=@twin-cli/cli@0.1.0 twin run -- /absolute/path/to/command arg1 arg2
+npm install --global @twin-cli/cli@0.1.1
+npx --package=@twin-cli/cli@0.1.1 twin --help
+npx --package=@twin-cli/cli@0.1.1 twin run -- /absolute/path/to/command arg1 arg2
 ```
 
 ```sh
@@ -36,10 +37,10 @@ for stdio behavior, apply limits, compatibility, and receipt disclosure limits.
 
 To build from a checkout, use the [root README](https://github.com/Swayamcodes/twin#build-and-run-from-this-checkout).
 The [release record](https://github.com/Swayamcodes/twin/blob/main/docs/npm-release.md)
-notes the registry smoke's expected incomplete coverage and repeated `prefix-unset`
-text issue, which remains deferred.
+notes expected registry-smoke coverage warnings and the historical 0.1.0 repeated
+`prefix-unset` text issue, which remains deferred.
 
-## Project shortcuts (0.1.1 candidate, unpublished)
+## Project shortcuts (0.1.1)
 
 `twin init` creates project-root `twin.config.json` without launching an agent
 or making network calls. It writes a private sibling file, closes it, and
@@ -70,7 +71,7 @@ verification remains on budget hold. See the CLI guide for example configs
 and the unchanged execution and safety limits.
 
 
-## Terminal presentation (0.1.1 candidate, unpublished)
+## Terminal presentation (0.1.1)
 
 TTY text runs use the approved orchid/plum static wordmark, stationary
 “Preparing project copy…” feedback, and compact receipts with command outcome,
@@ -91,7 +92,7 @@ The existing plain/HTML receipts retain bounds, escaping and disclosures; HTML
 never receives terminal colors. No agent verification is inferred from this
 presentation checkpoint; Claude's funded conversation rerun remains on hold.
 
-## Install the unpublished candidate locally
+## Local tarball installation
 
 After packing this checkout with pnpm, install the inspected tarball:
 
@@ -100,4 +101,13 @@ npm install --global /absolute/path/to/twin-cli-cli-0.1.1.tgz
 twin --help
 ```
 
-The install fetches published core 0.1.0 and the menu dependency from npm. Do not use a registry `@twin-cli/cli@0.1.1` install until publication is confirmed. Captured runs default to 60,000 ms; interactive runs default to 3,600,000 ms. `--timeout-ms=<integer>` overrides config `timeoutMs` and accepts 1–3,600,000 ms. Deadlines cover command runtime, not preparation or review.
+Local tarball installation is separate from installing published CLI 0.1.1
+from npm. Both fetch published core 0.1.0 and the menu dependency. The release
+record distinguishes earlier tarball checks from the user-observed registry
+text/review smoke: the original was unchanged at review, Apply succeeded with
+exit 0, and the original contained the expected edit. Missing `package.json`
+and unset npm-prefix coverage warnings were expected.
+
+Captured runs default to 60,000 ms; interactive runs default to 3,600,000 ms.
+`--timeout-ms=<integer>` overrides config `timeoutMs` and accepts 1–3,600,000 ms.
+Deadlines cover command runtime, not preparation or review.

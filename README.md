@@ -23,19 +23,19 @@ testing is optional follow-up, not a release blocker.
 
 ## Install and run
 
-`@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.0` are publicly available on npm under the [MIT license](LICENSE). The CLI requires Node.js 24.2 or later:
+`@twin-cli/core@0.1.0` and `@twin-cli/cli@0.1.1` are publicly available on npm under the [MIT license](LICENSE). The CLI requires Node.js 24.2 or later:
 
 ```sh
-npm install --global @twin-cli/cli@0.1.0
+npm install --global @twin-cli/cli@0.1.1
 twin --help
 twin run -- node script.js
 # Or use npx without a global install:
-npx --package=@twin-cli/cli@0.1.0 twin --help
+npx --package=@twin-cli/cli@0.1.1 twin --help
 ```
 
-For the reusable engine, install `npm install @twin-cli/core@0.1.0`. The [release record](docs/npm-release.md) documents publication, registry-install verification, and the smoke check's expected incomplete coverage and repeated `prefix-unset` text issue.
+For the reusable engine, install `npm install @twin-cli/core@0.1.0`. The [release record](docs/npm-release.md) documents publication, registry-install verification, and expected incomplete coverage warnings and the historical 0.1.0 repeated `prefix-unset` text issue.
 
-CLI **0.1.1 is an unpublished release candidate** at this checkout. It adds timeout selection, project config/init, aliases and false overrides, and terminal presentation while retaining exact core 0.1.0. See the [release preparation record](docs/npm-release.md) for local tarball installation and verification; the registry commands above remain for published 0.1.0.
+Published CLI **0.1.1** adds timeout selection, project config/init, aliases and false overrides, and terminal presentation while retaining exact core 0.1.0. The [release record](docs/npm-release.md) distinguishes earlier local-tarball checks from the user-observed registry text/review smoke: the original stayed unchanged at review, then Apply succeeded and produced the expected edit. Coverage warnings and the existing observation limits remain explicit.
 
 ## Build and run from this checkout
 
