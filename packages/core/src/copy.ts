@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, readdir, readlink, symlink } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { chmod, lstat, mkdir, open, symlink } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
 import { assertRootAuthority, contains, sameIdentity, type OwnedRoot } from "./safety.js";
+import { checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, LINK_DISCOVERY_LIMITS, readLinkState, type BaselineLink, type BaselineLinks } from "./symlink-policy.js";
 
 const gitSentinels = new Set(["commondir", "gitdir", "worktrees", "modules", "config.worktree",
   "objects/info/alternates", "objects/info/http-alternates"]);
@@ -13,8 +14,8 @@ for (const path of ["HEAD", "config", "refs", ...gitSentinels]) {
     gitNames.set(prefix.toLowerCase(), prefix);
   }
 }
-async function directoryEntries(path: string, inGit: boolean): Promise<string[]> {
-  const names = await readdir(path);
+async function directoryEntries(path: string, inGit: boolean, remaining: number): Promise<string[]> {
+  const names = await directoryNames(path, remaining);
   // Deliberately reject the recognizable inventory, without interpreting Git.
   const folded = new Set(names.map(name => name.toLowerCase()));
   if (!inGit && ["head", "objects", "refs"].every(name => folded.has(name))) {
@@ -49,12 +50,18 @@ function checkGitConfig(text: string, source: string): void {
       if (!value || isAbsolute(value) || value.startsWith("~") || !contains(source, resolve(source, ".git", value))) {
         throw new Error("Unsupported external Git worktree");
       }
+      try { checkRelativeTarget(Buffer.from(value), 1); }
+      catch { throw new Error("Unsupported external Git worktree"); }
     }
   }
 }
-export async function copySource(root: OwnedRoot): Promise<void> {
+export async function copySource(root: OwnedRoot): Promise<BaselineLinks> {
   await assertRootAuthority(root);
+  const links = new Map<string, BaselineLink>();
+  let count = 0;
   const visit = async (source: string, destination: string, relativePath: string): Promise<void> => {
+    if (++count > LINK_DISCOVERY_LIMITS.entries) throw new Error("Copy entry limit");
+    checkEntryPath(relativePath);
     const stat = await lstat(source, { bigint: true });
     const parts = relativePath.split("/");
     const inGit = parts[0] === ".git";
@@ -72,13 +79,17 @@ export async function copySource(root: OwnedRoot): Promise<void> {
     if (relativePath === ".git" && !stat.isDirectory()) throw new Error("Root .git must be an ordinary directory");
     if (relativePath === ".git/config" && !stat.isFile()) throw new Error("Git config must be a regular file");
     if (stat.isSymbolicLink()) {
-      const target = await readlink(source);
-      if (inGit || isAbsolute(target) || !contains(root.source, resolve(dirname(source), target))) {
-        throw new Error(`Unsupported symlink: ${relativePath}`);
-      }
+      if (inGit) throw new Error(`Unsupported symlink: ${relativePath}`);
+      const original = await readLinkState(source, stat);
+      let target: Buffer;
+      try { target = copyLinkTarget(root.source, relativePath, original.target); }
+      catch (error: unknown) { throw new Error(`Unsupported symlink: ${relativePath}`, { cause: error }); }
       await symlink(target, destination);
+      const copied = await readLinkState(destination);
+      if (!copied.target.equals(target)) throw new Error(`Copied link changed: ${relativePath}`);
+      links.set(Buffer.from(relativePath).toString("base64"), Object.freeze({ original, copied }));
     } else if (stat.isDirectory()) {
-      const names = await directoryEntries(source, relativePath === ".git");
+      const names = await directoryEntries(source, relativePath === ".git", LINK_DISCOVERY_LIMITS.entries - count);
       await mkdir(destination, { mode: 0o700 });
       await chmod(destination, 0o700);
       for (const name of names) await visit(join(source, name), join(destination, name), `${relativePath}/${name}`);
@@ -112,6 +123,7 @@ export async function copySource(root: OwnedRoot): Promise<void> {
       } finally { await input.close(); }
     } else throw new Error(`Unsupported source entry: ${relativePath}`);
   };
-  for (const name of await directoryEntries(root.source, false)) await visit(join(root.source, name), join(root.workspace, name), name);
+  for (const name of await directoryEntries(root.source, false, LINK_DISCOVERY_LIMITS.entries)) await visit(join(root.source, name), join(root.workspace, name), name);
   await assertRootAuthority(root);
+  return links;
 }

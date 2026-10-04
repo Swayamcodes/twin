@@ -8,6 +8,7 @@ describe("guarded discard", () => {
     await put(f.source, "dir/file", "source bytes");
     await symlink("dir", join(f.source, "copied-link"));
     await symlink("missing", join(f.source, "dangling"));
+    await symlink(join(f.source, "dir"), join(f.source, "absolute-remapped"));
     await put(f.path, "outside/precious", "outside bytes");
     const session = await f.create();
     expect((await session.run(nodeOptions("externalLink", [], { TARGET: join(f.path, "outside") }))).exitCode).toBe(0);

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { admitS8S13Cleanup, produceS8S13Score, reopenS8S13Artifact, safeDestination } from "../dist/s8-s13-score-producer.js";
+import { CORE_FINGERPRINT_MODULES, fingerprintS8S13LabeledFiles, admitS8S13Cleanup, produceS8S13Score, reopenS8S13Artifact, safeDestination } from "../dist/s8-s13-score-producer.js";
 import { actionBytes, actionDigest, s13Files } from "../dist/s8-s13-fixtures.js";
 import { S8S13ResultSchema } from "../src/contract/s8-s13-score.js";
 
@@ -45,6 +45,21 @@ async function independentlyRead(directory: string): Promise<unknown> {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as unknown;
 }
 describe("retained fixed Twin S8/S13 measurements", () => {
+  it.each(["symlink-policy.js", "apply.js"] as const)("includes %s bytes in fresh core execution fingerprints", async module => {
+    expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js", "manifest.js",
+      "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"]);
+    const base = await parent();
+    try {
+      for (const label of CORE_FINGERPRINT_MODULES)
+        await fs.writeFile(join(base, label), `// fixture ${label}\n`, { flag: "wx", mode: 0o600 });
+      const first = await fingerprintS8S13LabeledFiles(base, CORE_FINGERPRINT_MODULES);
+      await fs.writeFile(join(base, module), `// changed ${module}\n`);
+      expect(await fingerprintS8S13LabeledFiles(base, CORE_FINGERPRINT_MODULES)).not.toBe(first);
+    } finally {
+      for (const label of await fs.readdir(base)) await fs.unlink(join(base, label));
+      await fs.rmdir(base);
+    }
+  });
   it("keeps committed proof action bytes and fake S13 inputs", () => {
     expect(actionDigest("S8")).toBe("b52dd1901be0ff3fd6137c70525b1a4e21d6dd6f22d3381c36db53c50f0895e2");
     expect(actionDigest("S13")).toBe("caf57944d69b0a6e630e98e88964a32cc155f23760d91265b8a8e6ac6ffea413");

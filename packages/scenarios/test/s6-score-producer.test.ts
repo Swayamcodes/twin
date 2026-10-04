@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
-import { readFile, readdir, unlink, rmdir, chmod, lstat } from "node:fs/promises";
+import { readFile, readdir, unlink, rmdir, chmod, lstat, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import childProcess from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { produceTwinS6Score, exactS6Output, S6AllocationLedger, S6RuntimeEvents, admitS6Detached,
-  finalizeS6ScoreCandidate, s6ReferenceFailure, fingerprintCompiled,
+  finalizeS6ScoreCandidate, s6ReferenceFailure, fingerprintCompiled, fingerprintS6LabeledFiles,
   CORE_FINGERPRINT_MODULES, ADAPTER_FINGERPRINT_MODULES } from "../dist/s6-score-producer.js";
 import { S6ScoreResultSchema, deriveS6ScoreSupport, validateS6ScoreSupport } from "../src/contract/s6-score-support.js";
 import { inspectArtifact } from "../src/capture/artifact.js";
@@ -28,6 +29,19 @@ async function independentFingerprint(base: string, labels: readonly string[]): 
 }
 const output = ["Removing .env", "Removing node_modules/", "Removing scratch.txt"].join("\n") + "\n";
 describe("2.6R-2 fixed S6 producer", () => {
+  it.each(["symlink-policy.js", "apply.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
+    const base = await mkdtemp(join(await realpath(tmpdir()), "twin-test-score-fingerprint-"));
+    try {
+      for (const label of CORE_FINGERPRINT_MODULES)
+        await writeFile(join(base, label), `// fixture ${label}\n`, { flag: "wx", mode: 0o600 });
+      const first = await fingerprintS6LabeledFiles(base, CORE_FINGERPRINT_MODULES);
+      await writeFile(join(base, module), `// changed ${module}\n`);
+      expect(await fingerprintS6LabeledFiles(base, CORE_FINGERPRINT_MODULES)).not.toBe(first);
+    } finally {
+      for (const label of await readdir(base)) await unlink(join(base, label));
+      await rmdir(base);
+    }
+  });
   it("requires a detached Twin action and keeps direct and setup launches attached", () => {
     expect(admitS6Detached("action", true)).toBe(true);
     for (const value of [false, undefined]) expect(() => admitS6Detached("action", value))
@@ -52,7 +66,7 @@ describe("2.6R-2 fixed S6 producer", () => {
   });
   it("uses fixed compiled labels and independently reconstructed bytes", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint(coreBase, CORE_FINGERPRINT_MODULES));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint(moduleBase, ADAPTER_FINGERPRINT_MODULES));

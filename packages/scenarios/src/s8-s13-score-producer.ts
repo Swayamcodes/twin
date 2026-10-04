@@ -19,11 +19,11 @@ type RootState = "not-allocated" | "removed" | "retained" | "unknown";
 type Stage = S8S13Incomplete["stage"];
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const repository = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-const coreModules = ["index.js", "twin.js", "copy.js", "run.js", "safety.js", "manifest.js",
-  "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"] as const;
+export const CORE_FINGERPRINT_MODULES = ["index.js", "twin.js", "copy.js", "run.js", "safety.js", "manifest.js",
+  "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"] as const;
 const adapterModules = ["s8-s13-fixtures.js", "s8-s13-score-producer.js", "s8-s13-score-entry.js",
   "contract/s8-s13-score.js", "fixture.js", "runner.js", "scenarios.js"] as const;
-async function fingerprint(base: string, names: readonly string[]): Promise<string> {
+export async function fingerprintS8S13LabeledFiles(base: string, names: readonly string[]): Promise<string> {
   const hash = createHash("sha256");
   for (const name of names) {
     const path = join(base, name), before = await fs.lstat(path);
@@ -339,8 +339,8 @@ export async function produceS8S13Score(id: MeasuredScenario, artifactParentDire
     assert(id === "S8" || id === "S13" || id === "S9");
     assert(process.execPath.startsWith("/"));
     attemptId = randomUUID();
-    const toolVersion = await fingerprint(fileURLToPath(new URL("../../core/dist/", import.meta.url)), coreModules);
-    const adapterVersion = await fingerprint(fileURLToPath(new URL("../dist/", import.meta.url)), adapterModules);
+    const toolVersion = await fingerprintS8S13LabeledFiles(fileURLToPath(new URL("../../core/dist/", import.meta.url)), CORE_FINGERPRINT_MODULES);
+    const adapterVersion = await fingerprintS8S13LabeledFiles(fileURLToPath(new URL("../dist/", import.meta.url)), adapterModules);
     if (id === "S13") for (const [name, value] of Object.entries(s13Files)) assert.equal(fixtureContents[name as keyof typeof fixtureContents], value);
     journal = await openJournal(artifactParentDirectory, attemptId); roots.artifact = "retained";
     await journal.append({ kind: "disposition", root: "artifact", disposition: "retained" });

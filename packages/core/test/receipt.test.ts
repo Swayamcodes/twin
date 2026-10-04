@@ -399,6 +399,16 @@ describe("minimal receipt", () => {
     } finally { await unlink(name); }
   }));
 
+  it("does not report creation remapping as an agent change", async () => fixtureTest(async f => {
+    await put(f.source, "file", "original");
+    await symlink(join(f.source, "file"), join(f.source, "link"));
+    const session = await f.create();
+    await session.run(command("require('fs').writeFileSync('link','copy')"));
+    expect(session.inspect().receipt?.files.changes).toEqual([
+      expect.objectContaining({ path: { encoding: "utf8", value: "file" }, change: "modified" }),
+    ]);
+    expect(await readFile(join(f.source, "file"), "utf8")).toBe("original");
+  }));
   it("reports a changed symlink without following it", async () => fixtureTest(async f => {
     await put(f.source, "one", "one");
     await put(f.source, "two", "two");

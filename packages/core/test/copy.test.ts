@@ -1,10 +1,32 @@
-import { chmod, lstat, mkdir, readFile, readlink, readdir, symlink } from "node:fs/promises";
+import fsPromises, { chmod, lstat, mkdir, readFile, readlink, readdir, symlink } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { createServer } from "node:net";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fixtureTest, fingerprint, put } from "./support.js";
 
 describe("ordinary copying", () => {
+  it.each(["entries", "entry-name", "depth"])("cleans up refused source discovery: %s", async kind => fixtureTest(async f => {
+    if (kind === "depth") {
+      let path = f.source;
+      for (let index = 0; index < 129; index++) { path = join(path, "x"); await mkdir(path); }
+    }
+    const realRead = fsPromises.readdir;
+    const spy = vi.spyOn(fsPromises, "readdir").mockImplementation(async (...args) => {
+      if (args[0] === f.source && kind !== "depth") {
+        const names = kind === "entry-name" ? [Buffer.from([0xff])]
+          : Array.from({ length: 100001 }, () => Buffer.from("file"));
+        return names as unknown as Awaited<ReturnType<typeof realRead>>;
+      }
+      return realRead(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      await expect(f.create()).rejects.toMatchObject({ message: expect.stringContaining('cleanup={"status":"removed"}') });
+      expect(f.sessions).toEqual([]);
+      expect(await readdir(f.scratch)).toEqual([]);
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  }));
   it.each([false, true])("copies every file independently; Git=%s", async git => fixtureTest(async f => {
     const files = ["tracked", "untracked", ".env", ".gitignore", ".hidden/file", "node_modules/.pnpm/pkg/index.js"];
     for (const name of files) await put(f.source, name, Buffer.from([0, 255, 128, 10]), 0o751);
@@ -40,6 +62,26 @@ describe("ordinary copying", () => {
       expect(await readlink(copied)).toBe(await readlink(join(f.source, "node_modules", name)));
     }
   }));
+  it("remaps absolute links including chains, root and dangling targets without touching originals", async () => fixtureTest(async f => {
+    await put(f.source, "data/file", "original");
+    await mkdir(join(f.source, "links"));
+    const targets = { file: join(f.source, "data/file"), directory: `${join(f.source, "data")}/`, root: f.source,
+      dangling: join(f.source, "missing"), chain: join(f.source, "links/file") };
+    for (const [name, target] of Object.entries(targets)) await symlink(target, join(f.source, "links", name));
+    await symlink("cycle-b", join(f.source, "cycle-a"));
+    await symlink("cycle-a", join(f.source, "cycle-b"));
+    await symlink(Buffer.from([0xff, 47, 0xfe]), join(f.source, "raw-dangling"));
+    const before = await fingerprint(f.source);
+    const session = await f.create();
+    expect(await readlink(join(session.workspacePath, "links/file"))).toBe("../data/file");
+    expect(await readlink(join(session.workspacePath, "links/directory"))).toBe("../data/");
+    expect(await readlink(join(session.workspacePath, "links/root"))).toBe("..");
+    expect(await readlink(join(session.workspacePath, "links/dangling"))).toBe("../missing");
+    expect(await readlink(join(session.workspacePath, "links/chain"))).toBe("file");
+    expect(await readFile(join(session.workspacePath, "links/chain"), "utf8")).toBe("original");
+    expect(await readlink(join(session.workspacePath, "raw-dangling"), { encoding: "buffer" })).toEqual(Buffer.from([0xff, 47, 0xfe]));
+    expect(await fingerprint(f.source)).toBe(before);
+  }));
   it.each(["commondir", "gitdir", "worktrees", "modules", "objects/info/alternates", "objects/info/http-alternates", "config.worktree"])("refuses Git sentinel %s", async name => fixtureTest(async f => {
     await put(f.source, `.git/${name}`, "external");
     await expect(f.create()).rejects.toMatchObject({ cause: { message: `Unsupported Git layout: .git/${name}` } });
@@ -61,6 +103,7 @@ describe("ordinary copying", () => {
     ['[includeIf "gitdir:foo"]\npath = other\n', "Unsupported Git include"],
     ['[CORE]\nWORKTREE = ../../elsewhere\n', "Unsupported external Git worktree"],
     ['[core]\nworktree = /absolute\n', "Unsupported external Git worktree"],
+    ['[core]\nworktree = ../alias/../outside\n', "Unsupported external Git worktree"],
     ['[core]\nbare = TRUE\n', "Unsupported bare configuration"],
     ['[extensions]\nworktreeConfig = false\n', "Unsupported worktree configuration"],
     ['[core]\nworktree = ' + String.fromCharCode(92) + '\n..\n', "Ambiguous Git configuration"],

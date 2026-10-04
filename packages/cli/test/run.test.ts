@@ -11,7 +11,7 @@ import * as terminal from "../src/terminal-ui.js";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...original, link: vi.fn(original.link) };
+  return { ...original, link: vi.fn(original.link), mkdtemp: vi.fn(original.mkdtemp) };
 });
 
 vi.mock("@twin-cli/core", async importOriginal => ({ ...await importOriginal<typeof import("@twin-cli/core")>(), createTwin: vi.fn() }));
@@ -84,6 +84,49 @@ afterEach(async () => {
 });
 
 describe("twin run", () => {
+  it("prints scratch allocation OS evidence without creating a session", async () => {
+    vi.mocked(mkdtemp).mockRejectedValueOnce(Object.assign(new Error("allocation failed"), {
+      code: "ENOSPC", errno: -28, syscall: "mkdtemp", path: "/tmp/twin-cli-probe",
+    }));
+    expect(await main(["run", "--", "/tool"])).toBe(1);
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("code=ENOSPC");
+    expect(stderr).toContain("errno=-28");
+    expect(stderr).toContain("syscall=mkdtemp");
+    expect(stderr).toContain("path=/tmp/twin-cli-probe");
+    expect(stderr).not.toContain("TWIN-RECEIPT/1");
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("prints preparation causes without launching or emitting a receipt, and removes the empty scratch parent", async () => {
+    const cause = Object.assign(new Error("operation failed"), { code: "EACCES", errno: -13, syscall: "open", path: "/copy/blocked" });
+    vi.mocked(createTwin).mockRejectedValueOnce(new Error('Twin copy failed; cleanup={"status":"removed"}; allocation=/tmp/owned', { cause }));
+    expect(await main(["run", "--", "/tool"])).toBe(1);
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("cause[1].code=EACCES");
+    expect(stderr).toContain("cause[1].errno=-13");
+    expect(stderr).toContain("cause[1].syscall=open");
+    expect(stderr).toContain("cause[1].path=/copy/blocked");
+    expect(stderr).toContain('cleanup={"status":"removed"}');
+    expect(stderr).not.toContain("TWIN-RECEIPT/1");
+    expect(run).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
+    await expect(readdir(vi.mocked(createTwin).mock.calls[0]![0].scratchParent)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps execution error causes out of existing receipt/error output", async () => {
+    run.mockRejectedValueOnce(new Error("command failed", { cause: Object.assign(new Error("private cause"), { path: "/private", code: "EPRIVATE" }) }));
+    expect(await main(["run", "--", "/tool"])).toBe(1);
+    const stderr = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString();
+    expect(stderr).toContain("command failed");
+    expect(stderr).toContain("TWIN-RECEIPT/1");
+    expect(stderr).not.toContain("private cause");
+    expect(stderr).not.toContain("EPRIVATE");
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
   it.each([["--help"], ["-h"], ["run", "--help"], ["run", "-h"]])("shows help without launching for %j", async (...args: string[]) => {
     expect(await main(args)).toBe(0);
     expect(createTwin).not.toHaveBeenCalled();

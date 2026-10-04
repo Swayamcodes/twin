@@ -50,17 +50,47 @@ Filesystem traversal copies all regular files, including dotfiles, ignored and
 untracked contents and dependency storage. It does not invoke Git or filter using
 ignore rules. Regular files receive independent buffered byte copies, never hard
 links, reflinks or CoW. Ordinary permission bits (0777), including executable bits,
-are preserved; special permission bits are cleared. Directories become 0700.
+are preserved; special permission bits are cleared. Copied subdirectories receive
+ordinary source permission bits; allocation/workspace roots remain 0700.
 Ownership, timestamps, ACLs, extended attributes and sparse allocation are not
 preserved. Source reads can update access times. A quiescent source is required;
 this is not an atomic snapshot or an exhaustive source-mutation proof.
 
-Only relative symlinks whose lexical target remains in the canonical source tree
-are accepted, including pnpm-style links and in-tree dangling targets. Exact link
-text is preserved. Targets are never dereferenced during copy or discard. Absolute
-and escaping relative links fail creation. Containment uses path components.
-These lexical checks do not prove containment of arbitrary runtime path resolution.
-External-link copying, broader policy and reporting remain deferred.
+The unreleased checkout preserves accepted relative link bytes and remaps accepted
+absolute source targets to relative locations in the disposable copy. Absolute
+targets must use the canonical source spelling and component containment, not a
+string-prefix test; outside aliases, double-leading slashes and dot components
+are refused. Trailing slash directory requirements are preserved. Original source
+link text is never changed. Published core 0.1.0 still rejects absolute links and
+uses lexical containment for relative targets, without this stricter parent-prefix rule.
+
+Relative parent components are allowed only in an initial prefix that cannot climb
+above the root. `../../core` can work; `alias/../outside`, `dir/./../file` and
+`../dir/../file` are newly rejected even when lexical normalization looks contained.
+This prevents parent traversal after a chained symlink expansion. Accepted chains,
+cycles and dangling targets are copied as link objects without target resolution.
+Copy and discard never deliberately dereference targets. Canonical containment is
+not inferred from lexical resolution: arbitrary caller suffixes, new links and
+same-user swaps remain outside the stationary-tree structural guarantee.
+
+Copy and complete link-set discovery cap all visited entries at 100,000, path
+component depth at 128, and relative path/target lengths at 4,096 bytes. Both original
+and remapped target bytes are checked. Actual absolute-path OS limits can still
+fail operations. Non-UTF-8 source entry names are refused; dangling relative target
+bytes can be preserved without UTF-8 decoding. Discovery failure never means no
+links. Native `readdir` allocation and individual filesystem call time are not
+hard-bounded. These rules do not establish universal pnpm compatibility.
+
+Apply permits only verified unchanged creation-time link sets. Raw original and
+copy manifests must match their separate private ledger records before unchanged
+link keys are excluded from file planning. Relative/absolute original text remains
+untouched; physical regular-file changes around unchanged baseline links can be applied. Added,
+removed, retargeted, recreated or kind-replaced links refuse the whole plan before
+writes. Directory transitions removing baseline links also refuse. Full sets are
+checked at creation after baselines, apply preflight, immediately before writes,
+and after writes; relevant ordinary ancestors in both trees are checked per file
+mutation. Detection after earlier writes reports partial application. Existing
+incomplete manifest and same-user race limitations remain.
 
 Devices, sockets, FIFOs and other special entries are rejected explicitly.
 
@@ -92,6 +122,8 @@ Relevant names are case-insensitive. Includes/includeIf, extensions.worktreeConf
 core.bare other than explicit false, and external core.worktree are refused.
 Absolute core.worktree values are also refused because they cannot relocate safely.
 Relative core.worktree is interpreted from `.git` and must remain inside the source.
+Its parent components also must precede every named component, so
+`../alias/../outside` is refused while `..` remains supported.
 Continuations, escapes, quoted values, inline comments, malformed/ambiguous syntax,
 invalid UTF-8 and config files over 64 KiB are refused. Metadata is never rewritten.
 Hooks, filters, aliases and repository programs are not certified safe.

@@ -1,17 +1,18 @@
 /// <reference types="node" />
 
 import { copySource } from "./copy.js";
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import { applyCopy, type ApplyResult } from "./apply.js";
 import { runCommand, validateRunOptions } from "./run.js";
-import { allocateRoot, assertRootAuthority, discardRoot } from "./safety.js";
+import { allocateRoot, assertRootAuthority, discardRoot, sameIdentity } from "./safety.js";
 import { captureManifest, unavailableManifest, type ManifestSnapshot } from "./manifest.js";
 import { captureGitCategories, unavailableGit, type GitSnapshot } from "./git-classification.js";
 import { captureWatches, unavailableWatches, type WatchCapture } from "./watch.js";
 import { buildCommandReceipt, buildReceipt, unavailableProcessReceipt, type MinimalReceipt, type ProcessReceipt } from "./receipt.js";
 import { captureDependencies, unavailableDependencies, type DependencySnapshot } from "./dependencies.js";
 import { captureGlobalNpm, selectGlobalNpmRoot, unavailableGlobalNpm } from "./global-npm.js";
+import { verifyBaselineLinks, type BaselineLinks } from "./symlink-policy.js";
 
 export interface CreateTwinOptions {
   readonly sourceDirectory: string;
@@ -66,11 +67,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
   const home = process.env.HOME;
   const root = await allocateRoot(options);
   let sourceIdentity: BigIntStats;
-  try { sourceIdentity = await lstat(root.source, { bigint: true }); await copySource(root); }
-  catch (error: unknown) {
-    const cleanup = await discardRoot(root);
-    throw new Error(`Twin copy failed; cleanup=${JSON.stringify(cleanup)}; allocation=${root.path}`, { cause: error });
-  }
+  let links: BaselineLinks;
   let state: TwinInspection["state"] = "ready";
   let childSettled = true;
   let lifecycleIssue: string | null = null;
@@ -80,15 +77,34 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
     await assertRootAuthority(root);
     return captureDependencies(root.workspace);
   };
-  const captureBefore = await Promise.allSettled([
-    captureManifest(root.workspace),
-    captureGitCategories(root.workspace, protectedRoots),
-    captureWatches(home, protectedRoots),
-    captureProjectDependencies(),
-  ]);
+  let captureBefore: Awaited<ReturnType<typeof preparationSnapshots>>;
+  let originalBefore: ManifestSnapshot;
+  let copyBefore: ManifestSnapshot;
+  async function preparationSnapshots() {
+    return Promise.allSettled([
+      captureManifest(root.workspace),
+      captureGitCategories(root.workspace, protectedRoots),
+      captureWatches(home, protectedRoots),
+      captureProjectDependencies(),
+    ] as const);
+  }
+  try {
+    sourceIdentity = await lstat(root.source, { bigint: true });
+    links = await copySource(root);
+    captureBefore = await preparationSnapshots();
+    originalBefore = await captureManifest(root.source, true);
+    copyBefore = await captureManifest(root.workspace, true);
+    await verifyBaselineLinks(root.source, root.workspace, links);
+    const sourceAfter = await lstat(root.source, { bigint: true });
+    if (!sourceAfter.isDirectory() || !sameIdentity(sourceIdentity, sourceAfter) || await realpath(root.source) !== root.source) {
+      throw new Error("Original root identity changed during preparation");
+    }
+    await assertRootAuthority(root);
+  } catch (error: unknown) {
+    const cleanup = await discardRoot(root);
+    throw new Error(`Twin copy failed; cleanup=${JSON.stringify(cleanup)}; allocation=${root.path}`, { cause: error });
+  }
   const before: ManifestSnapshot = captureBefore[0].status === "fulfilled" ? captureBefore[0].value : unavailableManifest("scan-unavailable");
-  const originalBefore = await captureManifest(root.source, true);
-  const copyBefore = await captureManifest(root.workspace, true);
   const beforeGit: GitSnapshot = captureBefore[1].status === "fulfilled" ? captureBefore[1].value : unavailableGit("git-incomplete");
   let beforeWatch: WatchCapture[] = captureBefore[2].status === "fulfilled" ? captureBefore[2].value : unavailableWatches("observation-failed");
   let settledManifest: ManifestSnapshot | undefined;
@@ -176,7 +192,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
         return { status: "refused", paths: [], reason: "Command settlement or session state uncertain" };
       }
       state = "applying";
-      try { return await applyCopy(root, sourceIdentity, originalBefore, copyBefore, settledManifest); }
+      try { return await applyCopy(root, sourceIdentity, originalBefore, copyBefore, settledManifest, links); }
       finally { state = "finished"; }
     },
     discard: async (): Promise<DiscardResult> => {

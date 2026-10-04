@@ -11,6 +11,7 @@ import { createTwin, unavailableProcessReceipt, type CommandReceipt, type Minima
 import { renderReceiptText, renderCompactReceipt, safeTerminalValue } from "./receipt-text.js";
 import { exportReceiptHtml } from "./receipt-html.js";
 import { resolveExecutable } from "./executable.js";
+import { preparationErrorDiagnostic } from "./error-diagnostics.js";
 import { initConfig, loadConfig, validTimeout } from "./config.js";
 import { askTerminal, chooseTerminal, preparation, renderLogo, terminalColors, terminalOutput, terminalPrompts } from "./terminal-ui.js";
 
@@ -239,9 +240,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   try {
     const feedback = preparation(format);
+    let phase: "preparation" | "execution" = "preparation";
     try {
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
       session = await createTwin({ sourceDirectory: process.cwd(), scratchParent });
+      phase = "execution";
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
       const executable = await resolveExecutable(command[0]!, env, session.workspacePath);
       feedback.stop();
@@ -257,7 +260,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         && result.directChildSettled && !result.lifecycleIssue && result.exitCode === 0
         && result.signal === null && result.spawnError === null && result.terminationError === null ? 0 : 1;
     } catch (error) {
-      await write(process.stderr, `${errorText(error)}\n`);
+      await write(process.stderr, phase === "preparation" ? preparationErrorDiagnostic(error) : `${errorText(error)}\n`);
     } finally {
       feedback.stop();
       if (session) {

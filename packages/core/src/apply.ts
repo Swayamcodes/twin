@@ -3,6 +3,7 @@ import { constants, type BigIntStats } from "node:fs";
 import { chmod, lstat, mkdir, open, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { captureManifest, type ManifestEntry, type ManifestSnapshot } from "./manifest.js";
 import { assertRootAuthority, sameIdentity, type OwnedRoot } from "./safety.js";
+import { verifyBaselineLinks, verifyManifestLinks, type BaselineLinks } from "./symlink-policy.js";
 
 export type ApplyResult =
   | { readonly status: "applied"; readonly changes: number }
@@ -31,8 +32,7 @@ function absolute(root: string, key: string): Buffer {
   return Buffer.concat([Buffer.from(root), Buffer.from("/"), rel]);
 }
 function complete(...snapshots: ManifestSnapshot[]): boolean {
-  return snapshots.every(snapshot => snapshot.coverage === "complete" && snapshot.issues.length === 0
-    && [...snapshot.entries.values()].every(entry => entry.kind !== "symlink"));
+  return snapshots.every(snapshot => snapshot.coverage === "complete" && snapshot.issues.length === 0);
 }
 async function verifyRoot(root: OwnedRoot, sourceIdentity: BigIntStats): Promise<void> {
   await assertRootAuthority(root);
@@ -95,23 +95,29 @@ function conflicts(before: ManifestSnapshot, current: ManifestSnapshot, final: M
   return result;
 }
 export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, before: ManifestSnapshot,
-  copyBaseline: ManifestSnapshot, settled: ManifestSnapshot): Promise<ApplyResult> {
+  copyBaseline: ManifestSnapshot, settled: ManifestSnapshot, links: BaselineLinks): Promise<ApplyResult> {
   try {
     await verifyRoot(root, sourceIdentity);
     const final = await captureManifest(root.workspace, true);
     const current = await captureManifest(root.source, true);
     if (!complete(before, copyBaseline, settled, final, current)) {
-      return { status: "refused", paths: [], reason: "Incomplete inventory or symlink" };
+      return { status: "refused", paths: [], reason: "Incomplete inventory" };
     }
+    // Raw observations must pass before excluding any authorized baseline link.
+    for (const snapshot of [before, current]) verifyManifestLinks(snapshot, links, "original");
+    for (const snapshot of [copyBaseline, settled, final]) verifyManifestLinks(snapshot, links, "copied");
+    await verifyBaselineLinks(root.source, root.workspace, links);
     const settledKeys = new Set([...settled.entries.keys(), ...final.entries.keys()]);
     if ([...settledKeys].some(key => !equal(settled.entries.get(key), final.entries.get(key)))) {
       return { status: "refused", paths: [], reason: "Copy baseline or settled copy changed" };
     }
     const baselineKeys = new Set([...before.entries.keys(), ...copyBaseline.entries.keys()]);
-    if ([...baselineKeys].some(key => !equal(before.entries.get(key), copyBaseline.entries.get(key)))) {
+    if ([...baselineKeys].some(key => !links.has(key) && !equal(before.entries.get(key), copyBaseline.entries.get(key)))) {
       return { status: "refused", paths: [], reason: "Original and copy baseline differ" };
     }
-    const changes = conflicts(before, current, final);
+    const withoutVerifiedLinks = (snapshot: ManifestSnapshot): ManifestSnapshot => ({ ...snapshot,
+      entries: new Map([...snapshot.entries].filter(([key]) => !links.has(key))) });
+    const changes = conflicts(withoutVerifiedLinks(before), withoutVerifiedLinks(current), withoutVerifiedLinks(final));
     const incompatible = changes.filter(change => !equal(change.current, change.before));
     // A removed/replaced directory may contain unrelated new original children.
     for (const change of changes) if (change.before?.kind === "directory" && change.final?.kind !== "directory") {
@@ -128,10 +134,18 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
     const dirModes = changes.filter(change => change.final?.kind === "directory").sort((a, b) => depth(b.key) - depth(a.key));
     await verifyRoot(root, sourceIdentity);
     const justBefore = await captureManifest(root.source, true);
+    verifyManifestLinks(justBefore, links, "original");
     if (!complete(justBefore) || [...new Set([...current.entries.keys(), ...justBefore.entries.keys()])]
       .some(key => !equal(current.entries.get(key), justBefore.entries.get(key)))) {
       return { status: "conflict", paths: [], reason: "Original changed after preflight" };
     }
+    const copyJustBefore = await captureManifest(root.workspace, true);
+    verifyManifestLinks(copyJustBefore, links, "copied");
+    if ([...new Set([...settled.entries.keys(), ...copyJustBefore.entries.keys()])]
+      .some(key => !equal(settled.entries.get(key), copyJustBefore.entries.get(key)))) {
+      return { status: "refused", paths: [], reason: "Settled copy changed after preflight" };
+    }
+    await verifyBaselineLinks(root.source, root.workspace, links);
     const sourceIdentities = new Map<string, BigIntStats | undefined>();
     const copyIdentities = new Map<string, BigIntStats>();
     const relevant = new Set<string>();
@@ -139,7 +153,13 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       const raw = bytesOf(change.key);
       relevant.add(change.key);
       for (let offset = 0; offset < raw.length; offset++) if (raw[offset] === 47) relevant.add(raw.subarray(0, offset).toString("base64"));
-      if (change.final?.kind === "file") copyIdentities.set(change.key, await lstat(absolute(root.workspace, change.key), { bigint: true }));
+      if (change.final?.kind === "file") {
+        copyIdentities.set(change.key, await lstat(absolute(root.workspace, change.key), { bigint: true }));
+        for (let offset = 0; offset < raw.length; offset++) if (raw[offset] === 47) {
+          const parentKey = raw.subarray(0, offset).toString("base64");
+          copyIdentities.set(parentKey, await lstat(absolute(root.workspace, parentKey), { bigint: true }));
+        }
+      }
     }
     for (const key of relevant) if (current.entries.has(key)) {
       sourceIdentities.set(key, await lstat(absolute(root.source, key), { bigint: true }));
@@ -162,6 +182,16 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       }
       await identity(root.source, key, sourceIdentities.get(key));
     };
+    const checkCopy = async (key: string): Promise<void> => {
+      const raw = bytesOf(key);
+      for (let offset = 0; offset < raw.length; offset++) if (raw[offset] === 47) {
+        const parentKey = raw.subarray(0, offset).toString("base64");
+        const expected = copyIdentities.get(parentKey);
+        if (!expected?.isDirectory()) throw new Error(`Copy parent is not an ordinary directory: ${pathOf(parentKey)}`);
+        await identity(root.workspace, parentKey, expected);
+      }
+      await identity(root.workspace, key, copyIdentities.get(key));
+    };
     try {
       for (const change of removals) {
         await verifyRoot(root, sourceIdentity);
@@ -182,7 +212,7 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       for (const change of files) {
         await verifyRoot(root, sourceIdentity);
         await check(change.key);
-        await identity(root.workspace, change.key, copyIdentities.get(change.key));
+        await checkCopy(change.key);
         await verifyPath(root.workspace, change.key, change.final);
         await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined);
         const target = absolute(root.source, change.key);
@@ -190,14 +220,19 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
         try {
           await copyVerifiedFile(absolute(root.workspace, change.key), temp, copyIdentities.get(change.key)!, change.final!);
           await verifyPath(root.workspace, change.key, change.final);
-          await identity(root.workspace, change.key, copyIdentities.get(change.key));
+          await checkCopy(change.key);
           await check(change.key);
           await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined);
           await verifyRoot(root, sourceIdentity);
           await rename(temp, target);
           sourceIdentities.set(change.key, await lstat(target, { bigint: true }));
         } finally {
-          try { await unlink(temp); }
+          try {
+            // Never clean a sibling through a substituted root or parent alias.
+            await verifyRoot(root, sourceIdentity);
+            await check(change.key);
+            await unlink(temp);
+          }
           catch (error: unknown) {
             if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
               throw new Error("Apply temporary cleanup failed", { cause: error });
@@ -216,6 +251,8 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
         if ((stat.mode & 0o777) !== expectedMode) throw new Error(`Apply directory mode changed: ${pathOf(change.key)}`);
         await chmod(target, change.final!.mode);
       }
+      await verifyRoot(root, sourceIdentity);
+      await verifyBaselineLinks(root.source, root.workspace, links);
       return { status: "applied", changes: changes.length };
     } catch (error) {
       return { status: "failed", reason: error instanceof Error ? error.message : String(error), partialApplicationPossible: true };

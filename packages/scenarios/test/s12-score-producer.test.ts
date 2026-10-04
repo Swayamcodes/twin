@@ -31,6 +31,19 @@ async function independentFingerprint(kind: "core" | "adapter"): Promise<string>
   return `fp-${hash.digest("hex")}`;
 }
 describe("2.6R-1 fixed producer", () => {
+  it.each(["symlink-policy.js", "apply.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
+    const base = await mkdtemp(join(await realpath(tmpdir()), "twin-test-score-fingerprint-"));
+    try {
+      for (const label of CORE_FINGERPRINT_MODULES)
+        await writeFile(join(base, label), `// fixture ${label}\n`, { flag: "wx", mode: 0o600 });
+      const first = await fingerprintS12LabeledFiles(base, CORE_FINGERPRINT_MODULES);
+      await writeFile(join(base, module), `// changed ${module}\n`);
+      expect(await fingerprintS12LabeledFiles(base, CORE_FINGERPRINT_MODULES)).not.toBe(first);
+    } finally {
+      for (const label of await readdir(base)) await unlink(join(base, label));
+      await rmdir(base);
+    }
+  });
   it("requires a detached Twin action and keeps direct and setup launches attached", () => {
     expect(admitS12Detached("action", true)).toBe(true);
     for (const value of [false, undefined]) expect(() => admitS12Detached("action", value))
@@ -155,7 +168,7 @@ describe("2.6R-1 fixed producer", () => {
   });
   it("uses independent exact compiled-module fingerprints", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint("core"));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint("adapter"));

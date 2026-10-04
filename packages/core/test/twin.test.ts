@@ -1,6 +1,6 @@
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
-import { chmod, mkdir, readdir, readFile, symlink } from "node:fs/promises";
+import fsPromises, { chmod, mkdir, readdir, readFile, rename, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createTwin, type TwinSession } from "../src/index.js";
@@ -27,12 +27,13 @@ describe("session", () => {
     await session.discard();
     expect(await fingerprint(f.source)).toBe(before);
   }));
-  it.each(["absolute-internal", "absolute-external", "escape", "prefix-trap", "dangling-escape"])("fails creation with no session or launch: %s", async kind => fixtureTest(async f => {
+  it.each(["absolute-external", "escape", "prefix-trap", "dangling-escape", "structural-escape"])("fails creation with no session or launch: %s", async kind => fixtureTest(async f => {
     await put(f.source, "first", "copy before failure");
-    const target = kind === "absolute-internal" ? join(f.source, "first")
-      : kind === "absolute-external" ? join(f.path, "outside")
+    const target = kind === "absolute-external" ? join(f.path, "outside")
+      : kind === "structural-escape" ? "alias/../outside"
       : kind === "prefix-trap" ? "../source-other/file" : kind === "escape" ? "../outside" : "../../missing";
     await symlink(target, join(f.source, "link"));
+    if (kind === "structural-escape") await symlink(".", join(f.source, "alias"));
     const spawn = vi.spyOn(childProcess, "spawn");
     syncBuiltinESMExports();
     let returned: TwinSession | undefined;
@@ -42,6 +43,38 @@ describe("session", () => {
       expect(spawn).not.toHaveBeenCalled();
       expect(await readdir(f.scratch)).toEqual([]);
     } finally { spawn.mockRestore(); syncBuiltinESMExports(); }
+  }));
+  it.each(["original-added", "copy-added", "original-recreated", "copy-recreated", "source-root"])("guards late preparation failure and cleanup: %s", async kind => fixtureTest(async f => {
+    await put(f.source, "file", "keep");
+    await symlink("file", join(f.source, "link"));
+    const realRead = fsPromises.readdir;
+    let changed = false;
+    const saved = join(f.path, "saved-source");
+    const spy = vi.spyOn(fsPromises, "readdir").mockImplementation(async (...args) => {
+      const names = await realRead(...args);
+      const options = args[1];
+      if (!changed && String(args[0]) === f.source && typeof options === "object" && options?.withFileTypes) {
+        changed = true;
+        if (kind === "source-root") { await rename(f.source, saved); await mkdir(f.source); }
+        else {
+          const allocation = (await readdir(f.scratch))[0]!;
+          const root = kind.startsWith("original") ? f.source : join(f.scratch, allocation, "workspace");
+          if (kind.endsWith("recreated")) await unlink(join(root, "link"));
+          await symlink("file", join(root, kind.endsWith("added") ? "added-link" : "link"));
+        }
+      }
+      return names;
+    });
+    syncBuiltinESMExports();
+    try {
+      await expect(f.create()).rejects.toMatchObject({ message: expect.stringContaining('cleanup={"status":"removed"}'), cause: expect.any(Error) });
+      expect(changed).toBe(true);
+      expect(f.sessions).toEqual([]);
+      expect(await readdir(f.scratch)).toEqual([]);
+    } finally {
+      spy.mockRestore(); syncBuiltinESMExports();
+      if (kind === "source-root" && changed) { await rename(f.source, join(f.path, "replacement-source")); await rename(saved, f.source); }
+    }
   }));
   it("rejects concurrent run/discard and subsequent runs", async () => fixtureTest(async f => {
     const session = await f.create();

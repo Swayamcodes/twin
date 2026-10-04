@@ -5,6 +5,32 @@ Install with `npm install --global @twin-cli/cli@0.1.1`. The
 [release record](npm-release.md) separates the user-observed registry smoke
 from the earlier tarball checks and retains the historical 0.1.0 evidence.
 
+The **unreleased checkout** additionally remaps supported absolute source links
+into its copy and permits apply around verified unchanged baseline links. Those
+changes are not in published core 0.1.0. The current [copy boundary](phase-3-minimal-core.md#copy-boundary)
+defines newly rejected target forms, discovery limits, and incomplete/race limits.
+No universal pnpm compatibility or OS sandbox claim is made.
+
+## Unreleased preparation diagnostics
+
+Scratch allocation and copy preparation failures print a bounded local cause
+chain, including `code`, safe-integer `errno`, `syscall`, `path` and `dest` when
+present. Policy rejections have no invented OS code. The formatter inspects at
+most four nodes, marks cycles/inaccessible/unsupported/truncated/omitted details,
+and caps the entire output at 512 UTF-8 bytes including its newline. Each message
+or path is capped at 128 bytes, code/syscall at 32, including truncation markers.
+Core wrapper cleanup status/allocation and the deepest inspected cause receive
+priority. Missing file-handle paths cannot be recovered by formatting.
+
+Fixed-key own data descriptors avoid getters, arbitrary serialization and coercion.
+Proxy reflection exceptions are handled, but malicious synchronous traps cannot
+be time-bounded. Controls are escaped; this is not secret redaction. Messages and
+paths are deliberate local disclosures. No stacks, argv/environment values,
+contents, dependency specifiers or watch payloads are added. Receipt frames/schema,
+raw child bytes, HTML disclosure and postlaunch error formatting remain unchanged.
+
+## Published run flow
+
 Run a command from the project directory:
 
 ```sh

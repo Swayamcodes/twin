@@ -110,8 +110,8 @@ testable in isolation.
 ## `core` responsibilities
 
 - **Clone**: copy a project directory to a scratch location using ordinary
-  independent file reads and writes, preserving supported modes and relative
-  symlinks. There is no implemented reflink/copy-on-write selection. Includes
+  independent file reads and writes, preserving supported modes and accepted
+  relative symlinks and remapping accepted absolute source links. There is no implemented reflink/copy-on-write selection. Includes
   files git ignores and works in directories with no git repository at all.
 - **Manifest / diff**: inventory project files before and after the run (not
   git) and compare their recorded state, subject to scan coverage and limits.
@@ -135,7 +135,7 @@ testable in isolation.
 original and copy inventories; apply requires complete coverage, rechecks the
 settled copy, scans the current original, and plans all copy changes before
 writing. Matching original changes are no-ops. A conflicting path, incomplete
-inventory, symlink, changed copy, or changed original root refuses the whole
+inventory, unsupported symlink change, changed copy, or changed original root refuses the whole
 plan. Files, modes, deletions, and
 directory/file transitions use the same inventory for Git, ignored, and non-Git
 projects. `twin run --review -- ...` prints the existing receipt, then accepts
@@ -143,6 +143,49 @@ projects. `twin run --review -- ...` prints the existing receipt, then accepts
 the copy and print its location and manual-inspection instructions. EOF and
 interruption also retain it. Default `run` still discards. See the [CLI usage
 flow](docs/cli-usage.md).
+
+## Unreleased contained-link preparation and apply
+
+`core/src/symlink-policy.ts` validates raw target bytes without dereferencing
+targets. Relative targets retain exact bytes, but parent components are accepted
+only in their initial prefix and cannot climb above the physical source parent
+depth. `alias/../outside` is rejected even if lexical normalization is inside.
+Absolute targets must use the canonical source-root component prefix with no dot
+components; outside aliases and double-leading slashes are refused. Accepted
+absolute targets become relative links to corresponding copy locations, retaining
+trailing-slash directory semantics. Dangling targets, chains and cycles need no
+target resolution. This structural rule contains expansion of the accepted links
+in a stationary captured tree; arbitrary caller suffixes, agent-created links and
+same-user replacements remain outside that guarantee. It is not an OS sandbox.
+Relative Git `core.worktree` receives the same parent-prefix restriction; all other
+Git metadata restrictions remain, and metadata is never rewritten.
+
+Copy records a private ledger of original/copied raw text, digests, modes and
+identities separately. Raw manifests are unchanged. After baseline captures,
+complete link-set reconciliation and source/scratch identity checks occur inside
+guarded preparation cleanup. Apply validates raw manifest link sets and ledger
+identities before excluding verified unchanged link keys from its file delta.
+Original links must retain original text; copies must retain expected copied text.
+Any added, removed, retargeted or replaced link, including a directory transition
+removing a baseline link, refuses preflight. Remapping predates receipt baselines
+and is not reported as command activity. Later link changes remain reportable.
+Apply never mutates link objects or writes through them: alias edits are observed
+and applied at the physical ordinary file path.
+
+Full link sets are reconciled at creation, apply preflight, before the first write,
+and after writes. Each file mutation checks ordinary ancestor identities in both
+trees; sibling cleanup also refuses substituted parents. A detected late link
+change returns partial-application failure and retains the copy. These checks are
+not atomic against same-user mutation. Discovery counts all visited entries,
+with limits of 100,000 entries, depth 128, 4,096-byte relative paths and original or
+emitted targets. Non-UTF-8 source names and NUL targets are refused; relative target
+bytes need not be UTF-8. Native `readdir` allocation and individual I/O duration
+are not hard-bounded. Existing manifest time/hash limits can still refuse apply.
+
+CLI preparation errors use fixed-field, cycle-aware cause inspection, capped at
+four nodes and 512 UTF-8 bytes including markers and newline. Messages/paths are
+local disclosures, escaped rather than secret-redacted. Receipts, raw child output,
+postlaunch error disclosure and public APIs are unchanged.
 
 Before each mutation, apply rechecks root authority and the relevant path. File
 content is copied to a new sibling and renamed after another path check. These

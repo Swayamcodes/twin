@@ -65,6 +65,17 @@ which recovery tools actually work for which kinds of accidents.
    as plain commands. A blocked agent check remains unverified.
 7. JSON + markdown output for suite results, versioned (schemaVersion).
 
+The unreleased checkout accepts structurally contained relative symlinks and
+remaps accepted absolute targets beneath the canonical source spelling into
+relative links in the copy. Original link text is preserved in the source.
+Parent components are allowed only before named target components; `alias/../x`
+is rejected. Copy and cleanup never deliberately follow link targets. Unchanged
+verified baseline links permit unrelated regular-file apply; added, removed,
+replaced or modified links refuse the whole plan. Discovery caps total entries
+at 100,000, component depth at 128, and relative paths and original/emitted targets
+at 4,096 bytes. Non-UTF-8 source entry names are rejected. This is neither universal
+pnpm compatibility nor an OS sandbox; see the current copy/apply boundary.
+
 ## Non-goals (v1)
 
 - Windows-native support (WSL2 is the supported path; plain-copy fallback

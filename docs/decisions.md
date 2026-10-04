@@ -204,3 +204,11 @@ I learned that a CLI-only release must be verified against the published engine 
 Status: `pending commit`; CLI 0.1.1 published, core unchanged at 0.1.0.
 
 I learned that matching registry integrity connects a published package to the inspected artifact, while a user-observed registry install and apply smoke provide separate execution evidence. Earlier unpublished labels describe preparation checkpoints; expected coverage gaps and agent verification limits remain even after publication succeeds.
+
+## Symlink isolation, verified apply, and preparation diagnostics — unreleased checkpoint
+
+Status: `pending commit`; unpublished.
+
+I learned that preserving an absolute link's text in a copy preserves its authority over the original. Accepted in-tree absolute links must instead point within the copy, while a private baseline records both texts so apply can preserve the original link and accept unrelated regular-file edits only after complete raw inventories and unchanged link identities reconcile. Structural target checks, `.git` restrictions, ancestor checks, and guarded cleanup remain necessary; same-user races remain a limit. Bounded cause-chain diagnostics expose preparation failures without changing receipt framing, and fresh execution fingerprints include the new policy and apply modules without rewriting historical identities.
+
+Separate unresolved issue: Prizzle's original inventory on DrvFS reaches the existing 30-second deadline, principally during filesystem metadata and open/close operations. Scanner performance changes are outside this checkpoint. No large verification was launched, and Prizzle compatibility has not passed; incomplete apply baselines remain grounds for refusal.

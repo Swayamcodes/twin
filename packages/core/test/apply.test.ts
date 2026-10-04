@@ -1,4 +1,4 @@
-import fsPromises, { chmod, link, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import fsPromises, { chmod, link, mkdir, readFile, readlink, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
@@ -9,6 +9,138 @@ const command = (script: string) => ({ executable: process.execPath, argv: ["-e"
 const edit = 'const f=require("node:fs");f.writeFileSync("file","copy");f.writeFileSync("added","new");f.unlinkSync("gone");';
 
 describe("three-state apply", () => {
+  it("applies physical file edits around unchanged relative and remapped baseline links", async () => fixtureTest(async f => {
+    await put(f.source, "real/file", "base");
+    await put(f.source, "unrelated", "base");
+    const absoluteText = join(f.source, "real");
+    await symlink(absoluteText, join(f.source, "absolute"));
+    await symlink("real", join(f.source, "relative"));
+    const session = await f.create();
+    expect(await readlink(join(session.workspacePath, "absolute"))).toBe("real");
+    await session.run(command('const f=require("node:fs");f.writeFileSync("absolute/file","through alias");f.writeFileSync("unrelated","copy")'));
+    expect(await readFile(join(f.source, "real/file"), "utf8")).toBe("base");
+    expect(session.inspect().receipt?.files.changes.map(change => change.path.value)).toEqual(["real/file", "unrelated"]);
+    expect(await session.apply()).toMatchObject({ status: "applied", changes: 2 });
+    expect(await readFile(join(f.source, "real/file"), "utf8")).toBe("through alias");
+    expect(await readlink(join(f.source, "absolute"))).toBe(absoluteText);
+    expect(await readlink(join(f.source, "relative"))).toBe("real");
+    expect(await session.apply()).toMatchObject({ status: "applied", changes: 0 });
+  }));
+  it.each(["original", "copy"] as const)("rejects all unsupported %s link mutations before writing", async side => {
+    for (const mutation of ["added", "removed", "modified", "file-replacement", "same-text-replacement", "parent-removal"] as const) {
+      await fixtureTest(async f => {
+        await put(f.source, "file", "base");
+        await put(f.source, "target", "bytes");
+        await mkdir(join(f.source, "links"));
+        await symlink("../target", join(f.source, "links/link"));
+        const session = await f.create();
+        if (side === "original") await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+        const root = side === "original" ? f.source : session.workspacePath;
+        if (mutation === "added") await symlink("target", join(root, "added-link"));
+        else if (mutation === "parent-removal") await rm(join(root, "links"), { recursive: true });
+        else {
+          await unlink(join(root, "links/link"));
+          if (mutation === "modified") await symlink("../missing", join(root, "links/link"));
+          if (mutation === "file-replacement") await writeFile(join(root, "links/link"), "replacement");
+          if (mutation === "same-text-replacement") await symlink("../target", join(root, "links/link"));
+        }
+        if (side === "copy") await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+        expect(await session.apply(), `${side}: ${mutation}`).toMatchObject({ status: "refused" });
+        expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+      });
+    }
+  });
+  it.each(["original", "copy"] as const)("detects substituted %s ancestors after temporary creation", async side => fixtureTest(async f => {
+    await put(f.source, "folder/file", "base");
+    const session = await f.create();
+    await session.run(command('require("node:fs").writeFileSync("folder/file","copy")'));
+    const root = side === "original" ? f.source : session.workspacePath;
+    const directory = join(root, "folder"), moved = join(f.path, `saved-${side}-folder`);
+    const realOpen = fsPromises.open;
+    let replaced = false;
+    const spy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await realOpen(...args);
+      if (!replaced && String(args[0]).includes("/.twin-apply-")) {
+        replaced = true;
+        await rename(directory, moved);
+        await symlink(moved, directory);
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(await session.apply()).toMatchObject({ status: "failed", partialApplicationPossible: true });
+      expect(replaced).toBe(true);
+      expect(await readFile(join(f.source, "folder/file"), "utf8")).toBe("base");
+    } finally {
+      spy.mockRestore(); syncBuiltinESMExports();
+      if (replaced) { await unlink(directory); await rename(moved, directory); }
+    }
+  }));
+  it("rejects a replaced copy parent even when its file has the original inode", async () => fixtureTest(async f => {
+    await put(f.source, "folder/file", "base");
+    const session = await f.create();
+    await session.run(command('require("node:fs").writeFileSync("folder/file","copy")'));
+    const directory = join(session.workspacePath, "folder"), moved = join(f.path, "saved-hardlinked-folder");
+    const realOpen = fsPromises.open;
+    let replaced = false;
+    const spy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await realOpen(...args);
+      if (!replaced && String(args[0]).includes("/.twin-apply-")) {
+        replaced = true; await rename(directory, moved); await mkdir(directory);
+        await link(join(moved, "file"), join(directory, "file"));
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(await session.apply()).toMatchObject({ status: "failed", partialApplicationPossible: true });
+      expect(replaced).toBe(true);
+      expect(await readFile(join(f.source, "folder/file"), "utf8")).toBe("base");
+    } finally {
+      spy.mockRestore(); syncBuiltinESMExports();
+      if (replaced) { await rm(directory, { recursive: true }); await rename(moved, directory); }
+    }
+  }));
+  it.each(["original", "copy"] as const)("reconciles newly added %s links immediately before writes", async side => fixtureTest(async f => {
+    await put(f.source, "file", "base");
+    const session = await f.create();
+    await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+    const realRead = fsPromises.readdir;
+    let scans = 0, changed = false;
+    const spy = vi.spyOn(fsPromises, "readdir").mockImplementation(async (...args) => {
+      const names = await realRead(...args), options = args[1];
+      if (String(args[0]) === f.source && typeof options === "object" && options?.withFileTypes && ++scans === 2) {
+        await symlink("file", join(side === "original" ? f.source : session.workspacePath, "added-link")); changed = true;
+      }
+      return names;
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(await session.apply()).toMatchObject({ status: "refused" });
+      expect(changed).toBe(true);
+      expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  }));
+  it("reports concurrent postwrite link addition as partial failure", async () => fixtureTest(async f => {
+    await put(f.source, "file", "base");
+    const session = await f.create();
+    await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+    const realRename = fsPromises.rename;
+    let changed = false;
+    const spy = vi.spyOn(fsPromises, "rename").mockImplementation(async (...args) => {
+      await realRename(...args);
+      if (!changed && String(args[0]).includes("/.twin-apply-") && String(args[1]) === join(f.source, "file")) {
+        changed = true; await symlink("file", join(f.source, "added-link"));
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(await session.apply()).toMatchObject({ status: "failed", partialApplicationPossible: true });
+      expect(changed).toBe(true);
+      expect(await readFile(join(f.source, "file"), "utf8")).toBe("copy");
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  }));
   it("applies copy edits, modes, ignored-style files and non-Git folders while keeping unrelated original edits", async () => fixtureTest(async f => {
     await put(f.source, "file", "base");
     await put(f.source, "gone", "old");
