@@ -144,6 +144,60 @@ the copy and print its location and manual-inspection instructions. EOF and
 interruption also retain it. Default `run` still discards. See the [CLI usage
 flow](docs/cli-usage.md).
 
+## Unreleased bounded startup I/O
+
+`core/src/io-pool.ts` provides a private session-owned coordinator shared by copy,
+manifest and preparation link jobs. It permits four active jobs and eight queued
+jobs. Each serial producer keeps at most twelve admitted but uncommitted outcomes,
+including completed results, and one admission waiter per operation. Ordered
+commit prevents a delayed oldest result from accumulating unbounded later
+results. Workers do not acquire another permit or await descendants. Standalone
+walks use a local coordinator; independent Git/watch/dependency observations are
+outside this filesystem-job cap. No ambient pool or threadpool setting is changed.
+
+Copy admission remains serial for entry kinds, Git policy and link remapping.
+Ordinary files use pinned `O_NOFOLLOW` inputs, exclusive destinations, complete
+buffered writes and before/opened/post-read/source-path identity, size, mode and
+time checks. Detected changes reject creation. `.git/config` validation remains
+serial and copies the validated bounded bytes without a second data read.
+Directories remain 0700 through all admitted file work, then ordinary modes are
+restored in postorder. Native copying, reflinks and writable hard links are not
+implemented. First failure/cancellation stops admissions; all workers and handles
+settle before copy throws and guarded root cleanup begins.
+
+Manifest work coordinates metadata and file reads in bounded stages. Hash-byte
+reservations are admitted in discovery order before worker admission; successful
+complete hashes commit bytes, while failed or incomplete work releases its
+reservation. A later path waits for outstanding reservations before a hash-limit
+decision. Committed plus reserved bytes cannot exceed 2 GiB. Growing, shrinking,
+interrupted and incomplete reads receive no digest. This is an accepted-hash
+allowance, not a total I/O-byte cap. Time budgets include queue waits; each fresh
+inventory still receives its own deadline.
+
+`captureManifestViews` obtains one fresh full inventory with all directories and
+07777 modes, then projects receipt and apply views without changing coverage or
+issues. Receipt retains non-directories and `.git` directories; apply retains all
+directories with 0777 modes. The legacy `captureManifest` views remain supported.
+Creation first settles Git/watch/dependency observations, then scans the original
+apply baseline, then one full copy baseline for both views, then freshly reconciles
+links. The receipt file baseline is deliberately later than before this checkpoint.
+After command settlement one fresh copy scan supplies receipt-after and settled
+apply views alongside the other observers. Observers have distinct non-atomic
+intervals. Original inventories, later apply scans and per-path verification remain
+independent fresh reads; no copy-time hash or cached baseline replaces them.
+
+Link discovery retains every ancestor and directory pre/post identity check while
+coordinating independent entry jobs. Both root walks share a coordinator and settle
+before reconciliation returns. Apply's link phases use a function-local shared
+coordinator and remain separate from its fresh scans. Preparation/copy checks
+cancellation between traversal and transfer operations, but cannot interrupt a
+pending native call. Limits, raw link validation, original link text and guarded
+non-dereferencing cleanup remain unchanged. Same-user races and non-atomic apply
+remain limitations; no real-repository performance guarantee follows.
+
+Fresh S12/S6/S8S13 execution fingerprints include `io-pool.js`; previously retained
+fingerprints and frozen evidence contracts are unchanged.
+
 ## Unreleased contained-link preparation and apply
 
 `core/src/symlink-policy.ts` validates raw target bytes without dereferencing
@@ -837,13 +891,13 @@ policy. Each call creates a fresh `performance.now()` deadline. Command timeout
 and interruption remain independent core options; CLI forwards its existing
 interruption signal to both command and scan cancellation.
 
-The serial scanner checks termination around awaited operations and before
+The scanner checks termination around awaited operations and before
 claiming completion. It closes file descriptors and performs post-read identity
 checks even after interrupted reads. Only confirmed identity/metadata changes
 produce `entry-changed-during-scan`; termination and unchanged short EOF have
 separate closed reasons. Coverage limits, byte-safe paths, no-follow reads,
-fresh hashes, symlink policy and `.git` handling remain intact. No observer
-deduplication or bounded concurrency is added.
+fresh hashes, symlink policy and `.git` handling remain intact. The bounded startup
+coordinator and fresh dual views above preserve these reliability requirements.
 
 Preparation settles all started observers before guarded cleanup. Cancellation
 may wait for copying, link discovery, other observers and native operations.

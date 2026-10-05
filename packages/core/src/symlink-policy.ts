@@ -1,3 +1,4 @@
+import { IoOperation, IoPool, checkIo, type IoOptions } from "./io-pool.js";
 import { createHash } from "node:crypto";
 import type { BigIntStats } from "node:fs";
 import { lstat, readdir, readlink } from "node:fs/promises";
@@ -72,8 +73,11 @@ export async function readLinkState(path: string, expected?: BigIntStats): Promi
   if (!stable(before, await lstat(path, { bigint: true }))) throw new Error(`Baseline link changed: ${path}`);
   return Object.freeze({ target, digest: createHash("sha256").update(target).digest("hex"), stat: before });
 }
-export async function discoverLinks(root: string): Promise<ReadonlyMap<string, LinkState>> {
+export async function discoverLinks(root: string, options: IoOptions = {}): Promise<ReadonlyMap<string, LinkState>> {
   const links = new Map<string, LinkState>();
+  const pool = options.pool ?? new IoPool();
+  const check = (): void => checkIo(options);
+  check();
   interface Directory { path: string; relative: string; expected: BigIntStats; ancestors: readonly { path: string; stat: BigIntStats }[] }
   const stack: Directory[] = [{ path: root, relative: "", expected: await lstat(root, { bigint: true }), ancestors: [] }];
   const checkAncestors = async (ancestors: Directory["ancestors"]): Promise<void> => {
@@ -84,36 +88,64 @@ export async function discoverLinks(root: string): Promise<ReadonlyMap<string, L
   };
   let count = 0;
   while (stack.length) {
+    check();
     const directory = stack.pop()!;
     await checkAncestors(directory.ancestors);
     const before = await lstat(directory.path, { bigint: true });
     if (!before.isDirectory() || !stable(before, directory.expected)) throw new Error(`Link discovery directory changed: ${directory.path}`);
     const ancestors = [...directory.ancestors, { path: directory.path, stat: before }];
-    for (const name of await directoryNames(directory.path, LINK_DISCOVERY_LIMITS.entries - count)) {
-      if (++count > LINK_DISCOVERY_LIMITS.entries) throw new Error("Link discovery entry limit");
-      const relative = directory.relative ? `${directory.relative}/${name}` : name;
-      checkEntryPath(relative);
-      const path = join(directory.path, name);
-      await checkAncestors(ancestors);
-      const stat = await lstat(path, { bigint: true });
-      if (stat.isSymbolicLink()) links.set(Buffer.from(relative).toString("base64"), await readLinkState(path, stat));
-      else if (stat.isDirectory()) stack.push({ path, relative, expected: stat, ancestors });
-      else if (!stat.isFile()) throw new Error(`Unsupported link discovery entry: ${relative}`);
-    }
+    type Found = { key?: string; link?: LinkState; directory?: Directory };
+    const operation = new IoOperation<Found>(pool, outcome => {
+      if (!outcome.ok) return;
+      if (outcome.value.key && outcome.value.link) links.set(outcome.value.key, outcome.value.link);
+      if (outcome.value.directory) stack.push(outcome.value.directory);
+    }, check);
+    try {
+      for (const name of await directoryNames(directory.path, LINK_DISCOVERY_LIMITS.entries - count)) {
+        check();
+        if (++count > LINK_DISCOVERY_LIMITS.entries) throw new Error("Link discovery entry limit");
+        const relative = directory.relative ? `${directory.relative}/${name}` : name;
+        checkEntryPath(relative);
+        const path = join(directory.path, name);
+        await operation.enqueue(async () => {
+          await checkAncestors(ancestors);
+          check();
+          const stat = await lstat(path, { bigint: true });
+          check();
+          if (stat.isSymbolicLink()) return { key: Buffer.from(relative).toString("base64"), link: await readLinkState(path, stat) };
+          if (stat.isDirectory()) return { directory: { path, relative, expected: stat, ancestors } };
+          if (!stat.isFile()) throw new Error(`Unsupported link discovery entry: ${relative}`);
+          return {};
+        });
+      }
+    } catch (error: unknown) { operation.stop(error); }
+    await operation.drain();
+    check();
     if (!stable(before, await lstat(directory.path, { bigint: true }))) throw new Error(`Link discovery directory changed: ${directory.path}`);
   }
   return links;
 }
-export async function verifyBaselineLinks(source: string, workspace: string, ledger: BaselineLinks): Promise<void> {
-  for (const [root, side] of [[source, "original"], [workspace, "copied"]] as const) {
-    const observed = await discoverLinks(root);
-    if (observed.size !== ledger.size) throw new Error("Baseline symlink set changed");
+export async function verifyBaselineLinks(source: string, workspace: string, ledger: BaselineLinks, options: IoOptions = {}): Promise<void> {
+  const pool = options.pool ?? new IoPool();
+  let failed = false; let failure: unknown;
+  const policy: IoOptions = { ...options, pool, check: () => { checkIo(options); if (failed) throw failure; } };
+  const observed = await Promise.allSettled([source, workspace].map(root => discoverLinks(root, policy).catch((error: unknown) => {
+    if (!failed) { failed = true; failure = error; }
+    throw error;
+  })));
+  if (failed) throw failure;
+  for (let index = 0; index < observed.length; index++) {
+    const result = observed[index]!;
+    if (result.status === "rejected") throw result.reason;
+    const side = index === 0 ? "original" : "copied";
+    if (result.value.size !== ledger.size) throw new Error("Baseline symlink set changed");
     for (const [key, pair] of ledger) {
-      const actual = observed.get(key), expected = pair[side];
+      const actual = result.value.get(key), expected = pair[side];
       if (!actual || !stable(actual.stat, expected.stat) || !actual.target.equals(expected.target)) throw new Error(`Baseline symlink changed: ${Buffer.from(key, "base64").toString("utf8")}`);
     }
   }
 }
+
 export function verifyManifestLinks(snapshot: ManifestSnapshot, ledger: BaselineLinks, side: "original" | "copied"): void {
   if (snapshot.coverage !== "complete" || snapshot.issues.length) throw new Error("Incomplete inventory");
   const links = [...snapshot.entries].filter(([, entry]) => entry.kind === "symlink");

@@ -52,6 +52,14 @@ ignore rules. Regular files receive independent buffered byte copies, never hard
 links, reflinks or CoW. Ordinary permission bits (0777), including executable bits,
 are preserved; special permission bits are cleared. Copied subdirectories receive
 ordinary source permission bits; allocation/workspace roots remain 0700.
+During copying, subdirectories remain 0700 until admitted file workers have all
+settled, then ordinary modes are restored in postorder. Serial entry/Git/link
+admission feeds at most four independent buffered file-copy workers. Inputs use
+`O_NOFOLLOW`, destinations use exclusive creation, and complete byte counts plus
+before/opened/post-read/source-path identity, size, mode and time checks reject
+detected source changes. Git config uses its bounded validated bytes for copying,
+with an EOF check and no second data read. Failure or cancellation stops admissions
+and awaits every admitted worker and handle close before guarded creation cleanup.
 Ownership, timestamps, ACLs, extended attributes and sparse allocation are not
 preserved. Source reads can update access times. A quiescent source is required;
 this is not an atomic snapshot or an exhaustive source-mutation proof.
@@ -355,3 +363,39 @@ retains the copy. Existing symlink, `.git`, coverage and cleanup guards remain.
 No large Prizzle verification was run for this checkpoint. The DrvFS inventory
 timeout is a separate unresolved performance issue, and this work does not
 establish acceptable performance across real repositories.
+
+## Bounded startup checkpoint (unreleased)
+
+A private coordinator caps active copy/manifest/link jobs at four, queued jobs at
+eight, and each operation's admitted but uncommitted result window at twelve.
+There is at most one admission waiter per operation; results commit in discovery
+order and workers never await another permit or their descendants. A session
+shares the coordinator; standalone observers use a local one. Independently timed
+Git/watch/dependency work is outside this job cap. These bounds do not limit every
+syscall, native enumeration allocation, or elapsed filesystem-call duration.
+
+Creation settles Git/watch/dependency observations, freshly scans the original
+apply baseline, then scans the copy once for both baseline views. Receipt file
+observation moves to that later copy boundary. After settled execution, one fresh
+full copy scan supplies both receipt-after and apply-settled views alongside other
+observers. Raw scans retain all directories and 07777 modes. Receipt views retain
+non-directories and Git directories; apply views retain all directories with
+0777 modes. Coverage and issues remain identical in both projections. Later apply
+inventories and path checks remain independent fresh reads, and complete raw link
+reconciliation remains separate; original state is never inferred from copied
+bytes. Distinct observation intervals do not form an atomic snapshot.
+
+Hash-byte reservations precede worker admission in discovery order and account for
+outstanding work before later hash-limit decisions. Successful complete hashes
+commit bytes; failed, changed or incomplete work releases the reservation without
+a digest. Committed plus reserved allowance stays within 2 GiB, which is not a
+promise to cap all failed-read I/O. Existing entry/depth/path/target caps, fresh
+hashes, Git restrictions and unchanged-link apply rules remain.
+
+Each inventory still has its own 30-second default deadline including queue waits.
+Copying and preparation link reconciliation receive cooperative cancellation,
+without a whole-copy time budget. Started operations drain before returning or
+cleanup, so pending native calls can delay cancellation. No native copy/reflink,
+writable hard link, source exclusion, stale hash, coverage promotion or stronger
+same-user race guarantee is introduced. No large Prizzle run verifies this
+checkpoint's startup performance.

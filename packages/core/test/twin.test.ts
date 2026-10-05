@@ -111,14 +111,17 @@ describe("inventory policy and cancellation", () => {
     const controller = new AbortController();
     const options = { sourceDirectory: f.source, scratchParent: f.scratch, scanTimeoutMs: 45678, scanSignal: controller.signal };
     const scan = vi.spyOn(manifests, "captureManifest");
+    const views = vi.spyOn(manifests, "captureManifestViews");
     try {
       const session = await createTwin(options); f.sessions.push(session);
       options.scanTimeoutMs = 1;
       await session.run(nodeOptions("edit"));
       expect(await session.apply()).toMatchObject({ status: "applied" });
-      expect(scan.mock.calls.length).toBeGreaterThanOrEqual(10);
-      for (const call of scan.mock.calls) expect(call[2]).toEqual({ timeoutMs: 45678, signal: controller.signal });
-    } finally { scan.mockRestore(); }
+      expect(scan.mock.calls.length + views.mock.calls.length).toBeGreaterThanOrEqual(10);
+      expect(views).toHaveBeenCalledTimes(2);
+      for (const call of views.mock.calls) expect(call[1]).toMatchObject({ timeoutMs: 45678, signal: controller.signal });
+      for (const call of scan.mock.calls) expect(call[2]).toMatchObject({ timeoutMs: 45678, signal: controller.signal });
+    } finally { views.mockRestore(); scan.mockRestore(); }
   }));
   it("rejects invalid budgets and pre-aborted preparation before allocation", async () => fixtureTest(async f => {
     const controller = new AbortController(); controller.abort();
@@ -176,4 +179,30 @@ it("scan-only cancellation after handoff preserves independent command execution
     expect(await session.apply()).toMatchObject({ status: "refused" });
     expect(await session.discard()).toMatchObject({ status: "removed" });
   } finally { spawn.mockRestore(); syncBuiltinESMExports(); }
+}));
+
+it("uses the later preparation boundary and fresh views after the action, with fresh original/apply reads", async () => fixtureTest(async f => {
+  await put(f.source, "file", "base");
+  const original = manifests.captureManifest, full = manifests.captureManifestViews;
+  const reads: string[] = []; let late = false;
+  const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+    reads.push(String(args[0])); const result = await original(...args);
+    if (!late && String(args[0]) === f.source) {
+      late = true; const allocation = (await readdir(f.scratch))[0]!;
+      await fsPromises.writeFile(join(f.scratch, allocation, "workspace/file"), "late baseline");
+    }
+    return result;
+  });
+  const views = vi.spyOn(manifests, "captureManifestViews");
+  try {
+    const session = await f.create();
+    expect(views).toHaveBeenCalledOnce(); expect(reads).toEqual([f.source]);
+    expect((await session.run({ executable: process.execPath, argv: ["-e", "require('fs').writeFileSync('file','agent edit')"], env: {} })).exitCode).toBe(0);
+    expect(views).toHaveBeenCalledTimes(2);
+    expect(session.inspect().receipt?.files.changes).toEqual([expect.objectContaining({ change: "modified", path: { encoding: "utf8", value: "file" } })]);
+    expect(await session.apply()).toMatchObject({ status: "refused", reason: "Original and copy baseline differ" });
+    expect(reads.filter(x => x === f.source)).toHaveLength(2);
+    expect(await readFile(join(f.source, "file"), "utf8")).toBe("base");
+    expect(full).toBeDefined();
+  } finally { scan.mockRestore(); views.mockRestore(); }
 }));

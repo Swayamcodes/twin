@@ -185,5 +185,39 @@ retains its authority checks and does not depend on an un-aborted scan signal.
 
 This checkpoint does not establish acceptable performance across real
 repositories. The observed Prizzle DrvFS inventory timeout remains unresolved;
-Prizzle compatibility has not passed. No concurrency, exclusions, stale hashes
-or partial-to-complete coverage promotion are introduced.
+Prizzle compatibility has not passed. The bounded startup work below retains
+fresh hashes, complete-coverage requirements and inclusion of ignored contents.
+
+## Unreleased bounded startup observations
+
+A private session coordinator admits at most four independent filesystem jobs,
+with eight queued jobs. Each operation retains at most twelve admitted but
+uncommitted results, commits them in discovery order, and has at most one pending
+admission waiter. Workers never wait for descendants or another permit. These
+are job bounds, not bounds on every syscall or the independent Git, dependency
+and watch observers. No public concurrency setting or threadpool change is added.
+
+Ordinary files still receive independent buffered copies through no-follow source
+handles and exclusive destinations. Detected source identity, size, mode or time
+changes reject preparation. Directories stay private until file workers settle;
+Git configuration is copied from its bounded validated bytes. Native copy/reflink
+and writable hard links remain excluded. Failure or cancellation stops new work
+and drains admitted work and closes its handles before guarded cleanup.
+
+Preparation completes the independently timed Git/watch/dependency observations,
+reads the original apply baseline, then reads one fresh full copy inventory for
+both receipt and apply baselines. The receipt file baseline therefore moves to
+this later preparation boundary. After command settlement one fresh copy inventory
+also supplies both views. Raw observations retain all directories and 07777 modes;
+receipt views retain non-directories and Git directories, while apply views retain
+all directories with modes masked to 0777. Both views retain all coverage failures.
+Neither original bytes nor later apply inventories are inferred from copied data
+or reused hashes; link reconciliation remains a separate fresh observation.
+
+The 30-second per-inventory default and all entry, byte, depth and path limits
+remain. Queue waiting counts toward an inventory's own deadline; copying receives
+cooperative cancellation rather than a whole-copy scan deadline. Pending native
+operations can delay cancellation. This work does not make observations atomic,
+resolve same-user races, establish universal project compatibility, or demonstrate
+acceptable Prizzle startup time. Performance evidence must identify its fixture
+and measurement boundary.

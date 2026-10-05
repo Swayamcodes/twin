@@ -382,3 +382,12 @@ it("reports cancellation after an original rename as potentially partial and cle
   } finally { spy.mockRestore(); syncBuiltinESMExports(); }
   expect(await session.discard()).toMatchObject({ status: "removed" });
 }));
+
+it("reports receipt special-mode changes while apply uses ordinary mode bits and preserves the source", async () => fixtureTest(async f => {
+  await put(f.source, "file", "base", 0o6751);
+  const session = await f.create();
+  await session.run(command('require("node:fs").chmodSync("file",0o4751)'));
+  expect(session.inspect().receipt?.files.changes).toEqual([expect.objectContaining({ path: { encoding: "utf8", value: "file" }, change: "modified" })]);
+  expect(await session.apply()).toMatchObject({ status: "applied", changes: 0 });
+  expect((await stat(join(f.source, "file"))).mode & 0o7777).toBe(0o6751);
+}));

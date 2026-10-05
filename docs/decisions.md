@@ -218,3 +218,9 @@ Separate unresolved issue: Prizzle's original inventory on DrvFS reaches the exi
 Status: `pending commit`; unpublished.
 
 I learned that an unfinished read is not evidence of a changing file, and a longer deadline is useful only when its scope is explicit. Each inventory now receives its own configurable monotonic budget with the 30-second default, fresh hashes and unchanged coverage guards. Cooperative cancellation preserves settlement and guarded cleanup; apply still refuses partial baselines and reports possible partial application after any original mutation attempt. Larger per-inventory budgets can multiply total waiting time, and cancellation can wait for copying or native operations. Prizzle's DrvFS timeout remains a separate unresolved performance issue; no real-repository performance or Prizzle compatibility claim follows from this checkpoint.
+
+## Bounded startup work and fresh dual observations — unreleased checkpoint
+
+Status: `pending commit`; unpublished.
+
+I learned that parallel I/O needs bounds on completed results as well as running work, and cleanup must wait for every admitted handle to close. One fresh inventory can provide receipt and apply views when their shared observation boundary and differing mode/directory rules are explicit; that does not authorize reusing original state or later apply evidence. Copy validation, independent link reconciliation and fresh execution fingerprints preserve the safety boundary while native copying and real-repository performance claims remain separate decisions.

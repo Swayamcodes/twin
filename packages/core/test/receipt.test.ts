@@ -426,10 +426,11 @@ describe("minimal receipt", () => {
 
 it("executes with a partial preparation receipt but never admits its partial apply baseline", async () => fixtureTest(async f => {
   await put(f.source, "file", "base");
-  const real = manifests.captureManifest;
-  const scan = vi.spyOn(manifests, "captureManifest").mockImplementation(async (...args) => {
+  const real = manifests.captureManifestViews;
+  const scan = vi.spyOn(manifests, "captureManifestViews").mockImplementation(async (...args) => {
     const result = await real(...args);
-    return { ...result, coverage: "partial", issues: [{ reason: "scan-timeout" }] };
+    const incomplete = (snapshot: manifests.ManifestSnapshot): manifests.ManifestSnapshot => ({ ...snapshot, coverage: "partial", issues: [{ reason: "scan-timeout" }] });
+    return { raw: incomplete(result.raw), receipt: incomplete(result.receipt), apply: incomplete(result.apply) };
   });
   let session;
   try { session = await f.create(); } finally { scan.mockRestore(); }

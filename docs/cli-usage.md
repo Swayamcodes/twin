@@ -31,6 +31,25 @@ of those operations. The higher budget has not been verified as a performance
 solution on a large real repository. Entry, depth, path and link-target limits
 remain separate from the time budget.
 
+## Unreleased bounded startup
+
+Copying and fresh inventories now coordinate up to four independent filesystem
+jobs internally. There is no concurrency option. Each operation keeps a bounded
+queue/result window; ignored files are still included, source identity and Git
+checks remain, and native copying/reflinks or writable hard links are not used.
+Failure or cancellation waits for admitted work and handles to settle before
+guarded cleanup; pending filesystem calls may still delay that settlement.
+
+Preparation reads the original apply baseline before one fresh copy inventory
+provides both receipt and apply baselines. Receipt file observation therefore
+occurs later in preparation than in the previous checkout. After command
+settlement one fresh copy inventory again provides both views. Git, dependency
+and watch observations retain their independent timing, and apply's later checks
+still read fresh state. These observations are not an atomic snapshot; incomplete
+coverage still refuses apply. The 30-second per-inventory default, existing limits,
+CLI options and receipt framing remain unchanged. This does not establish usable
+Prizzle startup time, universal pnpm compatibility or an OS sandbox.
+
 ## Unreleased preparation diagnostics
 
 Scratch allocation and copy preparation failures print a bounded local cause

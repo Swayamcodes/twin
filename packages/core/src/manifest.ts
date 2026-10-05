@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { lstat, open, readdir, readlink } from "node:fs/promises";
+import { IoOperation, IoPool, IO_WINDOW } from "./io-pool.js";
 import type { ReceiptPath } from "./receipt.js";
 
 const MAX_ENTRIES = 100_000;
@@ -16,6 +17,7 @@ export function validScanTimeoutMs(value: unknown): value is number {
 export interface ManifestScanOptions {
   readonly timeoutMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly pool?: IoPool | undefined;
 }
 export function normalizeScanOptions(options: ManifestScanOptions) {
   const requestedTimeout = options.timeoutMs;
@@ -23,7 +25,7 @@ export function normalizeScanOptions(options: ManifestScanOptions) {
   const signal = options.signal;
   if (!validScanTimeoutMs(timeoutMs)) throw new Error("Invalid Twin scan timeout: expected integer 1–3600000 ms.");
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new Error("Invalid Twin scan signal.");
-  return Object.freeze({ timeoutMs, signal });
+  return Object.freeze({ timeoutMs, signal, ...(options.pool ? { pool: options.pool } : {}) });
 }
 export class ScanCancelledError extends Error {
   constructor() { super("Scan cancelled"); }
@@ -56,107 +58,162 @@ function sameIdentity(a: import("node:fs").BigIntStats, b: import("node:fs").Big
     && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
 
+interface ScanViews { readonly raw: ManifestSnapshot; readonly receipt: ManifestSnapshot; readonly apply: ManifestSnapshot }
+function project(snapshot: ManifestSnapshot, apply: boolean): ManifestSnapshot {
+  return { coverage: snapshot.coverage, issues: snapshot.issues.map(issue => ({ ...issue })),
+    entries: new Map([...snapshot.entries].filter(([key, entry]) => {
+      const path = Buffer.from(key, "base64");
+      return apply || entry.kind !== "directory" || path.equals(Buffer.from(".git")) || path.subarray(0, 5).equals(Buffer.from(".git/"));
+    })
+      .map(([key, entry]) => [key, apply ? { ...entry, mode: entry.mode & 0o777 } : { ...entry }])) };
+}
+export async function captureManifestViews(workspace: string | Buffer, options: ManifestScanOptions = {}): Promise<ScanViews> {
+  const raw = await captureRaw(workspace, options);
+  return { raw, receipt: project(raw, false), apply: project(raw, true) };
+}
 export async function captureManifest(workspace: string | Buffer, includeDirectories = false, options: ManifestScanOptions = {}): Promise<ManifestSnapshot> {
+  return project(await captureRaw(workspace, options), includeDirectories);
+}
+async function captureRaw(workspace: string | Buffer, options: ManifestScanOptions): Promise<ManifestSnapshot> {
   const entries = new Map<string, ManifestEntry>();
   const issues: ManifestSnapshot["issues"] = [];
-  const policy = normalizeScanOptions(options);
+  const policy = normalizeScanOptions(options), pool = policy.pool ?? new IoPool();
   const deadline = performance.now() + policy.timeoutMs;
-  let count = 0;
-  let hashedBytes = 0;
+  let count = 0, committedBytes = 0, reservedBytes = 0;
   let coverage: ManifestSnapshot["coverage"] = "complete";
-  const modeMask = includeDirectories ? 0o777n : 0o7777n;
-  const mark = (reason: string, path?: ReceiptPath): void => { if (coverage === "complete") coverage = "partial"; issues.push(path ? { reason, path } : { reason }); };
+  const mark = (reason: string, path?: ReceiptPath): void => {
+    if (coverage === "complete") coverage = "partial";
+    issues.push(path ? { reason, path } : { reason });
+  };
   let terminated = false;
+  const termination = new Error("Inventory terminated");
   const stopped = (path?: ReceiptPath): boolean => {
     if (terminated) return true;
     const reason = policy.signal?.aborted ? "scan-cancelled" : performance.now() >= deadline ? "scan-timeout" : undefined;
     if (reason) { mark(reason, path); terminated = true; }
     return terminated;
   };
-  const slash = Buffer.from("/");
-  const gitRoot = Buffer.from(".git");
-  const gitPrefix = Buffer.from(".git/");
-  const stack: Array<{ abs: Buffer; rel: Buffer; depth: number }> = [{ abs: Buffer.from(workspace), rel: Buffer.alloc(0), depth: 0 }];
-
+  const check = (): void => { if (stopped()) throw termination; };
+  type Directory = { abs: Buffer; rel: Buffer; depth: number };
+  type Candidate = { abs: Buffer; rel: Buffer; path: ReceiptPath; before?: import("node:fs").BigIntStats; unavailable?: true };
+  type Result = { candidate: Candidate; entry?: ManifestEntry; directory?: Directory; issues: string[]; bytes: number };
+  const stack: Directory[] = [{ abs: Buffer.from(workspace), rel: Buffer.alloc(0), depth: 0 }];
+  const observe = async (candidate: Candidate, depth: number): Promise<Result> => {
+    const result: Result = { candidate, issues: [], bytes: 0 };
+    const { abs, rel, path, before } = candidate;
+    if (!before) { result.issues.push("entry-unavailable"); return result; }
+    try {
+      if (before.isDirectory()) {
+        result.entry = { path, kind: "directory", mode: Number(before.mode & 0o7777n), digest: "" };
+        if (depth + 1 > MAX_DEPTH) result.issues.push("depth-limit");
+        else result.directory = { abs, rel, depth: depth + 1 };
+        const after = await lstat(abs, { bigint: true });
+        if (!sameIdentity(before, after)) result.issues.push("entry-changed-during-scan");
+        stopped(path); return result;
+      }
+      if (before.isSymbolicLink()) {
+        const target = await readlink(abs, { encoding: "buffer" });
+        const after = await lstat(abs, { bigint: true });
+        if (!sameIdentity(before, after)) result.issues.push("entry-changed-during-scan");
+        if (!stopped(path) && !result.issues.length) result.entry = { path, kind: "symlink", mode: Number(before.mode & 0o7777n), digest: createHash("sha256").update(target).digest("hex") };
+        return result;
+      }
+      if (!before.isFile()) { result.issues.push("special-file"); return result; }
+      if (typeof constants.O_NOFOLLOW !== "number") { result.issues.push("no-follow-unavailable"); return result; }
+      const handle = await open(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      let digest: string | undefined;
+      try {
+        if (stopped(path)) return result;
+        const opened = await handle.stat({ bigint: true });
+        if (!opened.isFile() || !sameIdentity(before, opened)) { result.issues.push("entry-changed-during-scan"); return result; }
+        const hash = createHash("sha256"), buffer = Buffer.allocUnsafe(65536);
+        let bytes = 0, eof = false, exceeded = false;
+        for (;;) {
+          if (stopped(path)) break;
+          const read = await handle.read(buffer, 0, Math.min(buffer.length, Number(opened.size) - bytes + 1), null);
+          bytes += read.bytesRead;
+          if (stopped(path)) break;
+          if (!read.bytesRead) { eof = true; break; }
+          if (BigInt(bytes) > opened.size) { exceeded = true; if (bytes > MAX_HASH_BYTES) result.issues.push("hash-limit"); break; }
+          hash.update(buffer.subarray(0, read.bytesRead));
+        }
+        const after = await handle.stat({ bigint: true });
+        const changed = !sameIdentity(opened, after);
+        if (changed) result.issues.push("entry-changed-during-scan");
+        if (stopped(path) || changed) return result;
+        if (!eof || exceeded || BigInt(bytes) !== opened.size) { if (!result.issues.includes("hash-limit")) result.issues.push("file-read-incomplete"); return result; }
+        digest = hash.digest("hex"); result.bytes = bytes;
+      } finally { await handle.close(); }
+      if (!stopped(path) && digest !== undefined) result.entry = { path, kind: "file", mode: Number(before.mode & 0o7777n), digest };
+      else result.bytes = 0;
+    } catch { result.bytes = 0; result.issues.push("entry-unavailable"); }
+    return result;
+  };
   try {
-    scan: while (stack.length > 0) {
+    scan: while (stack.length) {
       if (stopped()) break;
       const directory = stack.pop()!;
       let children: Awaited<ReturnType<typeof readdir>>;
       try { children = await readdir(directory.abs, { withFileTypes: true, encoding: "buffer" }); }
       catch { mark("directory-unavailable", directory.rel.length ? receiptPath(directory.rel) : undefined); continue; }
       if (stopped(directory.rel.length ? receiptPath(directory.rel) : undefined)) break;
-      for (const child of children) {
-        if (stopped()) break scan;
-        const name = Buffer.isBuffer(child.name) ? child.name : Buffer.from(child.name);
-        const rel = directory.rel.length ? Buffer.concat([directory.rel, slash, name]) : name;
-        if (rel.length > MAX_PATH_BYTES) { mark("path-limit"); continue; }
-        if (++count > MAX_ENTRIES) { mark("entry-limit"); stack.length = 0; break; }
-        const path = receiptPath(rel);
-        const abs = Buffer.concat([directory.abs, slash, name]);
+      // Metadata and hashing are separate stages: no worker waits for byte allowance.
+      for (let offset = 0; offset < children.length; offset += IO_WINDOW) {
+        const candidates: Candidate[] = [];
+        let metadataError: unknown;
+        const metadata = new IoOperation<Candidate>(pool, outcome => { if (outcome.ok) candidates.push(outcome.value); }, check);
         try {
-          const before = await lstat(abs, { bigint: true });
-          if (stopped(path)) break scan;
-          if (before.isDirectory()) {
-            if (includeDirectories || rel.equals(gitRoot) || rel.subarray(0, gitPrefix.length).equals(gitPrefix)) {
-              entries.set(rel.toString("base64"), { path, kind: "directory", mode: Number(before.mode & modeMask), digest: "" });
-            }
-            if (directory.depth + 1 > MAX_DEPTH) mark("depth-limit", path);
-            else stack.push({ abs, rel, depth: directory.depth + 1 });
-            const after = await lstat(abs, { bigint: true });
-            if (!sameIdentity(before, after)) mark("entry-changed-during-scan", path);
-            if (stopped(path)) break scan;
-            continue;
+          for (const child of children.slice(offset, offset + IO_WINDOW)) {
+            if (stopped()) break;
+            const name = Buffer.isBuffer(child.name) ? child.name : Buffer.from(child.name);
+            const rel = directory.rel.length ? Buffer.concat([directory.rel, Buffer.from("/"), name]) : name;
+            if (rel.length > MAX_PATH_BYTES) { mark("path-limit"); continue; }
+            if (++count > MAX_ENTRIES) { mark("entry-limit"); stack.length = 0; break; }
+            const candidate: Candidate = { abs: Buffer.concat([directory.abs, Buffer.from("/"), name]), rel, path: receiptPath(rel) };
+            await metadata.enqueue(async () => {
+              try { const before = await lstat(candidate.abs, { bigint: true }); stopped(candidate.path); return { ...candidate, before }; }
+              catch { return { ...candidate, unavailable: true }; }
+            });
           }
-          let digest: string;
-          let kind: ManifestEntry["kind"];
-          if (before.isSymbolicLink()) {
-            const target = await readlink(abs, { encoding: "buffer" });
-            const after = await lstat(abs, { bigint: true });
-            if (!sameIdentity(before, after)) { mark("entry-changed-during-scan", path); continue; }
-            if (stopped(path)) break scan;
-            digest = createHash("sha256").update(target).digest("hex");
-            kind = "symlink";
-          } else if (before.isFile()) {
-            if (typeof constants.O_NOFOLLOW !== "number") { mark("no-follow-unavailable", path); continue; }
-            if (before.size > BigInt(MAX_HASH_BYTES - hashedBytes)) { mark("hash-limit", path); continue; }
-            const handle = await open(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-            try {
-              if (stopped(path)) break scan;
-              const opened = await handle.stat({ bigint: true });
-              if (!opened.isFile() || !sameIdentity(before, opened)) { mark("entry-changed-during-scan", path); continue; }
-              const hash = createHash("sha256");
-              const buffer = Buffer.allocUnsafe(64 * 1024);
-              let readBytes = 0;
-              let eof = false;
-              let hashLimit = false;
-              for (;;) {
-                if (stopped(path)) break;
-                const read = await handle.read(buffer, 0, buffer.length, null);
-                readBytes += read.bytesRead;
-                if (stopped(path)) break;
-                if (read.bytesRead === 0) { eof = true; break; }
-                if (readBytes > MAX_HASH_BYTES - hashedBytes) { mark("hash-limit", path); hashLimit = true; break; }
-                hash.update(buffer.subarray(0, read.bytesRead));
-              }
-              const after = await handle.stat({ bigint: true });
-              const changed = !sameIdentity(opened, after);
-              if (changed) mark("entry-changed-during-scan", path);
-              if (stopped(path)) break scan;
-              if (changed || hashLimit) continue;
-              if (!eof || BigInt(readBytes) !== opened.size) { mark("file-read-incomplete", path); continue; }
-              hashedBytes += readBytes;
-              digest = hash.digest("hex");
-              kind = "file";
-            } finally { await handle.close(); }
-          } else { mark("special-file", path); continue; }
-          if (stopped(path)) break scan;
-          entries.set(rel.toString("base64"), { path, kind, mode: Number(before.mode & modeMask), digest });
-        } catch { mark("entry-unavailable", path); }
+        } catch (error: unknown) { metadataError = error; metadata.stop(error); }
+        try { await metadata.drain(); } catch (error: unknown) { metadataError ??= error; }
+        if (metadataError !== undefined && metadataError !== termination) throw metadataError;
+        if (stopped()) break scan;
+        const reservations = new Map<Candidate, number>();
+        let observationError: unknown;
+        const observations = new IoOperation<Result>(pool, outcome => {
+          if (!outcome.ok) return;
+          const result = outcome.value;
+          const reservation = reservations.get(result.candidate) ?? 0;
+          reservedBytes -= reservation; reservations.delete(result.candidate);
+          if (result.entry) { entries.set(result.candidate.rel.toString("base64"), result.entry); committedBytes += result.bytes; }
+          if (result.directory) stack.push(result.directory);
+          for (const reason of result.issues) mark(reason, result.candidate.path);
+        }, check);
+        try {
+          for (const candidate of candidates) {
+            check();
+            const size = candidate.before?.isFile() ? candidate.before.size : 0n;
+            while (size > BigInt(MAX_HASH_BYTES - committedBytes - reservedBytes) && reservations.size) {
+              await observations.flushOne(); check();
+            }
+            if (size > BigInt(MAX_HASH_BYTES - committedBytes - reservedBytes)) { mark("hash-limit", candidate.path); continue; }
+            const reservation = Number(size);
+            reservations.set(candidate, reservation); reservedBytes += reservation;
+            try { await observations.enqueue(() => observe(candidate, directory.depth)); }
+            catch (error: unknown) { reservedBytes -= reservation; reservations.delete(candidate); throw error; }
+          }
+        } catch (error: unknown) { observationError = error; observations.stop(error); }
+        try { await observations.drain(); } catch (error: unknown) { observationError ??= error; }
+        // Queued jobs skipped after termination have no hash to commit.
+        for (const reservation of reservations.values()) reservedBytes -= reservation;
+        if (observationError !== undefined && observationError !== termination) throw observationError;
+        if (stopped()) break scan;
+        if (count > MAX_ENTRIES) break scan;
       }
     }
   } catch { coverage = "unavailable"; issues.push({ reason: "scan-unavailable" }); }
-  stopped(); // Includes a late abort/deadline in the last awaited operation or close.
+  stopped();
   return { coverage, entries, issues };
 }
 

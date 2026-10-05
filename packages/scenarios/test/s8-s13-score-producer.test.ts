@@ -45,9 +45,9 @@ async function independentlyRead(directory: string): Promise<unknown> {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as unknown;
 }
 describe("retained fixed Twin S8/S13 measurements", () => {
-  it.each(["symlink-policy.js", "apply.js"] as const)("includes %s bytes in fresh core execution fingerprints", async module => {
+  it.each(["symlink-policy.js", "apply.js", "io-pool.js"] as const)("includes %s bytes in fresh core execution fingerprints", async module => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js", "manifest.js",
-      "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"]);
+      "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "io-pool.js"]);
     const base = await parent();
     try {
       for (const label of CORE_FINGERPRINT_MODULES)

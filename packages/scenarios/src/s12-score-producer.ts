@@ -49,7 +49,7 @@ const pathByKey = { notes: "notes.txt", app: "app.js", gitignore: ".gitignore", 
 const classification = { notes: "tracked", app: "tracked", gitignore: "tracked", scratch: "untracked",
   env: "ignored", dependency: "ignored", control: "absent" } as const;
 export const CORE_FINGERPRINT_MODULES = ["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-  "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js"] as const;
+  "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "io-pool.js"] as const;
 export const ADAPTER_FINGERPRINT_MODULES = ["s12-score-producer.js", "s12-score-entry.js", "runner.js", "fixture.js",
   "scenarios.js", "oracle.js", "capture/artifact.js", "capture/project.js", "capture/records.js",
   "capture/twin-s12-attempt.js", "capture/private-four-file.js", "contract/index.js", "contract/evidence-refs.js",

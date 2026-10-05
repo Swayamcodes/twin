@@ -2,7 +2,8 @@ import fsPromises, { lstat, mkdir, rename, rmdir, symlink } from "node:fs/promis
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, discoverLinks, LINK_DISCOVERY_LIMITS } from "../src/symlink-policy.js";
+import { IoPool } from "../src/io-pool.js";
+import { verifyBaselineLinks, checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, discoverLinks, LINK_DISCOVERY_LIMITS } from "../src/symlink-policy.js";
 import { fixtureTest, put } from "./support.js";
 
 describe("structural link policy", () => {
@@ -87,3 +88,23 @@ describe("structural link policy", () => {
     }
   }));
 });
+
+it("waits for the other tree's delayed checks after a link discovery failure", async () => fixtureTest(async f => {
+  const copy = join(f.path, "copy");
+  for (let i = 0; i < 16; i++) { await put(f.source, `f${i}`, "source"); await put(copy, `f${i}`, "copy"); }
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+  const failure = new Error("copy discovery failure"), pool = new IoPool();
+  const real = fsPromises.lstat; let finished = false;
+  const spy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (...args) => {
+    if (String(args[0]) === join(f.source, "f0")) { entered(); await gate; }
+    if (String(args[0]) === join(copy, "f0")) { await ready; throw failure; }
+    return real(...args);
+  }); syncBuiltinESMExports();
+  const pending = verifyBaselineLinks(f.source, copy, new Map(), { pool }).then(() => undefined, error => error as unknown).finally(() => { finished = true; });
+  try {
+    await ready; await new Promise<void>(resolve => setTimeout(resolve, 20)); expect(finished).toBe(false);
+    release(); expect(await pending).toBe(failure);
+    expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 }); expect(pool.inspect().peakActive).toBeLessThanOrEqual(4);
+  } finally { release(); await pending; spy.mockRestore(); syncBuiltinESMExports(); }
+}));

@@ -50,18 +50,21 @@ async function removeFixture(path: string): Promise<void> {
   if (!markerStat.isFile() || markerStat.isSymbolicLink() || await readFile(marker, "utf8") !== entry.token) {
     throw new Error(`Fixture marker mismatch: ${path}`);
   }
-  const remove = async (target: string): Promise<void> => {
+  const childPath = (parent: Buffer, name: Buffer): Buffer => Buffer.concat([parent, Buffer.from("/"), name]);
+  const remove = async (target: Buffer): Promise<void> => {
     const before = await lstat(target, { bigint: true });
     if (before.uid !== stat.uid || before.dev !== stat.dev) throw new Error(`Foreign fixture entry: ${target}`);
     if (before.isDirectory()) {
-      for (const name of await readdir(target)) await remove(join(target, name));
+      for (const name of await readdir(target, { encoding: "buffer" })) await remove(childPath(target, name));
       const after = await lstat(target, { bigint: true });
       if (!after.isDirectory() || after.ino !== before.ino || after.dev !== before.dev) throw new Error("Fixture directory changed");
       await rmdir(target);
     } else if (before.isFile() || before.isSymbolicLink()) await unlink(target);
     else throw new Error(`Unsupported fixture cleanup entry: ${target}`);
   };
-  for (const name of await readdir(path)) if (name !== ".fixture-owner") await remove(join(path, name));
+  const rootBytes = Buffer.from(path), markerBytes = Buffer.from(".fixture-owner");
+  for (const name of await readdir(rootBytes, { encoding: "buffer" }))
+    if (!name.equals(markerBytes)) await remove(childPath(rootBytes, name));
   await unlink(marker);
   await rmdir(path);
   registered.delete(path);

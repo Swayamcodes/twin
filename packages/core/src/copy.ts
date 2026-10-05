@@ -1,8 +1,9 @@
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, symlink } from "node:fs/promises";
+import { constants, type BigIntStats } from "node:fs";
+import { chmod, lstat, mkdir, open, symlink, type FileHandle } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { assertRootAuthority, contains, sameIdentity, type OwnedRoot } from "./safety.js";
 import { checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, LINK_DISCOVERY_LIMITS, readLinkState, type BaselineLink, type BaselineLinks } from "./symlink-policy.js";
+import { checkIo, IoOperation, IoPool, type IoOptions } from "./io-pool.js";
 
 const gitSentinels = new Set(["commondir", "gitdir", "worktrees", "modules", "config.worktree",
   "objects/info/alternates", "objects/info/http-alternates"]);
@@ -55,14 +56,103 @@ function checkGitConfig(text: string, source: string): void {
     }
   }
 }
-export async function copySource(root: OwnedRoot): Promise<BaselineLinks> {
-  await assertRootAuthority(root);
+const stableFile = (a: BigIntStats, b: BigIntStats): boolean => sameIdentity(a, b) && a.mode === b.mode
+  && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+
+export async function copySource(root: OwnedRoot, options: IoOptions = {}): Promise<BaselineLinks> {
   const links = new Map<string, BaselineLink>();
+  const directories: { destination: string; mode: number }[] = [];
+  let failed = false;
+  let firstError: unknown;
+  const stop = (error: unknown): void => { if (!failed) { failed = true; firstError = error; } };
+  const check = (): void => {
+    if (failed) throw firstError;
+    try { checkIo(options); } catch (error: unknown) { stop(error); throw error; }
+  };
+  const operation = new IoOperation<void>(options.pool ?? new IoPool(), outcome => {
+    if (!outcome.ok) { stop(outcome.error); throw outcome.error; }
+  }, check);
+  const copyFile = async (source: string, destination: string, relativePath: string, before: BigIntStats): Promise<void> => {
+    let input: FileHandle | undefined;
+    let output: FileHandle | undefined;
+    let incomplete = false;
+    let error: unknown;
+    try {
+      check();
+      input = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+      check();
+      if (!stableFile(before, await input.stat({ bigint: true }))) throw new Error(`Source file changed: ${relativePath}`);
+      let config: Buffer | undefined;
+      if (relativePath === ".git/config") {
+        if (before.size > 65536n) throw new Error("Git config exceeds conservative 64 KiB limit");
+        config = Buffer.alloc(Number(before.size));
+        let offset = 0;
+        while (offset < config.length) {
+          check();
+          const { bytesRead } = await input.read(config, offset, config.length - offset, null);
+          if (bytesRead === 0) throw new Error("Git config changed or incomplete");
+          offset += bytesRead;
+        }
+        check();
+        const probe = Buffer.alloc(1);
+        if ((await input.read(probe, 0, 1, null)).bytesRead !== 0) throw new Error("Git config changed or incomplete");
+        if (!stableFile(before, await input.stat({ bigint: true })) || !stableFile(before, await lstat(source, { bigint: true }))) {
+          throw new Error(`Source file changed: ${relativePath}`);
+        }
+        checkGitConfig(new TextDecoder("utf-8", { fatal: true }).decode(config), root.source);
+      }
+      check();
+      output = await open(destination, "wx", 0o600);
+      const buffer = config ?? Buffer.alloc(65536);
+      let transferred = 0n;
+      while (transferred < before.size) {
+        check();
+        let bytesRead: number;
+        if (config) bytesRead = config.length;
+        else {
+          const remaining = before.size - transferred;
+          const length = Number(remaining < BigInt(buffer.length) ? remaining : BigInt(buffer.length));
+          bytesRead = (await input.read(buffer, 0, length, null)).bytesRead;
+        }
+        if (bytesRead === 0) throw new Error(`Source file changed or incomplete: ${relativePath}`);
+        let offset = 0;
+        while (offset < bytesRead) {
+          check();
+          const { bytesWritten } = await output.write(buffer, offset, bytesRead - offset, null);
+          if (bytesWritten === 0) throw new Error("Copy write made no progress");
+          offset += bytesWritten;
+        }
+        transferred += BigInt(bytesRead);
+      }
+      check();
+      if (!config && (await input.read(buffer, 0, 1, null)).bytesRead !== 0) throw new Error(`Source file changed: ${relativePath}`);
+      if (transferred !== before.size || !stableFile(before, await input.stat({ bigint: true }))
+          || !stableFile(before, await lstat(source, { bigint: true }))) throw new Error(`Source file changed: ${relativePath}`);
+      check();
+      await output.chmod(Number(before.mode & 0o777n));
+    } catch (caught: unknown) {
+      incomplete = true; error = caught;
+      stop(caught); operation.stop(firstError);
+    }
+    finally {
+      // Every admitted worker closes both handles before its failure can settle.
+      for (const handle of [output, input]) if (handle) {
+        try { await handle.close(); }
+        catch (caught: unknown) {
+          if (!incomplete) { incomplete = true; error = caught; }
+          stop(caught); operation.stop(firstError);
+        }
+      }
+    }
+    if (incomplete) { stop(error); throw error; }
+  };
   let count = 0;
   const visit = async (source: string, destination: string, relativePath: string): Promise<void> => {
+    check();
     if (++count > LINK_DISCOVERY_LIMITS.entries) throw new Error("Copy entry limit");
     checkEntryPath(relativePath);
     const stat = await lstat(source, { bigint: true });
+    check();
     const parts = relativePath.split("/");
     const inGit = parts[0] === ".git";
     const name = parts.at(-1) ?? "";
@@ -81,49 +171,41 @@ export async function copySource(root: OwnedRoot): Promise<BaselineLinks> {
     if (stat.isSymbolicLink()) {
       if (inGit) throw new Error(`Unsupported symlink: ${relativePath}`);
       const original = await readLinkState(source, stat);
+      check();
       let target: Buffer;
       try { target = copyLinkTarget(root.source, relativePath, original.target); }
       catch (error: unknown) { throw new Error(`Unsupported symlink: ${relativePath}`, { cause: error }); }
       await symlink(target, destination);
+      check();
       const copied = await readLinkState(destination);
       if (!copied.target.equals(target)) throw new Error(`Copied link changed: ${relativePath}`);
       links.set(Buffer.from(relativePath).toString("base64"), Object.freeze({ original, copied }));
     } else if (stat.isDirectory()) {
       const names = await directoryEntries(source, relativePath === ".git", LINK_DISCOVERY_LIMITS.entries - count);
+      check();
       await mkdir(destination, { mode: 0o700 });
       await chmod(destination, 0o700);
       for (const name of names) await visit(join(source, name), join(destination, name), `${relativePath}/${name}`);
-      await chmod(destination, Number(stat.mode & 0o777n));
+      directories.push({ destination, mode: Number(stat.mode & 0o777n) });
     } else if (stat.isFile()) {
-      const input = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        if (!sameIdentity(stat, await input.stat({ bigint: true }))) throw new Error("Source file changed");
-        if (relativePath === ".git/config") {
-          if (stat.size > 65536n) throw new Error("Git config exceeds conservative 64 KiB limit");
-          const config = Buffer.alloc(65537);
-          const { bytesRead } = await input.read(config, 0, config.length, 0);
-          if (BigInt(bytesRead) !== stat.size) throw new Error("Git config changed or incomplete");
-          checkGitConfig(new TextDecoder("utf-8", { fatal: true }).decode(config.subarray(0, bytesRead)), root.source);
-        }
-        const output = await open(destination, "wx", 0o600);
-        try {
-          const buffer = Buffer.alloc(65536);
-          for (;;) {
-            const { bytesRead } = await input.read(buffer, 0, buffer.length, null);
-            if (bytesRead === 0) break;
-            let offset = 0;
-            while (offset < bytesRead) {
-              const { bytesWritten } = await output.write(buffer, offset, bytesRead - offset, null);
-              if (bytesWritten === 0) throw new Error("Copy write made no progress");
-              offset += bytesWritten;
-            }
-          }
-          await output.chmod(Number(stat.mode & 0o777n));
-        } finally { await output.close(); }
-      } finally { await input.close(); }
+      if (relativePath === ".git/config") await operation.drain();
+      await operation.enqueue(() => copyFile(source, destination, relativePath, stat));
+      if (relativePath === ".git/config") await operation.drain();
     } else throw new Error(`Unsupported source entry: ${relativePath}`);
   };
-  for (const name of await directoryEntries(root.source, false, LINK_DISCOVERY_LIMITS.entries)) await visit(join(root.source, name), join(root.workspace, name), name);
-  await assertRootAuthority(root);
-  return links;
+  try {
+    check();
+    await assertRootAuthority(root);
+    for (const name of await directoryEntries(root.source, false, LINK_DISCOVERY_LIMITS.entries)) await visit(join(root.source, name), join(root.workspace, name), name);
+    await operation.drain();
+    for (const directory of directories) { check(); await chmod(directory.destination, directory.mode); }
+    check();
+    await assertRootAuthority(root);
+    return links;
+  } catch (error: unknown) {
+    stop(error);
+    operation.stop(firstError);
+    await operation.drain();
+    throw firstError;
+  }
 }
