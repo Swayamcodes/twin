@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { lstat, open, readdir, readlink } from "node:fs/promises";
-import { IoOperation, IoPool, IO_WINDOW } from "./io-pool.js";
+import { IoOperation, IoPool, IO_WINDOW, measured, type Diagnostics, type DiagnosticStage, type DiagnosticRole } from "./io-pool.js";
 import type { ReceiptPath } from "./receipt.js";
 
 const MAX_ENTRIES = 100_000;
@@ -18,6 +18,9 @@ export interface ManifestScanOptions {
   readonly timeoutMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly pool?: IoPool | undefined;
+  readonly diagnostics?: Diagnostics | undefined;
+  readonly diagnosticStage?: DiagnosticStage | undefined;
+  readonly diagnosticRole?: DiagnosticRole | undefined;
 }
 export function normalizeScanOptions(options: ManifestScanOptions) {
   const requestedTimeout = options.timeoutMs;
@@ -25,7 +28,7 @@ export function normalizeScanOptions(options: ManifestScanOptions) {
   const signal = options.signal;
   if (!validScanTimeoutMs(timeoutMs)) throw new Error("Invalid Twin scan timeout: expected integer 1–3600000 ms.");
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new Error("Invalid Twin scan signal.");
-  return Object.freeze({ timeoutMs, signal, ...(options.pool ? { pool: options.pool } : {}) });
+  return Object.freeze({ timeoutMs, signal, ...(options.pool ? { pool: options.pool } : {}), ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}), ...(options.diagnosticStage ? { diagnosticStage: options.diagnosticStage } : {}), ...(options.diagnosticRole ? { diagnosticRole: options.diagnosticRole } : {}) });
 }
 export class ScanCancelledError extends Error {
   constructor() { super("Scan cancelled"); }
@@ -69,15 +72,20 @@ function project(snapshot: ManifestSnapshot, apply: boolean): ManifestSnapshot {
 }
 export async function captureManifestViews(workspace: string | Buffer, options: ManifestScanOptions = {}): Promise<ScanViews> {
   const raw = await captureRaw(workspace, options);
-  return { raw, receipt: project(raw, false), apply: project(raw, true) };
+  const receipt = project(raw, false), apply = project(raw, true);
+  options.diagnostics?.project(raw, receipt); options.diagnostics?.project(raw, apply);
+  return { raw, receipt, apply };
 }
 export async function captureManifest(workspace: string | Buffer, includeDirectories = false, options: ManifestScanOptions = {}): Promise<ManifestSnapshot> {
-  return project(await captureRaw(workspace, options), includeDirectories);
+  const raw = await captureRaw(workspace, options), view = project(raw, includeDirectories);
+  options.diagnostics?.project(raw, view); return view;
 }
 async function captureRaw(workspace: string | Buffer, options: ManifestScanOptions): Promise<ManifestSnapshot> {
   const entries = new Map<string, ManifestEntry>();
   const issues: ManifestSnapshot["issues"] = [];
   const policy = normalizeScanOptions(options), pool = policy.pool ?? new IoPool();
+  const span = policy.diagnostics?.start(policy.diagnosticStage ?? "inventory", policy.diagnosticRole ?? "none");
+  let readBytes = 0; let terminationKind: "none" | "cancelled" | "deadline" = "none";
   const deadline = performance.now() + policy.timeoutMs;
   let count = 0, committedBytes = 0, reservedBytes = 0;
   let coverage: ManifestSnapshot["coverage"] = "complete";
@@ -90,7 +98,7 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
   const stopped = (path?: ReceiptPath): boolean => {
     if (terminated) return true;
     const reason = policy.signal?.aborted ? "scan-cancelled" : performance.now() >= deadline ? "scan-timeout" : undefined;
-    if (reason) { mark(reason, path); terminated = true; }
+    if (reason) { mark(reason, path); terminated = true; terminationKind = reason === "scan-cancelled" ? "cancelled" : "deadline"; }
     return terminated;
   };
   const check = (): void => { if (stopped()) throw termination; };
@@ -107,43 +115,44 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
         result.entry = { path, kind: "directory", mode: Number(before.mode & 0o7777n), digest: "" };
         if (depth + 1 > MAX_DEPTH) result.issues.push("depth-limit");
         else result.directory = { abs, rel, depth: depth + 1 };
-        const after = await lstat(abs, { bigint: true });
+        const after = await measured(span, "metadata", () => lstat(abs, { bigint: true }));
         if (!sameIdentity(before, after)) result.issues.push("entry-changed-during-scan");
         stopped(path); return result;
       }
       if (before.isSymbolicLink()) {
-        const target = await readlink(abs, { encoding: "buffer" });
-        const after = await lstat(abs, { bigint: true });
+        const target = await measured(span, "metadata", () => readlink(abs, { encoding: "buffer" }));
+        const after = await measured(span, "metadata", () => lstat(abs, { bigint: true }));
         if (!sameIdentity(before, after)) result.issues.push("entry-changed-during-scan");
         if (!stopped(path) && !result.issues.length) result.entry = { path, kind: "symlink", mode: Number(before.mode & 0o7777n), digest: createHash("sha256").update(target).digest("hex") };
         return result;
       }
       if (!before.isFile()) { result.issues.push("special-file"); return result; }
       if (typeof constants.O_NOFOLLOW !== "number") { result.issues.push("no-follow-unavailable"); return result; }
-      const handle = await open(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const handle = await measured(span, "open", () => open(abs, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK));
       let digest: string | undefined;
       try {
         if (stopped(path)) return result;
-        const opened = await handle.stat({ bigint: true });
+        const opened = await measured(span, "metadata", () => handle.stat({ bigint: true }));
         if (!opened.isFile() || !sameIdentity(before, opened)) { result.issues.push("entry-changed-during-scan"); return result; }
         const hash = createHash("sha256"), buffer = Buffer.allocUnsafe(65536);
         let bytes = 0, eof = false, exceeded = false;
         for (;;) {
           if (stopped(path)) break;
-          const read = await handle.read(buffer, 0, Math.min(buffer.length, Number(opened.size) - bytes + 1), null);
-          bytes += read.bytesRead;
+          const read = await measured(span, "read", () => handle.read(buffer, 0, Math.min(buffer.length, Number(opened.size) - bytes + 1), null));
+          bytes += read.bytesRead; readBytes += read.bytesRead;
           if (stopped(path)) break;
           if (!read.bytesRead) { eof = true; break; }
           if (BigInt(bytes) > opened.size) { exceeded = true; if (bytes > MAX_HASH_BYTES) result.issues.push("hash-limit"); break; }
-          hash.update(buffer.subarray(0, read.bytesRead));
+          if (span) span.sync("hash", () => hash.update(buffer.subarray(0, read.bytesRead)));
+          else hash.update(buffer.subarray(0, read.bytesRead));
         }
-        const after = await handle.stat({ bigint: true });
+        const after = await measured(span, "metadata", () => handle.stat({ bigint: true }));
         const changed = !sameIdentity(opened, after);
         if (changed) result.issues.push("entry-changed-during-scan");
         if (stopped(path) || changed) return result;
         if (!eof || exceeded || BigInt(bytes) !== opened.size) { if (!result.issues.includes("hash-limit")) result.issues.push("file-read-incomplete"); return result; }
         digest = hash.digest("hex"); result.bytes = bytes;
-      } finally { await handle.close(); }
+      } finally { await measured(span, "close", () => handle.close()); }
       if (!stopped(path) && digest !== undefined) result.entry = { path, kind: "file", mode: Number(before.mode & 0o7777n), digest };
       else result.bytes = 0;
     } catch { result.bytes = 0; result.issues.push("entry-unavailable"); }
@@ -154,14 +163,14 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
       if (stopped()) break;
       const directory = stack.pop()!;
       let children: Awaited<ReturnType<typeof readdir>>;
-      try { children = await readdir(directory.abs, { withFileTypes: true, encoding: "buffer" }); }
+      try { children = await measured(span, "enumeration", () => readdir(directory.abs, { withFileTypes: true, encoding: "buffer" })); }
       catch { mark("directory-unavailable", directory.rel.length ? receiptPath(directory.rel) : undefined); continue; }
       if (stopped(directory.rel.length ? receiptPath(directory.rel) : undefined)) break;
       // Metadata and hashing are separate stages: no worker waits for byte allowance.
       for (let offset = 0; offset < children.length; offset += IO_WINDOW) {
         const candidates: Candidate[] = [];
         let metadataError: unknown;
-        const metadata = new IoOperation<Candidate>(pool, outcome => { if (outcome.ok) candidates.push(outcome.value); }, check);
+        const metadata = new IoOperation<Candidate>(pool, outcome => { if (outcome.ok) candidates.push(outcome.value); }, check, span);
         try {
           for (const child of children.slice(offset, offset + IO_WINDOW)) {
             if (stopped()) break;
@@ -171,7 +180,7 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
             if (++count > MAX_ENTRIES) { mark("entry-limit"); stack.length = 0; break; }
             const candidate: Candidate = { abs: Buffer.concat([directory.abs, Buffer.from("/"), name]), rel, path: receiptPath(rel) };
             await metadata.enqueue(async () => {
-              try { const before = await lstat(candidate.abs, { bigint: true }); stopped(candidate.path); return { ...candidate, before }; }
+              try { const before = await measured(span, "metadata", () => lstat(candidate.abs, { bigint: true })); stopped(candidate.path); return { ...candidate, before }; }
               catch { return { ...candidate, unavailable: true }; }
             });
           }
@@ -189,7 +198,7 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
           if (result.entry) { entries.set(result.candidate.rel.toString("base64"), result.entry); committedBytes += result.bytes; }
           if (result.directory) stack.push(result.directory);
           for (const reason of result.issues) mark(reason, result.candidate.path);
-        }, check);
+        }, check, span);
         try {
           for (const candidate of candidates) {
             check();
@@ -214,7 +223,9 @@ async function captureRaw(workspace: string | Buffer, options: ManifestScanOptio
     }
   } catch { coverage = "unavailable"; issues.push({ reason: "scan-unavailable" }); }
   stopped();
-  return { coverage, entries, issues };
+  const result = { coverage, entries, issues };
+  if (span) { policy.diagnostics?.inventory(result, span, { budgetMs: policy.timeoutMs, discovered: count, acceptedHashBytes: committedBytes, readBytes, termination: terminationKind, entries: entries.size }); span.end(coverage === "complete" ? "complete" : "failed", true); }
+  return result;
 }
 
 export function unavailableManifest(reason: string): ManifestSnapshot {

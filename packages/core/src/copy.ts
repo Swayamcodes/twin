@@ -3,7 +3,7 @@ import { chmod, lstat, mkdir, open, symlink, type FileHandle } from "node:fs/pro
 import { isAbsolute, join, resolve } from "node:path";
 import { assertRootAuthority, contains, sameIdentity, type OwnedRoot } from "./safety.js";
 import { checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, LINK_DISCOVERY_LIMITS, readLinkState, type BaselineLink, type BaselineLinks } from "./symlink-policy.js";
-import { checkIo, IoOperation, IoPool, type IoOptions } from "./io-pool.js";
+import { checkIo, measured, IoOperation, IoPool, type IoOptions } from "./io-pool.js";
 
 const gitSentinels = new Set(["commondir", "gitdir", "worktrees", "modules", "config.worktree",
   "objects/info/alternates", "objects/info/http-alternates"]);
@@ -60,6 +60,7 @@ const stableFile = (a: BigIntStats, b: BigIntStats): boolean => sameIdentity(a, 
   && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 
 export async function copySource(root: OwnedRoot, options: IoOptions = {}): Promise<BaselineLinks> {
+  const span = options.diagnostics?.start("preparation.copy", "both");
   const links = new Map<string, BaselineLink>();
   const directories: { destination: string; mode: number }[] = [];
   let failed = false;
@@ -71,7 +72,7 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
   };
   const operation = new IoOperation<void>(options.pool ?? new IoPool(), outcome => {
     if (!outcome.ok) { stop(outcome.error); throw outcome.error; }
-  }, check);
+  }, check, span);
   const copyFile = async (source: string, destination: string, relativePath: string, before: BigIntStats): Promise<void> => {
     let input: FileHandle | undefined;
     let output: FileHandle | undefined;
@@ -79,9 +80,9 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
     let error: unknown;
     try {
       check();
-      input = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+      input = await measured(span, "open", () => open(source, constants.O_RDONLY | constants.O_NOFOLLOW));
       check();
-      if (!stableFile(before, await input.stat({ bigint: true }))) throw new Error(`Source file changed: ${relativePath}`);
+      if (!stableFile(before, await measured(span, "metadata", () => input!.stat({ bigint: true })))) throw new Error(`Source file changed: ${relativePath}`);
       let config: Buffer | undefined;
       if (relativePath === ".git/config") {
         if (before.size > 65536n) throw new Error("Git config exceeds conservative 64 KiB limit");
@@ -89,20 +90,20 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
         let offset = 0;
         while (offset < config.length) {
           check();
-          const { bytesRead } = await input.read(config, offset, config.length - offset, null);
+          const { bytesRead } = await measured(span, "read", () => input!.read(config!, offset, config!.length - offset, null));
           if (bytesRead === 0) throw new Error("Git config changed or incomplete");
           offset += bytesRead;
         }
         check();
         const probe = Buffer.alloc(1);
-        if ((await input.read(probe, 0, 1, null)).bytesRead !== 0) throw new Error("Git config changed or incomplete");
-        if (!stableFile(before, await input.stat({ bigint: true })) || !stableFile(before, await lstat(source, { bigint: true }))) {
+        if ((await measured(span, "read", () => input!.read(probe, 0, 1, null))).bytesRead !== 0) throw new Error("Git config changed or incomplete");
+        if (!stableFile(before, await measured(span, "metadata", () => input!.stat({ bigint: true }))) || !stableFile(before, await measured(span, "metadata", () => lstat(source, { bigint: true })))) {
           throw new Error(`Source file changed: ${relativePath}`);
         }
         checkGitConfig(new TextDecoder("utf-8", { fatal: true }).decode(config), root.source);
       }
       check();
-      output = await open(destination, "wx", 0o600);
+      output = await measured(span, "open", () => open(destination, "wx", 0o600));
       const buffer = config ?? Buffer.alloc(65536);
       let transferred = 0n;
       while (transferred < before.size) {
@@ -112,24 +113,24 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
         else {
           const remaining = before.size - transferred;
           const length = Number(remaining < BigInt(buffer.length) ? remaining : BigInt(buffer.length));
-          bytesRead = (await input.read(buffer, 0, length, null)).bytesRead;
+          bytesRead = (await measured(span, "read", () => input!.read(buffer, 0, length, null))).bytesRead;
         }
         if (bytesRead === 0) throw new Error(`Source file changed or incomplete: ${relativePath}`);
         let offset = 0;
         while (offset < bytesRead) {
           check();
-          const { bytesWritten } = await output.write(buffer, offset, bytesRead - offset, null);
+          const { bytesWritten } = await measured(span, "write", () => output!.write(buffer, offset, bytesRead - offset, null));
           if (bytesWritten === 0) throw new Error("Copy write made no progress");
           offset += bytesWritten;
         }
         transferred += BigInt(bytesRead);
       }
       check();
-      if (!config && (await input.read(buffer, 0, 1, null)).bytesRead !== 0) throw new Error(`Source file changed: ${relativePath}`);
-      if (transferred !== before.size || !stableFile(before, await input.stat({ bigint: true }))
-          || !stableFile(before, await lstat(source, { bigint: true }))) throw new Error(`Source file changed: ${relativePath}`);
+      if (!config && (await measured(span, "read", () => input!.read(buffer, 0, 1, null))).bytesRead !== 0) throw new Error(`Source file changed: ${relativePath}`);
+      if (transferred !== before.size || !stableFile(before, await measured(span, "metadata", () => input!.stat({ bigint: true })))
+          || !stableFile(before, await measured(span, "metadata", () => lstat(source, { bigint: true })))) throw new Error(`Source file changed: ${relativePath}`);
       check();
-      await output.chmod(Number(before.mode & 0o777n));
+      await measured(span, "metadata", () => output!.chmod(Number(before.mode & 0o777n)));
     } catch (caught: unknown) {
       incomplete = true; error = caught;
       stop(caught); operation.stop(firstError);
@@ -137,7 +138,7 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
     finally {
       // Every admitted worker closes both handles before its failure can settle.
       for (const handle of [output, input]) if (handle) {
-        try { await handle.close(); }
+        try { await measured(span, "close", () => handle.close()); }
         catch (caught: unknown) {
           if (!incomplete) { incomplete = true; error = caught; }
           stop(caught); operation.stop(firstError);
@@ -151,7 +152,7 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
     check();
     if (++count > LINK_DISCOVERY_LIMITS.entries) throw new Error("Copy entry limit");
     checkEntryPath(relativePath);
-    const stat = await lstat(source, { bigint: true });
+    const stat = await measured(span, "metadata", () => lstat(source, { bigint: true }));
     check();
     const parts = relativePath.split("/");
     const inGit = parts[0] === ".git";
@@ -170,21 +171,21 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
     if (relativePath === ".git/config" && !stat.isFile()) throw new Error("Git config must be a regular file");
     if (stat.isSymbolicLink()) {
       if (inGit) throw new Error(`Unsupported symlink: ${relativePath}`);
-      const original = await readLinkState(source, stat);
+      const original = await measured(span, "metadata", () => readLinkState(source, stat));
       check();
       let target: Buffer;
       try { target = copyLinkTarget(root.source, relativePath, original.target); }
       catch (error: unknown) { throw new Error(`Unsupported symlink: ${relativePath}`, { cause: error }); }
-      await symlink(target, destination);
+      await measured(span, "write", () => symlink(target, destination));
       check();
-      const copied = await readLinkState(destination);
+      const copied = await measured(span, "metadata", () => readLinkState(destination));
       if (!copied.target.equals(target)) throw new Error(`Copied link changed: ${relativePath}`);
       links.set(Buffer.from(relativePath).toString("base64"), Object.freeze({ original, copied }));
     } else if (stat.isDirectory()) {
-      const names = await directoryEntries(source, relativePath === ".git", LINK_DISCOVERY_LIMITS.entries - count);
+      const names = await measured(span, "enumeration", () => directoryEntries(source, relativePath === ".git", LINK_DISCOVERY_LIMITS.entries - count));
       check();
-      await mkdir(destination, { mode: 0o700 });
-      await chmod(destination, 0o700);
+      await measured(span, "write", () => mkdir(destination, { mode: 0o700 }));
+      await measured(span, "metadata", () => chmod(destination, 0o700));
       for (const name of names) await visit(join(source, name), join(destination, name), `${relativePath}/${name}`);
       directories.push({ destination, mode: Number(stat.mode & 0o777n) });
     } else if (stat.isFile()) {
@@ -196,16 +197,17 @@ export async function copySource(root: OwnedRoot, options: IoOptions = {}): Prom
   try {
     check();
     await assertRootAuthority(root);
-    for (const name of await directoryEntries(root.source, false, LINK_DISCOVERY_LIMITS.entries)) await visit(join(root.source, name), join(root.workspace, name), name);
+    for (const name of await measured(span, "enumeration", () => directoryEntries(root.source, false, LINK_DISCOVERY_LIMITS.entries))) await visit(join(root.source, name), join(root.workspace, name), name);
     await operation.drain();
-    for (const directory of directories) { check(); await chmod(directory.destination, directory.mode); }
+    for (const directory of directories) { check(); await measured(span, "metadata", () => chmod(directory.destination, directory.mode)); }
     check();
     await assertRootAuthority(root);
+    span?.end("complete", true);
     return links;
   } catch (error: unknown) {
     stop(error);
     operation.stop(firstError);
-    await operation.drain();
+    try { await operation.drain(); } finally { span?.end("failed", true); }
     throw firstError;
   }
 }

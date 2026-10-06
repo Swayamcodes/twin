@@ -108,3 +108,24 @@ it("waits for the other tree's delayed checks after a link discovery failure", a
     expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 }); expect(pool.inspect().peakActive).toBeLessThanOrEqual(4);
   } finally { release(); await pending; spy.mockRestore(); syncBuiltinESMExports(); }
 }));
+
+it("keeps paired link discovery non-dereferencing and drains both roots with a failing observer", async () => fixtureTest(async f => {
+  const { Diagnostics } = await import("../src/io-pool.js");
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const diagnostics = new Diagnostics(event => { events.push(event); throw new Error("observer failure"); });
+  await symlink("missing", join(f.source, "link"));
+  const session = await f.create();
+  const links = await discoverLinks(f.source);
+  // Creation records contain physical identities for both trees; use the authorized baseline.
+  const { copySource } = await import("../src/copy.js");
+  const { allocateRoot, discardRoot } = await import("../src/safety.js");
+  const root = await allocateRoot({ sourceDirectory: f.source, scratchParent: f.scratch });
+  try {
+    const baseline = await copySource(root);
+    await verifyBaselineLinks(f.source, root.workspace, baseline, { diagnostics });
+    expect(links.size).toBe(1);
+    expect(events.filter(event => event.kind === "drained").map(event => event.role).sort()).toEqual(["copy", "source"]);
+    expect(events.at(-1)).toMatchObject({ kind: "end", stage: "preparation.links", outcome: "complete" });
+  } finally { expect(await discardRoot(root)).toEqual({ status: "removed" }); }
+  expect(session.inspect().state).toBe("ready");
+}));

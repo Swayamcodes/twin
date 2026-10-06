@@ -42,3 +42,55 @@ describe("bounded ordered IO", () => {
     expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 });
   });
 });
+
+describe("observational diagnostics", () => {
+  it("contains throws, rejected native promises and hostile non-native thenables", async () => {
+    const { Diagnostics } = await import("../src/io-pool.js");
+    let getterReads = 0;
+    const hostile = { get then(): never { getterReads++; throw new Error("must not inspect then"); } };
+    for (const listener of [() => { throw new Error("observer failed"); }, () => Promise.reject(new Error("async observer failed")), () => hostile]) {
+      const diagnostics = Diagnostics.capture({ onDiagnostic: listener });
+      const span = diagnostics?.start("inventory");
+      expect(await span?.measure("metadata", async () => "unchanged result")).toBe("unchanged result");
+      span?.end("complete", true);
+    }
+    await turn(); expect(getterReads).toBe(0);
+    expect(Diagnostics.capture({ get onDiagnostic(): never { throw new Error("getter failed"); } })).toBeUndefined();
+  });
+  it("freezes detached records, bounds output, and waits for delayed work before reporting drain", async () => {
+    const { Diagnostics } = await import("../src/io-pool.js");
+    const records: import("../src/io-pool.js").DiagnosticEvent[] = [];
+    const diagnostics = new Diagnostics(event => { records.push(event); });
+    const span = diagnostics.start("preparation.copy", "both")!;
+    const gate = deferred(), pool = new IoPool();
+    const operation = new IoOperation<number>(pool, () => {}, undefined, span);
+    await operation.enqueue(() => span.measure("read", async () => { await gate.promise; return 1; }));
+    const drain = operation.drain().then(() => span.end("complete", true));
+    await turn(); expect(records.some(event => event.kind === "drained")).toBe(false);
+    gate.resolve(); await drain;
+    const terminal = records.find(event => event.kind === "drained")!;
+    expect(terminal.metrics?.every(metric => metric.inflight === 0)).toBe(true);
+    expect(Object.isFrozen(terminal)).toBe(true); expect(Object.isFrozen(terminal.metrics)).toBe(true);
+    expect(() => Object.assign(terminal, { stage: "secret" })).toThrow();
+    for (let i = 0; i < 2000; i++) diagnostics.start("inventory")?.end("complete", true);
+    expect(records.length).toBeLessThanOrEqual(1024);
+    expect(records.every(event => Buffer.byteLength(JSON.stringify(event)) <= 4096)).toBe(true);
+    expect(records.reduce((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0)).toBeLessThanOrEqual(262144);
+  });
+});
+
+it("forwards the latest five bounded guard dispositions after the ordinary observation cap", async () => {
+  const { Diagnostics } = await import("../src/io-pool.js");
+  const records: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const diagnostics = new Diagnostics(event => { records.push(event); });
+  for (let i = 0; i < 1200; i++) diagnostics.start("inventory")?.end("complete");
+  const complete = { coverage: "complete" as const, issues: [] };
+  diagnostics.guard("apply", [["original-baseline", complete], ["copy-baseline", complete], ["settled-copy", complete], ["fresh-copy", complete], ["fresh-original", complete]]);
+  const partial = { coverage: "partial" as const, issues: [{ reason: "scan-cancelled" }] };
+  diagnostics.guard("apply", [["original-baseline", complete], ["copy-baseline", complete], ["settled-copy", complete], ["fresh-copy", partial], ["fresh-original", undefined]]);
+  expect(records.at(-1)?.snapshots?.slice(3)).toEqual([
+    { name: "fresh-copy", identity: null, coverage: "partial", issueCount: 1 },
+    { name: "fresh-original", identity: null, coverage: "not-observed", issueCount: 0 },
+  ]);
+  expect(Buffer.byteLength(JSON.stringify(records.at(-1)))).toBeLessThanOrEqual(4096);
+});

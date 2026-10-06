@@ -246,3 +246,41 @@ it("isolates simultaneous growing and shrinking readers from stable worker resul
   expect(result.raw.issues).toEqual([0, 1].map(i => ({ reason: "entry-changed-during-scan", path: { encoding: "utf8", value: `f${i}` } })));
   expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0, peakActive: 4 });
 }));
+
+it("gives combined receipt/apply views one fresh invocation identity without disclosing paths", async () => fixtureTest(async f => {
+  const { Diagnostics } = await import("../src/io-pool.js");
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const diagnostics = new Diagnostics(event => { events.push(event); });
+  await put(f.source, "SECRET_FILENAME", "SECRET_CONTENT", 0o4755);
+  await fsPromises.chmod(join(f.source, "SECRET_FILENAME"), 0o4755);
+  await fsPromises.mkdir(join(f.source, "directory"));
+  const views = await captureManifestViews(f.source, { diagnostics });
+  diagnostics.guard("apply", [["copy-baseline", views.receipt], ["settled-copy", views.apply]]);
+  expect(views.receipt.entries.get(Buffer.from("SECRET_FILENAME").toString("base64"))?.mode).toBe(0o4755);
+  expect(views.apply.entries.get(Buffer.from("SECRET_FILENAME").toString("base64"))?.mode).toBe(0o755);
+  expect(views.receipt.entries.has(Buffer.from("directory").toString("base64"))).toBe(false);
+  expect(views.apply.entries.has(Buffer.from("directory").toString("base64"))).toBe(true);
+  const inventory = events.find(event => event.kind === "inventory")!;
+  expect(inventory).toMatchObject({ coverage: "complete", termination: "none", readBytes: 14, acceptedHashBytes: 14 });
+  expect(events.find(event => event.kind === "guard")?.snapshots?.map(item => item.identity)).toEqual([inventory.identity, inventory.identity]);
+  expect(JSON.stringify(events)).not.toMatch(/SECRET_FILENAME|SECRET_CONTENT/);
+  expect(events.at(-3)?.kind).toBe("begin");
+}));
+it.each(["cancelled", "deadline"] as const)("records the actual first scan termination and closed handles: %s", async kind => fixtureTest(async f => {
+  const { Diagnostics } = await import("../src/io-pool.js");
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const diagnostics = new Diagnostics(event => { events.push(event); });
+  await put(f.source, "file", "unchanged");
+  const controller = new AbortController(); let clock = 0, closed = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
+  interceptOpen(handle => {
+    const close = handle.close.bind(handle);
+    Object.defineProperty(handle, "close", { value: async () => { await close(); closed++; if (kind === "deadline") controller.abort(); else clock = 10; } });
+    readHook(handle, () => { if (kind === "cancelled") controller.abort(); else clock = 10; });
+  });
+  const result = await captureManifest(f.source, true, { timeoutMs: 10, signal: controller.signal, diagnostics });
+  expect(result.coverage).toBe("partial"); expect(closed).toBe(1);
+  expect(events.find(event => event.kind === "inventory")).toMatchObject({ termination: kind, reasons: [{ reason: kind === "cancelled" ? "scan-cancelled" : "scan-timeout", count: 1 }] });
+  expect(events.at(-2)?.kind).toBe("drained");
+  expect(events.at(-2)?.metrics?.every(metric => metric.inflight === 0)).toBe(true);
+}));

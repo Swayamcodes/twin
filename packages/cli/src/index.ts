@@ -2,9 +2,9 @@
 /// <reference types="node" />
 
 import { tmpdir } from "node:os";
-import { realpathSync } from "node:fs";
-import { mkdtemp, rmdir } from "node:fs/promises";
-import { join } from "node:path";
+import { constants, realpathSync } from "node:fs";
+import { lstat, mkdtemp, open, realpath, rmdir } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { createTwin, DEFAULT_SCAN_TIMEOUT_MS, validScanTimeoutMs, unavailableProcessReceipt, type CommandReceipt, type MinimalReceipt, type ProcessReceipt, type WatchId } from "@twin-cli/core";
@@ -15,7 +15,114 @@ import { preparationErrorDiagnostic } from "./error-diagnostics.js";
 import { initConfig, loadConfig, validTimeout } from "./config.js";
 import { askTerminal, chooseTerminal, preparation, renderLogo, terminalColors, terminalOutput, terminalPrompts } from "./terminal-ui.js";
 
-const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--scan-timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--review] -- <executable> [args...]
+import { performance } from "node:perf_hooks";
+
+// A best-effort side channel. No writer promise participates in core control flow.
+type CoreDiagnostic = Parameters<NonNullable<import("@twin-cli/core").CreateTwinOptions["onDiagnostic"]>>[0];
+type TraceRecord = CoreDiagnostic | Readonly<Record<string, unknown>>;
+class StageTrace {
+  readonly #queue: Buffer[] = [];
+  #pendingBytes = 0; #pendingRecords = 0; #accepted = 0; #bytes = 0; #omitted = 0;
+  #pump: Promise<void> | undefined; #closed = false; #failed = false;
+  #guard: CoreDiagnostic["snapshots"];
+  #cliIdentity = 0;
+  #coreOmitted = 0;
+  constructor(readonly file: import("node:fs/promises").FileHandle) {}
+  get failed(): boolean { return this.#failed; }
+  readonly observe = (event: CoreDiagnostic): void => {
+    if (event.kind === "guard" || (event.kind === "summary" && event.snapshots)) this.#guard = event.snapshots;
+    this.#coreOmitted = Math.max(this.#coreOmitted, event.omitted ?? 0);
+    this.#enqueue(event, event.kind !== "begin" && event.kind !== "progress");
+  };
+  boundary(stage: "execution.resolve" | "review", kind: "begin" | "end", identity: number, elapsedMs: number): void {
+    this.#enqueue({ schema: 1, origin: "cli", identity, stage, kind, elapsedMs }, kind === "end");
+  }
+  async stage<T>(stage: "execution.resolve" | "review", work: () => Promise<T>): Promise<T> {
+    const identity = ++this.#cliIdentity, started = performance.now();
+    this.boundary(stage, "begin", identity, 0);
+    try { return await work(); } finally { this.boundary(stage, "end", identity, Math.round((performance.now() - started) * 1000) / 1000); }
+  }
+  requested(signal: "SIGINT" | "SIGTERM"): void {
+    this.#enqueue({ schema: 1, origin: "cli", kind: "cancellation-requested", signal }, true);
+  }
+  metadata(scanTimeoutMs: number): void {
+    this.#enqueue({ schema: 1, origin: "cli", kind: "metadata", nodeVersion: process.version, scanTimeoutMs }, true);
+  }
+  #enqueue(event: TraceRecord, critical: boolean): void {
+    try {
+      if (this.#closed || this.#failed) return;
+      const record = Buffer.from(`${JSON.stringify(event)}\n`);
+      // Counts include the record currently being written. Reserve a final footer.
+      if (record.length > 4096 || this.#accepted >= (critical ? 1023 : 896)
+          || this.#bytes + record.length > (critical ? 258048 : 196608)
+          || this.#pendingRecords >= 4 || this.#pendingBytes + record.length > 16384) { this.#omitted++; return; }
+      this.#queue.push(record); this.#pendingRecords++; this.#pendingBytes += record.length;
+      this.#accepted++; this.#bytes += record.length; this.#startPump();
+    } catch { this.#failed = true; }
+  }
+  #startPump(): void {
+    if (this.#pump) return;
+    this.#pump = this.#drain().finally(() => { this.#pump = undefined; if (this.#queue.length && !this.#failed) this.#startPump(); });
+  }
+  async #write(record: Buffer): Promise<void> {
+    let offset = 0;
+    while (offset < record.length) {
+      const written = await this.file.write(record, offset, record.length - offset, null);
+      if (!written.bytesWritten) throw new Error("Diagnostic write made no progress");
+      offset += written.bytesWritten;
+    }
+  }
+  async #drain(): Promise<void> {
+    while (this.#queue.length && !this.#failed) {
+      const record = this.#queue.shift()!;
+      try { await this.#write(record); }
+      catch {
+        this.#failed = true; this.#omitted += this.#queue.length + 1;
+        for (const discarded of this.#queue) { this.#pendingRecords--; this.#pendingBytes -= discarded.length; }
+        this.#queue.length = 0;
+      }
+      finally { this.#pendingRecords--; this.#pendingBytes -= record.length; }
+    }
+  }
+  async finish(): Promise<void> {
+    this.#closed = true;
+    try {
+      while (this.#pump) await this.#pump;
+      if (!this.#failed) {
+        const footer = Buffer.from(`${JSON.stringify({ schema: 1, origin: "cli", kind: "summary", accepted: this.#accepted,
+          omitted: this.#omitted, observedCoreOmissions: this.#coreOmitted, truncated: this.#omitted > 0 || this.#coreOmitted > 0, snapshots: this.#guard ?? [] })}\n`);
+        if (footer.length <= 4096) await this.#write(footer);
+        else this.#failed = true;
+      }
+    } catch { this.#failed = true; }
+    finally { try { await this.file.close(); } catch { this.#failed = true; } }
+  }
+}
+function contained(parent: string, child: string): boolean {
+  const part = relative(parent, child);
+  return part === "" || (!isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`));
+}
+async function admitTrace(destination: string, source: string, scratch: string): Promise<StageTrace> {
+  const path = resolve(destination), parent = dirname(path);
+  const canonicalParent = await realpath(parent);
+  const sourceRoot = await realpath(source), scratchRoot = await realpath(scratch);
+  if (canonicalParent !== parent || contained(sourceRoot, path) || contained(scratchRoot, path)) throw new Error("Diagnostic destination refused");
+  const before = await lstat(parent, { bigint: true });
+  if (!before.isDirectory() || before.isSymbolicLink() || (before.mode & 0o777n) !== 0o700n
+      || before.uid !== BigInt(process.getuid!())) throw new Error("Diagnostic parent refused");
+  const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try {
+    const after = await lstat(parent, { bigint: true }), pinned = await file.stat({ bigint: true }), entry = await lstat(path, { bigint: true });
+    if (before.dev !== after.dev || before.ino !== after.ino || after.mode !== before.mode || after.uid !== before.uid
+        || await realpath(parent) !== parent || !pinned.isFile() || pinned.nlink !== 1n || pinned.uid !== before.uid
+        || (pinned.mode & 0o777n) !== 0o600n || entry.dev !== pinned.dev || entry.ino !== pinned.ino || entry.isSymbolicLink()) {
+      throw new Error("Diagnostic identity refused");
+    }
+    return new StageTrace(file);
+  } catch (error) { try { await file.close(); } catch { /* Preserve the partial trace. */ } throw error; }
+}
+
+const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--scan-timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--diagnostics-file=<file>] [--review] -- <executable> [args...]
 
 twin init saves project-root twin.config.json without launching a command.
 Bare twin and commandless twin run use that config.
@@ -31,6 +138,8 @@ Empty/relative PATH entries use the copy's working directory; executable symlink
 --scan-timeout-ms=<integer> sets each inventory's independent elapsed-time budget (1–3600000 ms; default 30000 ms).
 --receipt=text prints a bounded human receipt on stderr instead of the default JSON frame.
 --receipt-html=<file> also exports a bounded standalone HTML receipt without overwriting a file.
+--diagnostics-file=<file> writes bounded stage JSONL to a new file in a private (0700) directory outside the project and copy.
+Diagnostic failure disables this optional trace without changing the run outcome.
 --review prints the receipt, then asks on stdin to apply, discard, or cancel and retain in this invocation.
 EOF, interruption, or another answer retains the copy for manual inspection.
 Retained copies cannot be applied by a later twin CLI invocation.
@@ -186,6 +295,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   let timeoutMs: number;
   let scanTimeoutMs: number;
   let htmlDestination: string | undefined;
+  let diagnosticDestination: string | undefined;
   let command: readonly string[];
   try {
     const input = argv[0] === "run" ? argv.slice(1) : argv;
@@ -213,6 +323,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         const value = flag.slice("--scan-timeout-ms=".length);
         if (!/^[0-9]+$/.test(value) || !validScanTimeoutMs(Number(value))) throw new Error("Invalid Twin scan timeout.");
         options.scanTimeoutMs = Number(value);
+      } else if (flag.startsWith("--diagnostics-file=")) {
+        key = "diagnostics"; diagnosticDestination = flag.slice("--diagnostics-file=".length);
+        if (!diagnosticDestination) throw new Error("Invalid Twin diagnostics destination.");
       } else if (flag.startsWith("--receipt-html=")) {
         key = "html"; htmlDestination = flag.slice("--receipt-html=".length);
         if (!htmlDestination) throw new Error("Invalid Twin HTML destination.");
@@ -237,9 +350,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   let scratchParent: string | undefined;
   let exitCode = 1;
   let retainCopy = false;
+  let trace: StageTrace | undefined;
+  let diagnosticFailed = false;
   const interruption = new AbortController();
   const interrupt = (signal: "SIGINT" | "SIGTERM"): void => {
-    if (!interruption.signal.aborted) interruption.abort(signal);
+    if (!interruption.signal.aborted) { interruption.abort(signal); trace?.requested(signal); }
   };
   const onSigint = (): void => interrupt("SIGINT");
   const onSigterm = (): void => interrupt("SIGTERM");
@@ -251,10 +366,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     let phase: "preparation" | "execution" = "preparation";
     try {
       scratchParent = await mkdtemp(join(tmpdir(), "twin-cli-"));
-      session = await createTwin({ sourceDirectory: process.cwd(), scratchParent, scanTimeoutMs, scanSignal: interruption.signal });
+      if (diagnosticDestination) {
+        try { trace = await admitTrace(diagnosticDestination, process.cwd(), scratchParent); trace.metadata(scanTimeoutMs); }
+        catch { diagnosticFailed = true; }
+      }
+      session = await createTwin({ sourceDirectory: process.cwd(), scratchParent, scanTimeoutMs, scanSignal: interruption.signal, onDiagnostic: trace?.observe });
       phase = "execution";
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-      const executable = await resolveExecutable(command[0]!, env, session.workspacePath);
+      const resolveCommand = () => resolveExecutable(command[0]!, env, session!.workspacePath);
+      const executable = await (trace ? trace.stage("execution.resolve", resolveCommand) : resolveCommand());
       feedback.stop();
       if (interruption.signal.aborted) throw new Error("Interrupted before command launch");
       const result = await session.run({ executable, argv: command.slice(1), env, timeoutMs,
@@ -285,7 +405,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             }
           }
           if (review && inspection.state === "finished" && !interruption.signal.aborted) {
-            const choice = await reviewChoice(interruption.signal);
+            const choose = () => reviewChoice(interruption.signal);
+            const choice = await (trace ? trace.stage("review", choose) : choose());
             if (choice === "apply" && !interruption.signal.aborted) {
               const applied = await session.apply();
               const paths = "paths" in applied ? applied.paths : [];
@@ -337,9 +458,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       }
     }
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
-    if (interruption.signal.aborted) exitCode = 1;
+    try {
+    if (trace) { await trace.finish(); diagnosticFailed ||= trace.failed; }
+    if (diagnosticFailed) {
+      try { await write(process.stderr, "Twin stage diagnostics unavailable or incomplete; execution outcome unchanged.\n"); } catch { /* Best-effort warning after receipt framing. */ }
+    }
+    } finally {
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
+      if (interruption.signal.aborted) exitCode = 1;
+    }
   }
 
   return exitCode;

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, open, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,4 +144,77 @@ it("retains the copy when interrupted at the review prompt", async () => {
   }
   if (failure) throw new Error(`Review interruption failed; retained ${base}; stderr: ${Buffer.concat(stderr).toString()}`, { cause: failure });
   await rm(base, { recursive: true });
+}, 25000);
+
+it.each(["valid", "existing", "symlink", "in-source", "public-parent", "write-failure", "slow-writer"] as const)("keeps JSON receipt and Apply independent of stage diagnostics: %s", async selected => {
+  const base = await mkdtemp(join(tmpdir(), "twin-cli-diagnostics-test-"));
+  const identity = await lstat(base, { bigint: true });
+  const source = join(base, "source"), scratch = join(base, "scratch"), trace = join(base, "trace.jsonl");
+  const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+  let closed = false, failed: unknown, child: ReturnType<typeof spawn> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await mkdir(source, { mode: 0o700 }); await mkdir(scratch, { mode: 0o700 });
+    await writeFile(join(source, "file"), "PRIVATE_FILE_CONTENT");
+    let destination = trace;
+    if (selected === "existing") await writeFile(trace, "existing trace stays");
+    if (selected === "symlink") { await writeFile(join(base, "target"), "target stays"); await symlink("target", trace); }
+    if (selected === "in-source") destination = join(source, "trace.jsonl");
+    if (selected === "public-parent") await chmod(base, 0o755);
+    const launch: string[] = [];
+    if (selected === "write-failure" || selected === "slow-writer") {
+      const preload = join(base, "fault.mjs");
+      const fault = selected === "write-failure" ? 'let release;const gate=new Promise(resolve=>{release=resolve});const stderrWrite=process.stderr.write.bind(process.stderr);process.stderr.write=(chunk,...params)=>{if(String(chunk).charCodeAt(0)===30)release();return stderrWrite(chunk,...params)};handle.write=async()=>{await gate;throw new Error("PRIVATE_ERROR_CONTENT")}'
+        : 'const write=handle.write.bind(handle);let active=0;handle.write=async(...params)=>{if(++active>1)throw new Error("parallel trace writes");try{await new Promise(resolve=>setTimeout(resolve,25));return await write(...params)}finally{active--}}';
+      await writeFile(preload, `import fs from "node:fs/promises";import {syncBuiltinESMExports} from "node:module";const original=fs.open;fs.open=async(...args)=>{const handle=await original(...args);if(String(args[0])===${JSON.stringify(trace)}){${fault}}return handle};syncBuiltinESMExports();`);
+      launch.push("--import", preload);
+    }
+    child = spawn(process.execPath, [...launch, cli, "run", "--review", `--diagnostics-file=${destination}`, "--", process.execPath,
+      "-e", 'require("node:fs").writeFileSync("file","PRIVATE_COMMAND_CONTENT")', "PRIVATE_ARG"],
+    { cwd: source, env: { ...process.env, TMPDIR: scratch, PRIVATE_ENV: "PRIVATE_ENV_VALUE" }, stdio: ["pipe", "ignore", "pipe"] });
+    let output = "";
+    child.stderr!.on("data", bytes => { output += bytes.toString(); if (output.includes("Twin review:")) child!.stdin!.end("apply\n"); });
+    const completion = new Promise<number | null>((resolve, reject) => {
+      child!.once("error", reject); child!.once("close", code => { closed = true; resolve(code); });
+      timer = setTimeout(() => { child!.kill("SIGKILL"); }, 15000);
+    });
+    const code = await completion; clearTimeout(timer); timer = undefined;
+    expect(code, output).toBe(0); expect(output).toContain("Twin apply applied");
+    const marker = output.indexOf("\x1eTWIN-RECEIPT/1 "); expect(marker).toBeGreaterThanOrEqual(0);
+    const start = output.indexOf("\n", marker) + 1;
+    const length = Number(output.slice(marker, start).match(/TWIN-RECEIPT\/1 ([0-9]+)/)?.[1]);
+    const payload = Buffer.from(output.slice(start));
+    expect(JSON.parse(payload.subarray(0, length).toString()).schemaVersion).toBe(5);
+    expect(payload[length]).toBe(10);
+    expect(await readFile(join(source, "file"), "utf8")).toBe("PRIVATE_COMMAND_CONTENT");
+    expect(await readdir(scratch)).toEqual([]);
+    if (selected === "valid" || selected === "slow-writer") {
+      const text = await readFile(trace, "utf8"); const records = text.trim().split("\n").map(line => JSON.parse(line) as Record<string, unknown>);
+      expect(text).not.toMatch(/PRIVATE_|twin-cli-diagnostics-test-|workspace|node:fs/);
+      expect((await lstat(trace)).mode & 0o777).toBe(0o600);
+      if (selected === "valid") expect(records.some(record => record.kind === "inventory" && record.stage === "preparation.original")).toBe(true);
+      if (selected === "valid") expect(records.some(record => record.kind === "inventory" && record.stage === "apply.final-copy")).toBe(true);
+      if (selected === "valid") expect(records.some(record => record.kind === "drained")).toBe(true);
+      expect(records.at(-1)).toMatchObject({ kind: "summary" });
+      if (selected === "slow-writer") expect(records.at(-1)).toMatchObject({ truncated: true, omitted: expect.any(Number) });
+      expect((records.at(-1)?.snapshots as unknown[])).toHaveLength(5);
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(262144);
+      expect(records.every(record => Buffer.byteLength(JSON.stringify(record)) <= 4096)).toBe(true);
+    } else {
+      expect(output.lastIndexOf("Twin stage diagnostics unavailable or incomplete")).toBeGreaterThan(start + length);
+      if (selected === "existing") expect(await readFile(trace, "utf8")).toBe("existing trace stays");
+      if (selected === "symlink") expect(await readFile(join(base, "target"), "utf8")).toBe("target stays");
+      if (selected === "in-source") expect(await readdir(source)).toEqual(["file"]);
+    }
+  } catch (error) { failed = error; }
+  finally { if (timer) clearTimeout(timer); }
+  if (!closed) throw new Error(`Diagnostic CLI settlement unconfirmed; retained ${base}`, { cause: failed });
+  if (!failed) {
+    const after = await lstat(base, { bigint: true });
+    if (!after.isDirectory() || after.isSymbolicLink() || identity.ino !== after.ino || identity.dev !== after.dev || (await readdir(scratch)).length) {
+      throw new Error(`Fixture cleanup admission refused; retained ${base}`);
+    }
+    await rm(base, { recursive: true });
+  }
+  if (failed) throw failed;
 }, 25000);

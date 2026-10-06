@@ -391,3 +391,26 @@ it("reports receipt special-mode changes while apply uses ordinary mode bits and
   expect(await session.apply()).toMatchObject({ status: "applied", changes: 0 });
   expect((await stat(join(f.source, "file"))).mode & 0o7777).toBe(0o6751);
 }));
+
+it.each([false, true])("records all five Apply guard dispositions without changing validation, cancelled=%s", async cancelled => fixtureTest(async f => {
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const controller = new AbortController();
+  await put(f.source, "file", "base");
+  const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, scanSignal: controller.signal,
+    onDiagnostic: event => { events.push(event); throw new Error("observer failed"); } });
+  f.sessions.push(session);
+  await session.run(command('require("node:fs").writeFileSync("file","copy")'));
+  if (cancelled) controller.abort();
+  const result = await session.apply();
+  expect(result.status).toBe(cancelled ? "refused" : "applied");
+  const snapshots = events.find(event => event.kind === "guard")?.snapshots;
+  expect(snapshots?.map(item => item.name)).toEqual(["original-baseline", "copy-baseline", "settled-copy", "fresh-copy", "fresh-original"]);
+  expect(snapshots?.slice(0, 3).every(item => item.coverage === "complete" && item.identity !== null)).toBe(true);
+  expect(snapshots?.slice(3).every(item => item.coverage === (cancelled ? "not-observed" : "complete"))).toBe(true);
+  if (!cancelled) {
+    expect(new Set(snapshots?.map(item => item.identity)).size).toBe(5);
+    expect(events.some(event => event.kind === "inventory" && event.stage === "apply.verify-original")).toBe(true);
+    expect(events.some(event => event.kind === "inventory" && event.stage === "apply.verify-copy")).toBe(true);
+  }
+  expect(await readFile(join(f.source, "file"), "utf8")).toBe(cancelled ? "base" : "copy");
+}));

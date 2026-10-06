@@ -238,3 +238,41 @@ describe("ordinary copying", () => {
     expect(await readdir(f.scratch)).toEqual([]);
   }));
 });
+
+it.each(["success", "failure", "cancel"] as const)("reports copy drain only after files and handles settle: %s", async kind => fixtureTest(async f => {
+  const { Diagnostics } = await import("../src/io-pool.js");
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  const diagnostics = new Diagnostics(event => { events.push(event); });
+  await put(f.source, "file", "original");
+  await put(f.source, "z-fail", "second");
+  const controller = new AbortController(), failure = new Error("injected copy failure");
+  const root = await allocateRoot({ sourceDirectory: f.source, scratchParent: f.scratch });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  let opened!: () => void; const started = new Promise<void>(resolve => { opened = resolve; });
+  const realOpen = fsPromises.open;
+  const spy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+    if (kind === "failure" && String(args[0]) === join(f.source, "z-fail")) { await started; throw failure; }
+    const handle = await realOpen(...args);
+    if (String(args[0]) === join(f.source, "file")) {
+      const close = handle.close.bind(handle);
+      Object.defineProperty(handle, "close", { value: async () => { opened(); await gate; await close(); } });
+    }
+    return handle;
+  }); syncBuiltinESMExports();
+  const copying = copySource(root, { diagnostics, signal: controller.signal });
+  const outcome = copying.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error: error as unknown }));
+  try {
+    await started; expect(events.some(event => event.kind === "drained")).toBe(false);
+    if (kind === "cancel") controller.abort();
+    release(); const result = await outcome;
+    expect(result.ok).toBe(kind === "success");
+    if (!result.ok && kind === "failure") expect(result.error).toBe(failure);
+    expect(events.at(-2)).toMatchObject({ kind: "drained", stage: "preparation.copy" });
+    expect(events.at(-2)?.metrics?.every(metric => metric.inflight === 0)).toBe(true);
+    if (kind === "success") await writeFile(join(root.workspace, "file"), "copy edit");
+    expect(await readFile(join(f.source, "file"), "utf8")).toBe("original");
+  } finally {
+    release(); await outcome; spy.mockRestore(); syncBuiltinESMExports();
+    expect(await discardRoot(root)).toEqual({ status: "removed" });
+  }
+}));

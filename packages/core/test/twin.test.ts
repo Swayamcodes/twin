@@ -206,3 +206,44 @@ it("uses the later preparation boundary and fresh views after the action, with f
     expect(full).toBeDefined();
   } finally { scan.mockRestore(); views.mockRestore(); }
 }));
+
+it("observes fresh preparation and after-command inventories while containing rejected callbacks", async () => fixtureTest(async f => {
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [];
+  await put(f.source, "file", "original");
+  await put(f.source, "delete-me", "keep");
+  const session = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch,
+    onDiagnostic: event => { events.push(event); return Promise.reject(new Error("observer rejected")); } });
+  f.sessions.push(session);
+  expect((await session.run(nodeOptions("edit"))).exitCode).toBe(0);
+  const inventories = events.filter(event => event.kind === "inventory");
+  expect(inventories.map(event => event.stage)).toEqual(["preparation.original", "preparation.copy-inventory", "after.inventory"]);
+  expect(new Set(inventories.map(event => event.identity)).size).toBe(3);
+  expect(events.filter(event => event.kind === "end").map(event => event.stage)).toEqual(expect.arrayContaining(["preparation", "preparation.git", "preparation.watch", "preparation.dependencies", "execution.command", "execution.run", "after.git", "after.watch", "after.dependencies"]));
+  expect(session.inspect().receipt?.files.coverage).toBe("complete");
+  expect(await readFile(join(f.source, "file"), "utf8")).toBe("original");
+}));
+
+it("holds the existing session locks before observer reentry and reports early Apply refusal", async () => fixtureTest(async f => {
+  const events: import("../src/io-pool.js").DiagnosticEvent[] = [], reentry: Promise<unknown>[] = [];
+  let session: TwinSession | undefined;
+  await put(f.source, "file", "base");
+  const created = await createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, onDiagnostic: event => {
+    events.push(event);
+    if (session && event.kind === "guard") reentry.push(session.apply().then(result => result.status === "refused" ? "Cannot apply" : "unexpected apply"));
+    if (session && event.kind === "begin" && ["execution.run", "apply", "discard"].includes(event.stage)) {
+      reentry.push(session.run(nodeOptions("echo")).then(() => "unexpected run", error => error.message as string));
+      reentry.push(session.discard().then(() => "unexpected discard", error => error.message as string));
+      reentry.push(session.apply().then(result => result.status === "refused" ? "Cannot apply" : "unexpected apply"));
+    }
+  } });
+  f.sessions.push(created);
+  expect(await created.apply()).toMatchObject({ status: "refused", reason: "Command settlement or session state uncertain" });
+  expect(events.find(event => event.kind === "guard")?.snapshots?.slice(2).every(item => item.coverage === "not-observed")).toBe(true);
+  session = created;
+  expect((await session.run(nodeOptions("echo"))).exitCode).toBe(0);
+  // The additional guard begin is also protected by the existing applying lock.
+  expect(await session.apply()).toMatchObject({ status: "applied" });
+  expect(events.filter(event => event.kind === "summary" && event.stage === "apply").at(-1)?.snapshots?.slice(3).every(item => item.coverage === "complete" && item.identity !== null)).toBe(true);
+  expect(await session.discard()).toEqual({ status: "removed" });
+  expect((await Promise.all(reentry)).every(value => typeof value === "string" && value.startsWith("Cannot "))).toBe(true);
+}));

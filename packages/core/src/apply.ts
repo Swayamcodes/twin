@@ -1,3 +1,4 @@
+import { diagnosticStage } from "./io-pool.js";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
 import { chmod, lstat, mkdir, open, realpath, rename, rmdir, unlink } from "node:fs/promises";
@@ -103,6 +104,12 @@ function conflicts(before: ManifestSnapshot, current: ManifestSnapshot, final: M
 export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, before: ManifestSnapshot,
   copyBaseline: ManifestSnapshot, settled: ManifestSnapshot, links: BaselineLinks, scanOptions: ManifestScanOptions): Promise<ApplyResult> {
   let mutationAttempted = false;
+  let observedFinal: ManifestSnapshot | undefined, observedCurrent: ManifestSnapshot | undefined;
+  let guardObserved = false;
+  const observeGuard = (): void => {
+    guardObserved = true;
+    scanOptions.diagnostics?.guard("apply", [["original-baseline", before], ["copy-baseline", copyBaseline], ["settled-copy", settled], ["fresh-copy", observedFinal], ["fresh-original", observedCurrent]]);
+  };
   const beforeMutation = (): void => {
     checkScanCancellation(scanOptions);
     mutationAttempted = true;
@@ -110,15 +117,16 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
   try {
     checkScanCancellation(scanOptions);
     await verifyRoot(root, sourceIdentity);
-    const final = await captureManifest(root.workspace, true, scanOptions);
-    const current = await captureManifest(root.source, true, scanOptions);
+    const final = observedFinal = await captureManifest(root.workspace, true, { ...scanOptions, diagnosticStage: "apply.final-copy", diagnosticRole: "copy" });
+    const current = observedCurrent = await captureManifest(root.source, true, { ...scanOptions, diagnosticStage: "apply.current-original", diagnosticRole: "source" });
+    observeGuard();
     if (!complete(before, copyBaseline, settled, final, current)) {
       return { status: "refused", paths: [], reason: "Incomplete inventory" };
     }
     // Raw observations must pass before excluding any authorized baseline link.
     for (const snapshot of [before, current]) verifyManifestLinks(snapshot, links, "original");
     for (const snapshot of [copyBaseline, settled, final]) verifyManifestLinks(snapshot, links, "copied");
-    await verifyBaselineLinks(root.source, root.workspace, links);
+    await verifyBaselineLinks(root.source, root.workspace, links, { diagnostics: scanOptions.diagnostics, diagnosticStage: "apply.links" });
     const settledKeys = new Set([...settled.entries.keys(), ...final.entries.keys()]);
     if ([...settledKeys].some(key => !equal(settled.entries.get(key), final.entries.get(key)))) {
       return { status: "refused", paths: [], reason: "Copy baseline or settled copy changed" };
@@ -145,21 +153,21 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
     const files = changes.filter(change => change.final?.kind === "file").sort((a, b) => depth(a.key) - depth(b.key));
     const dirModes = changes.filter(change => change.final?.kind === "directory").sort((a, b) => depth(b.key) - depth(a.key));
     await verifyRoot(root, sourceIdentity);
-    const justBefore = await captureManifest(root.source, true, scanOptions);
+    const justBefore = await captureManifest(root.source, true, { ...scanOptions, diagnosticStage: "apply.original-before-write", diagnosticRole: "source" });
     if (!complete(justBefore)) throw new IncompleteInventoryError();
     verifyManifestLinks(justBefore, links, "original");
     if ([...new Set([...current.entries.keys(), ...justBefore.entries.keys()])]
       .some(key => !equal(current.entries.get(key), justBefore.entries.get(key)))) {
       return { status: "conflict", paths: [], reason: "Original changed after preflight" };
     }
-    const copyJustBefore = await captureManifest(root.workspace, true, scanOptions);
+    const copyJustBefore = await captureManifest(root.workspace, true, { ...scanOptions, diagnosticStage: "apply.copy-before-write", diagnosticRole: "copy" });
     if (!complete(copyJustBefore)) throw new IncompleteInventoryError();
     verifyManifestLinks(copyJustBefore, links, "copied");
     if ([...new Set([...settled.entries.keys(), ...copyJustBefore.entries.keys()])]
       .some(key => !equal(settled.entries.get(key), copyJustBefore.entries.get(key)))) {
       return { status: "refused", paths: [], reason: "Settled copy changed after preflight" };
     }
-    await verifyBaselineLinks(root.source, root.workspace, links);
+    await verifyBaselineLinks(root.source, root.workspace, links, { diagnostics: scanOptions.diagnostics, diagnosticStage: "apply.links" });
     const sourceIdentities = new Map<string, BigIntStats | undefined>();
     const copyIdentities = new Map<string, BigIntStats>();
     const relevant = new Set<string>();
@@ -210,7 +218,7 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       for (const change of removals) {
         await verifyRoot(root, sourceIdentity);
         await check(change.key);
-        await verifyPath(root.source, change.key, change.current, scanOptions);
+        await verifyPath(root.source, change.key, change.current, { ...scanOptions, diagnosticStage: "apply.verify-original", diagnosticRole: "source" });
         const path = absolute(root.source, change.key);
         beforeMutation();
         if (change.current?.kind === "directory") await rmdir(path);
@@ -220,7 +228,7 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       for (const change of directories) {
         await verifyRoot(root, sourceIdentity);
         await check(change.key);
-        await verifyPath(root.source, change.key, undefined, scanOptions);
+        await verifyPath(root.source, change.key, undefined, { ...scanOptions, diagnosticStage: "apply.verify-original", diagnosticRole: "source" });
         beforeMutation();
         await mkdir(absolute(root.source, change.key), { mode: 0o700 });
         sourceIdentities.set(change.key, await lstat(absolute(root.source, change.key), { bigint: true }));
@@ -229,16 +237,16 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
         await verifyRoot(root, sourceIdentity);
         await check(change.key);
         await checkCopy(change.key);
-        await verifyPath(root.workspace, change.key, change.final, scanOptions);
-        await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined, scanOptions);
+        await verifyPath(root.workspace, change.key, change.final, { ...scanOptions, diagnosticStage: "apply.verify-copy", diagnosticRole: "copy" });
+        await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined, { ...scanOptions, diagnosticStage: "apply.verify-original", diagnosticRole: "source" });
         const target = absolute(root.source, change.key);
         const temp = Buffer.concat([parentOf(target), Buffer.from(`/.twin-apply-${randomBytes(16).toString("hex")}`)]);
         try {
-          await copyVerifiedFile(absolute(root.workspace, change.key), temp, copyIdentities.get(change.key)!, change.final!, beforeMutation);
-          await verifyPath(root.workspace, change.key, change.final, scanOptions);
+          await diagnosticStage(scanOptions.diagnostics, "apply.transfer", () => copyVerifiedFile(absolute(root.workspace, change.key), temp, copyIdentities.get(change.key)!, change.final!, beforeMutation));
+          await verifyPath(root.workspace, change.key, change.final, { ...scanOptions, diagnosticStage: "apply.verify-copy", diagnosticRole: "copy" });
           await checkCopy(change.key);
           await check(change.key);
-          await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined, scanOptions);
+          await verifyPath(root.source, change.key, change.current?.kind === "file" ? change.current : undefined, { ...scanOptions, diagnosticStage: "apply.verify-original", diagnosticRole: "source" });
           await verifyRoot(root, sourceIdentity);
           beforeMutation();
           await rename(temp, target);
@@ -270,7 +278,7 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
         await chmod(target, change.final!.mode);
       }
       await verifyRoot(root, sourceIdentity);
-      await verifyBaselineLinks(root.source, root.workspace, links);
+      await verifyBaselineLinks(root.source, root.workspace, links, { diagnostics: scanOptions.diagnostics, diagnosticStage: "apply.links" });
       checkScanCancellation(scanOptions);
       return { status: "applied", changes: changes.length };
     } catch (error) {
@@ -280,6 +288,7 @@ export async function applyCopy(root: OwnedRoot, sourceIdentity: BigIntStats, be
       return { status: "failed", reason: error instanceof Error ? error.message : String(error), partialApplicationPossible: true };
     }
   } catch (error) {
+    if (!guardObserved) observeGuard();
     return { status: "refused", paths: [], reason: error instanceof Error ? error.message : String(error) };
   }
 }
