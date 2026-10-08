@@ -913,3 +913,46 @@ can multiply total waiting time. Incomplete preparation baselines still forbid
 apply. This is an interim reliability checkpoint, not evidence of acceptable
 real-repository performance, universal project compatibility or an OS sandbox.
 Prizzle's DrvFS timeout remains a separate unresolved issue.
+
+## Unreleased affected-path coordinator
+
+The existing whole-tree `apply.ts` and full inventory `manifest.ts` remain
+unchanged. `apply-affected.ts` is a separate coordinator exposed only through
+`TwinSession.applyAffected()`; `apply-affected-observer.ts` performs bounded fresh
+physical path checks and required destructive-subtree observations. Both methods
+share the session applying lock and existing settlement/admission gates.
+
+Private complete B/Bc/F Apply snapshots freeze the nonlink delta D in memory.
+Unfiltered historical symlink sets pass the existing ledger policy before
+exclusion; these snapshots project modes to 0777, while fresh reads require full
+raw stat stability. Ordinary ancestors are checked directly rather than scanning
+siblings. Directory removal/type replacement additionally observes complete
+original destructive subtrees S. Every no-op remains in D and final verification.
+No later copy delta is discovered. Three-way C==F no-op / C==B apply / otherwise
+conflict admits all planned operations before any write. Preflight, before-write,
+each mutation/transfer boundary and final verification use fresh observations.
+
+The observer uses the private four-worker/eight-queue/twelve-result limits,
+per-observation configured monotonic deadlines, 100,000 unique entries, 2 GiB
+accepted hash bytes, depth 128 and 4,096-byte paths. Partial EOF, raw metadata
+changes, unreadable paths and termination cannot produce confirmed digests.
+Started work drains and descriptors close before cleanup. Each original mutation
+attempt flips one irreversible attempt flag before its syscall. All subsequent
+failures, including cleanup, become failed/partial results; cleanup cannot replace
+a primary transfer/verification error. File writes use exclusive independent
+0600 siblings, descriptor-derived identity pins and fresh guarded rename/cleanup;
+never unlink a same-name replacement. Directory removals are nonrecursive.
+
+Live global copy/original inventories and full link-set reconciliation are absent
+from this coordinator. Its result explicitly disclaims unrelated rechecking.
+Scoped unsafe targets or ancestors still refuse/fail, and required destructive
+children cannot be skipped. Existing same-user check/syscall races and non-atomic
+multi-path application remain. This is a deliberate safety-contract alternative,
+not an optimization of whole-tree Apply or an OS sandbox.
+
+The CLI parses scope only from this invocation, requires literal --review,
+rejects invalid/duplicate options before allocation and selects the new method
+only after an explicit Apply choice. It prints the narrower contract before
+review and a separate scope-bearing Apply result. Command receipt schema 5,
+renderers and framing remain unchanged. Fresh S12/S6/S8S13 core fingerprints add
+both new runtime modules; retained fingerprints and evidence stay frozen.

@@ -221,3 +221,46 @@ operations can delay cancellation. This work does not make observations atomic,
 resolve same-user races, establish universal project compatibility, or demonstrate
 acceptable Prizzle startup time. Performance evidence must identify its fixture
 and measurement boundary.
+
+## Unreleased explicit affected-path Apply
+
+`TwinSession.apply()` and default CLI Apply retain the whole-tree contract above.
+`TwinSession.applyAffected()` is a separate opt-in method with no caller paths.
+Its frozen selection contains every nonlink copy-baseline/settled difference;
+complete historical original/copy/settled observations and unfiltered historical
+symlink validation remain mandatory. Historical Apply modes are projected to 0777.
+
+Affected validation freshly checks every planned target (including no-ops), its
+ordinary root-to-parent components in both trees, and all original descendants of
+removed/replaced directories. Unknown original children conflict before writes;
+late arrivals prevent nonrecursive removal. Ignored, untracked, non-Git and .git
+paths receive the same checks. Fresh hashes, full raw metadata stability,
+no-follow opens, root authority, session/settlement gates, bounded observation,
+conflict detection and guarded owned-object cleanup remain required.
+
+This alternative removes fresh whole-tree equality and full live link discovery
+at Apply. Unrelated late original/copy edits, unreadable or special siblings, and
+new or replaced unrelated links do not independently refuse affected Apply. Late
+copy changes outside the frozen selection are not applied. Success verifies the
+explicit affected scope, not unrelated tree health or continuous preservation.
+Preparation and command receipts retain their full-tree observation costs.
+
+CLI selection requires literal `--review --apply-scope=affected` before `--`.
+`-r` alone and saved review=true do not authorize affected scope. Invalid values,
+duplicates and missing explicit review are rejected before session creation.
+Scope is neither read nor saved in configuration. Help, review before choice and
+separate Apply output disclose: “Apply verification: affected paths and ancestors.
+Unrelated files and links will not be rechecked.” The schema-5 command receipt
+and its byte framing remain unchanged; it is not an Apply verification receipt.
+
+Affected results always identify scope/outside-scope status, phase, planned and
+finally verified target counts, destructive-subtree count and complete/incomplete/
+not-observed scope coverage. Before any original mutation attempt, uncertain
+checks refuse and known conflicts report conflict, retaining the copy. Once any
+original mutation is attempted, including exclusive sibling creation, failures
+report possible partial application, retain the copy, and preserve primary and
+bounded secondary cleanup errors. No rollback or all-path atomicity is promised.
+Same-user ancestor swaps between checks and path syscalls remain a limit;
+O_NOFOLLOW does not atomically pin parent resolution. Writable hard links,
+snapshot backends, stale observation reuse and combined inventory/link walking
+are excluded. No universal preparation or Apply latency is promised.

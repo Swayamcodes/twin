@@ -31,7 +31,7 @@ async function independentFingerprint(kind: "core" | "adapter"): Promise<string>
   return `fp-${hash.digest("hex")}`;
 }
 describe("2.6R-1 fixed producer", () => {
-  it.each(["symlink-policy.js", "apply.js", "io-pool.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
+  it.each(["symlink-policy.js", "apply.js", "apply-affected.js", "apply-affected-observer.js", "io-pool.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
     const base = await mkdtemp(join(await realpath(tmpdir()), "twin-test-score-fingerprint-"));
     try {
       for (const label of CORE_FINGERPRINT_MODULES)
@@ -168,7 +168,7 @@ describe("2.6R-1 fixed producer", () => {
   });
   it("uses independent exact compiled-module fingerprints", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "io-pool.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "apply-affected.js", "apply-affected-observer.js", "io-pool.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint("core"));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint("adapter"));

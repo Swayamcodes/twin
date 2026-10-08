@@ -5,6 +5,7 @@ import { copySource } from "./copy.js";
 import { lstat, realpath } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import { applyCopy, type ApplyResult } from "./apply.js";
+import { applyAffectedCopy, affectedAdmissionRefusal, type AffectedApplyResult } from "./apply-affected.js";
 import { runCommand, validateRunOptions } from "./run.js";
 import { allocateRoot, assertRootAuthority, discardRoot, sameIdentity } from "./safety.js";
 import { captureManifest, captureManifestViews, unavailableManifest, normalizeScanOptions, checkScanCancellation, type ManifestSnapshot } from "./manifest.js";
@@ -68,6 +69,8 @@ export interface TwinSession {
   run(options: RunOptions): Promise<RunResult>;
   inspect(): TwinInspection;
   apply(): Promise<ApplyResult>;
+  /** Explicit affected-path contract; paths come only from the settled private delta. */
+  applyAffected(): Promise<AffectedApplyResult>;
   discard(): Promise<DiscardResult>;
 }
 export async function createTwin(options: CreateTwinOptions): Promise<TwinSession> {
@@ -226,6 +229,18 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
       state = "applying";
       try { return await diagnosticStage(diagnostics, "apply", () => applyCopy(root, sourceIdentity, originalBefore, copyBefore, settledManifest!, links, scanOptions), "both"); }
       finally { diagnostics?.checkpoint("apply"); state = "finished"; }
+    },
+    applyAffected: async (): Promise<AffectedApplyResult> => {
+      if (state !== "finished" || !childSettled || lifecycleIssue || !receipt || !settledManifest
+          || receipt.command.disposition === "settlement-uncertain" || receipt.command.disposition === "observation-unavailable"
+          || receipt.process.finalGroup === "present" || receipt.process.finalGroup === "unknown"
+          || receipt.process.directChild.settlement === "unconfirmed" || receipt.process.directChild.settlement === "unknown") {
+        diagnostics?.guard("apply.affected", [["original-baseline", originalBefore], ["copy-baseline", copyBefore], ["settled-copy", settledManifest], ["fresh-copy", undefined], ["fresh-original", undefined]]);
+        return affectedAdmissionRefusal();
+      }
+      state = "applying";
+      try { return await diagnosticStage(diagnostics, "apply.affected", () => applyAffectedCopy(root, sourceIdentity, originalBefore, copyBefore, settledManifest!, links, scanOptions), "both"); }
+      finally { diagnostics?.checkpoint("apply.affected"); state = "finished"; }
     },
     discard: async (): Promise<DiscardResult> => {
       if (state === "discarded") return { status: "already-removed" };

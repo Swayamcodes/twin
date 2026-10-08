@@ -224,3 +224,14 @@ I learned that an unfinished read is not evidence of a changing file, and a long
 Status: `pending commit`; unpublished.
 
 I learned that parallel I/O needs bounds on completed results as well as running work, and cleanup must wait for every admitted handle to close. One fresh inventory can provide receipt and apply views when their shared observation boundary and differing mode/directory rules are explicit; that does not authorize reusing original state or later apply evidence. Copy validation, independent link reconciliation and fresh execution fingerprints preserve the safety boundary while native copying and real-repository performance claims remain separate decisions.
+
+## Explicit affected-path verification — pending checkpoint
+
+Status: `pending commit`; unstaged, unpublished.
+
+I learned that replacing whole-tree Apply work with affected-path checks changes
+what success establishes, even when every selected write retains fresh identity,
+hash and conflict checks. A separate method and explicit invocation flag make
+that narrower promise reviewable; planned no-ops and destructive descendants
+remain obligations. One mutation-attempt flag and object-owned cleanup preserve
+truthful partial failure reporting without pretending endpoint checks are atomic.

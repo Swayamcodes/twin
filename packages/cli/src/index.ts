@@ -122,7 +122,7 @@ async function admitTrace(destination: string, source: string, scratch: string):
   } catch (error) { try { await file.close(); } catch { /* Preserve the partial trace. */ } throw error; }
 }
 
-const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--scan-timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--diagnostics-file=<file>] [--review] -- <executable> [args...]
+const help = `Usage: twin run [--interactive] [--timeout-ms=<integer>] [--scan-timeout-ms=<integer>] [--receipt=text] [--receipt-html=<file>] [--diagnostics-file=<file>] [--review] [--apply-scope=affected] -- <executable> [args...]
 
 twin init saves project-root twin.config.json without launching a command.
 Bare twin and commandless twin run use that config.
@@ -141,9 +141,20 @@ Empty/relative PATH entries use the copy's working directory; executable symlink
 --diagnostics-file=<file> writes bounded stage JSONL to a new file in a private (0700) directory outside the project and copy.
 Diagnostic failure disables this optional trace without changing the run outcome.
 --review prints the receipt, then asks on stdin to apply, discard, or cancel and retain in this invocation.
+Apply defaults to whole-tree validation. --apply-scope=affected requires explicit --review (not saved review or -r).
+Apply verification: affected paths and ancestors. Unrelated files and links will not be rechecked.
+Apply scope is never read from or saved to config. The scoped Apply result is separate from the schema-5 command receipt.
 EOF, interruption, or another answer retains the copy for manual inspection.
 Retained copies cannot be applied by a later twin CLI invocation.
 `;
+
+const affectedDisclosure = "Apply verification: affected paths and ancestors. Unrelated files and links will not be rechecked.\n";
+
+// Escape terminal controls without changing JSON values or truncating byte-safe paths.
+function terminalJson(value: unknown): string {
+  return JSON.stringify(value).replace(/[\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/gu,
+    char => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
 
 type ReviewChoice = "apply" | "discard" | "cancel" | "other" | "eof" | "interrupted";
 
@@ -291,6 +302,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   let interactive: boolean;
   let review: boolean;
+  let affectedScope = false;
   let format: "json" | "text";
   let timeoutMs: number;
   let scanTimeoutMs: number;
@@ -308,6 +320,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       let key: string;
       if (flag === "--interactive" || flag === "-i" || flag === "--no-interactive") { key = "interactive"; options.interactive = flag !== "--no-interactive"; }
       else if (flag === "--review" || flag === "-r" || flag === "--no-review") { key = "review"; options.review = flag !== "--no-review"; }
+      else if (flag.startsWith("--apply-scope=")) {
+        key = "apply-scope";
+        if (flag !== "--apply-scope=affected") throw new Error("Invalid Twin Apply scope; expected --apply-scope=affected.");
+        affectedScope = true;
+      }
       else if (flag === "--receipt=text" || flag === "--receipt=json" || flag === "-t") {
         key = "receipt";
         const value = flag === "-t" ? flags[++i] : flag.slice("--receipt=".length);
@@ -333,6 +350,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       if (seen.has(key)) throw new Error("Invalid Twin arguments: duplicate option.");
       seen.add(key);
     }
+    if (affectedScope && !flags.includes("--review")) throw new Error("Affected-path Apply requires explicit --review.");
     const config = await loadConfig(process.cwd());
     command = separator < 0 ? config?.command ?? [] : input.slice(separator + 1);
     if (!command.length || !command[0]) throw new Error("No command selected. Run twin init or twin run -- <executable> [args...].");
@@ -405,13 +423,19 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             }
           }
           if (review && inspection.state === "finished" && !interruption.signal.aborted) {
+            if (affectedScope) await write(process.stderr, affectedDisclosure);
             const choose = () => reviewChoice(interruption.signal);
             const choice = await (trace ? trace.stage("review", choose) : choose());
             if (choice === "apply" && !interruption.signal.aborted) {
-              const applied = await session.apply();
-              const paths = "paths" in applied ? applied.paths : [];
-              await write(process.stderr, `Twin apply ${applied.status}${applied.status === "applied" ? `: ${applied.changes} changes`
-                : `: ${JSON.stringify({ reason: safeTerminalValue(applied.reason, 512), paths: paths.slice(0, 20).map(path => safeTerminalValue(path, 128)), omitted: Math.max(0, paths.length - 20) })}`}\n`);
+              const applied = affectedScope ? await session.applyAffected() : await session.apply();
+              if ("scope" in applied) {
+                await write(process.stderr, affectedDisclosure);
+                await write(process.stderr, `Twin affected-path Apply result: ${terminalJson(applied)}\n`);
+              } else {
+                const paths = "paths" in applied ? applied.paths : [];
+                await write(process.stderr, `Twin apply ${applied.status}${applied.status === "applied" ? `: ${applied.changes} changes`
+                  : `: ${JSON.stringify({ reason: safeTerminalValue(applied.reason, 512), paths: paths.slice(0, 20).map(path => safeTerminalValue(path, 128)), omitted: Math.max(0, paths.length - 20) })}`}\n`);
+              }
               if (applied.status !== "applied") {
                 retainCopy = true; exitCode = 1;
                 if (applied.status === "failed") await write(process.stderr, "Twin apply may have changed earlier paths; inspect both original and retained copy.\n");

@@ -21,6 +21,12 @@ const run = vi.fn();
 const inspect = vi.fn();
 const discard = vi.fn();
 const apply = vi.fn();
+const applyAffected = vi.fn();
+const affectedResult = {
+  status: "applied", changes: 1, scope: "affected-paths", outsideScope: "not-rechecked", phase: "complete",
+  plannedTargets: 1, verifiedTargets: 1, destructiveSubtrees: 0, scopeCoverage: "complete",
+  paths: [], pathCount: 0, pathsTruncated: false, secondaryFailures: [], secondaryFailuresTruncated: false,
+};
 const htmlRoots: string[] = [];
 async function htmlRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "twin-html-test-"));
@@ -63,7 +69,8 @@ beforeEach(async () => {
   // Personal project config must not select review/stdio policy in unit tests.
   vi.spyOn(process, "cwd").mockReturnValue(await htmlRoot());
   vi.stubEnv("PATH", dirname(process.execPath));
-  vi.mocked(createTwin).mockResolvedValue({ workspacePath: "/tmp/twin", run, inspect, apply, discard } as unknown as TwinSession);
+  vi.mocked(createTwin).mockResolvedValue({ workspacePath: "/tmp/twin", run, inspect, apply, applyAffected, discard } as unknown as TwinSession);
+  applyAffected.mockResolvedValue(affectedResult);
   run.mockResolvedValue(result(0));
   inspect.mockReturnValue({ workspacePath: "/tmp/twin", state: "finished", receipt });
   discard.mockResolvedValue({ status: "removed" });
@@ -84,6 +91,87 @@ afterEach(async () => {
 });
 
 describe("twin run", () => {
+  it.each([
+    ["--apply-scope=affected"], ["-r", "--apply-scope=affected"],
+    ["--review", "--apply-scope="], ["--review", "--apply-scope=whole-tree"],
+    ["--review", "--apply-scope=affected", "--apply-scope=affected"],
+    ["--review", "--no-review", "--apply-scope=affected"],
+  ])("rejects affected scope options before config/session admission: %j", async (...flags: string[]) => {
+    // A malformed config must not mask the flag failure or authorize review.
+    await writeFile(join(process.cwd(), "twin.config.json"), "malformed config");
+    expect(await main(["run", ...flags, "--", "/tool"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(mkdtemp).toHaveBeenCalledTimes(1); // Only the test's own root.
+    const text = vi.mocked(process.stderr.write).mock.calls.map(call => String(call[0])).join("");
+    expect(text).not.toContain("config");
+  });
+
+  it("does not infer affected authorization from saved review", async () => {
+    const saved = JSON.stringify({ command: ["/tool"], review: true });
+    await writeFile(join(process.cwd(), "twin.config.json"), saved);
+    expect(await main(["run", "--apply-scope=affected"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(await readFile(join(process.cwd(), "twin.config.json"), "utf8")).toBe(saved);
+  });
+
+  it("does not accept Apply scope as a config field", async () => {
+    const saved = JSON.stringify({ command: ["/tool"], review: true, applyScope: "affected" });
+    await writeFile(join(process.cwd(), "twin.config.json"), saved);
+    expect(await main(["run"])).toBe(2);
+    expect(createTwin).not.toHaveBeenCalled();
+    expect(applyAffected).not.toHaveBeenCalled();
+    expect(await readFile(join(process.cwd(), "twin.config.json"), "utf8")).toBe(saved);
+  });
+
+  it("passes Apply scope flags after the separator unchanged to the command", async () => {
+    expect(await main(["run", "--", "/tool", "--apply-scope=affected", "--apply-scope=invalid", "--review", "--"])).toBe(0);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ argv: ["--apply-scope=affected", "--apply-scope=invalid", "--review", "--"] }));
+    expect(applyAffected).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("explicit affected selection discloses scope and preserves JSON receipt with TTY=%s", async tty => {
+    vi.spyOn(terminal, "terminalPrompts").mockReturnValue(tty);
+    vi.spyOn(terminal, "chooseTerminal").mockResolvedValue("apply");
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["apply\n"]) as typeof process.stdin);
+    const saved = JSON.stringify({ command: ["/tool"], review: false });
+    await writeFile(join(process.cwd(), "twin.config.json"), saved);
+    try { expect(await main(["run", "--review", "--apply-scope=affected"])).toBe(0); }
+    finally { input.mockRestore(); }
+    expect(applyAffected).toHaveBeenCalledWith();
+    expect(applyAffected).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledOnce();
+    const bytes = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array)));
+    const payload = Buffer.from(JSON.stringify(receipt), "utf8");
+    const frame = Buffer.concat([Buffer.from(`\x1eTWIN-RECEIPT/1 ${payload.length}\n`), payload, Buffer.from("\n")]);
+    expect(bytes.includes(frame)).toBe(true);
+    const text = bytes.toString("utf8"), disclosure = "Apply verification: affected paths and ancestors. Unrelated files and links will not be rechecked.";
+    const marker = "Twin affected-path Apply result: ";
+    expect(text.split(disclosure)).toHaveLength(3);
+    if (!tty) expect(text.indexOf(disclosure)).toBeLessThan(text.indexOf("Twin review:"));
+    expect(JSON.parse(text.split(marker)[1]!.split("\n")[0]!)).toEqual(affectedResult);
+    expect(await readFile(join(process.cwd(), "twin.config.json"), "utf8")).toBe(saved);
+  });
+
+  it.each(["conflict", "refused", "failed"] as const)("retains copy and preserves byte-safe result fields after affected %s", async status => {
+    const input = vi.spyOn(process, "stdin", "get").mockReturnValue(Readable.from(["apply\n"]) as typeof process.stdin);
+    const failure = { ...affectedResult, status, scopeCoverage: "incomplete", phase: "mutation", reason: "unsafe\u202e\u001b", reasonCode: "io-unavailable",
+      partialApplicationPossible: status === "failed" ? true : undefined,
+      paths: [{ encoding: "base64", value: Buffer.alloc(4096, 255).toString("base64") }, { encoding: "utf8", value: "file\u202e" }], pathCount: 2,
+      secondaryFailures: [{ phase: "temporary-cleanup", reasonCode: "temporary-cleanup-refused", paths: [], pathCount: 0, pathsTruncated: false }] };
+    const { changes: _changes, ...expected } = failure;
+    applyAffected.mockResolvedValue(expected);
+    try { expect(await main(["run", "--review", "--apply-scope=affected", "--", "/tool"])).toBe(1); }
+    finally { input.mockRestore(); }
+    expect(discard).not.toHaveBeenCalled();
+    const text = Buffer.concat(vi.mocked(process.stderr.write).mock.calls.map(call => Buffer.from(call[0] as string | Uint8Array))).toString("utf8");
+    expect(text).toContain("Twin copy retained:");
+    expect(text).not.toContain("\u202e");
+    expect(text).not.toContain("\u001b");
+    expect(JSON.parse(text.split("Twin affected-path Apply result: ")[1]!.split("\n")[0]!)).toEqual(JSON.parse(JSON.stringify(expected)));
+    if (status === "failed") expect(text).toContain("may have changed earlier paths");
+  });
+
   it("forwards the default inventory budget and the existing interruption signal independently of command timeout", async () => {
     expect(await main(["run", "--timeout-ms=17", "--", "/tool", "--scan-timeout-ms=1"])).toBe(0);
     const options = vi.mocked(createTwin).mock.calls[0]![0];
@@ -189,6 +277,9 @@ describe("twin run", () => {
     expect(await main(args)).toBe(0);
     expect(createTwin).not.toHaveBeenCalled();
     expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("Usage: twin run"));
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("Apply defaults to whole-tree validation."));
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("--apply-scope=affected requires explicit --review"));
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining("separate from the schema-5 command receipt"));
   });
 
   it.each([[], ["run"]])("uses saved argv and timeout for commandless %j", async (...args: string[]) => {

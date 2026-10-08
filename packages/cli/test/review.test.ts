@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict"] as const)("prints a live receipt before %s and settles the review choice", async selected => {
+it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict", "affected", "affected-conflict", "affected-cancel"] as const)("prints a live receipt before %s and settles the review choice", async selected => {
+  const affected = selected.startsWith("affected");
+  const conflict = selected === "conflict" || selected === "affected-conflict";
+  const successfulApply = selected === "apply" || selected === "apply-links" || selected === "affected";
+  const cancel = selected === "cancel" || selected === "affected-cancel";
   const base = await mkdtemp(join(tmpdir(), "twin-cli-review-test-"));
   const source = join(base, "source");
   const scratch = join(base, "scratch");
@@ -22,16 +26,16 @@ it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict"
       await symlink(join(source, "real"), join(source, "absolute"));
       await symlink("../real", join(source, "node_modules/pkg"));
     }
-    await writeFile(join(source, "choice.txt"), selected === "eof" ? "" : `${selected === "conflict" || selected === "apply-links" ? "apply" : selected}\n`);
+    await writeFile(join(source, "choice.txt"), selected === "eof" ? "" : `${conflict || successfulApply ? "apply" : cancel ? "cancel" : selected}\n`);
     const log = await open(join(source, "receipt.log"), "w+");
     const choice = await open(join(source, "choice.txt"), "r");
     let code: number | null;
     try {
-      const script = selected === "conflict"
+      const script = conflict
         ? 'const fs=require("node:fs");fs.writeFileSync("file","after");fs.writeFileSync(process.argv[1],"concurrent")'
         : selected === "apply-links" ? 'const fs=require("node:fs");fs.writeFileSync("absolute/file","after");fs.writeFileSync("file","after")'
         : 'require("node:fs").writeFileSync("file","after")';
-      const child = spawn(process.execPath, [cli, "run", "--review", "--receipt=text", "--", process.execPath,
+      const child = spawn(process.execPath, [cli, "run", "--review", ...(affected ? ["--apply-scope=affected"] : []), "--receipt=text", "--", process.execPath,
         "-e", script, join(source, "file")], { cwd: source, env: { ...process.env, TMPDIR: scratch }, stdio: [choice.fd, "ignore", log.fd] });
       const closed = new Promise<void>(resolve => child.once("close", () => { cliClosed = true; resolve(); }));
       let completionTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -62,14 +66,24 @@ it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict"
       } finally { if (completionTimeout) clearTimeout(completionTimeout); }
     } finally { await choice.close(); await log.close(); }
     const output = await readFile(join(source, "receipt.log"), "utf8");
-    const retained = selected === "cancel" || selected === "eof" || selected === "other" || selected === "conflict";
+    const retained = cancel || selected === "eof" || selected === "other" || conflict;
     if (code !== (retained ? 1 : 0)) throw new Error(`CLI exited ${code}: ${output}`);
     expect(output).toContain("Twin receipt (schema 5)");
     expect(output).toContain("Twin review:");
+    if (affected) {
+      const disclosure = "Apply verification: affected paths and ancestors. Unrelated files and links will not be rechecked.";
+      expect(output.indexOf(disclosure)).toBeLessThan(output.indexOf("Twin review:"));
+      if (!cancel) {
+        const result = JSON.parse(output.split("Twin affected-path Apply result: ")[1]!.split("\n")[0]!) as Record<string, unknown>;
+        expect(result).toMatchObject({ status: conflict ? "conflict" : "applied", scope: "affected-paths", outsideScope: "not-rechecked",
+          plannedTargets: 1, scopeCoverage: conflict ? "incomplete" : "complete", verifiedTargets: conflict ? 0 : 1 });
+        expect(output.split(disclosure)).toHaveLength(3);
+      } else expect(output).not.toContain("Twin affected-path Apply result:");
+    }
     if (selected === "apply" || selected === "apply-links") expect(output).toContain("Twin apply applied");
     if (selected === "conflict") expect(output).toContain("Twin apply conflict");
     if (selected === "eof") expect(output).toContain("Twin review eof; no apply or discard requested.");
-    if (selected === "cancel") expect(output).toContain("Twin review cancel; no apply or discard requested.");
+    if (cancel) expect(output).toContain("Twin review cancel; no apply or discard requested.");
     if (selected === "other") expect(output).toContain("Twin review other; no apply or discard requested.");
     if (retained) {
       expect(output).toContain("Twin copy retained:");
@@ -80,7 +94,7 @@ it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict"
       expect(roots).toHaveLength(1);
       expect(await readFile(join(scratch, copies[0]!, roots[0]!, "workspace", "file"), "utf8")).toBe("after");
     }
-    expect(await readFile(join(source, "file"), "utf8")).toBe(selected === "apply" || selected === "apply-links" ? "after" : selected === "conflict" ? "concurrent" : "before");
+    expect(await readFile(join(source, "file"), "utf8")).toBe(successfulApply ? "after" : conflict ? "concurrent" : "before");
     if (selected === "apply-links") {
       expect(await readFile(join(source, "real/file"), "utf8")).toBe("after");
       expect(await readlink(join(source, "absolute"))).toBe(join(source, "real"));
@@ -88,7 +102,7 @@ it.each(["apply", "apply-links", "discard", "cancel", "eof", "other", "conflict"
     }
   } catch (error) { failure = error; }
   if (!cliClosed) throw new Error(`CLI closure unconfirmed; retained ${base}`, { cause: failure });
-  if ((selected === "apply" || selected === "apply-links" || selected === "discard") && (await readdir(scratch)).length !== 0) failure ??= new Error("CLI scratch cleanup incomplete");
+  if ((successfulApply || selected === "discard") && (await readdir(scratch)).length !== 0) failure ??= new Error("CLI scratch cleanup incomplete");
   if (!failure) await rm(base, { recursive: true });
   if (failure) throw failure;
 }, 25000);

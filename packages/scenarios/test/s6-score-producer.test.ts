@@ -29,7 +29,7 @@ async function independentFingerprint(base: string, labels: readonly string[]): 
 }
 const output = ["Removing .env", "Removing node_modules/", "Removing scratch.txt"].join("\n") + "\n";
 describe("2.6R-2 fixed S6 producer", () => {
-  it.each(["symlink-policy.js", "apply.js", "io-pool.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
+  it.each(["symlink-policy.js", "apply.js", "apply-affected.js", "apply-affected-observer.js", "io-pool.js"] as const)("changes the fresh core fingerprint when only %s changes", async module => {
     const base = await mkdtemp(join(await realpath(tmpdir()), "twin-test-score-fingerprint-"));
     try {
       for (const label of CORE_FINGERPRINT_MODULES)
@@ -66,7 +66,7 @@ describe("2.6R-2 fixed S6 producer", () => {
   });
   it("uses fixed compiled labels and independently reconstructed bytes", async () => {
     expect(CORE_FINGERPRINT_MODULES).toEqual(["index.js", "twin.js", "copy.js", "run.js", "safety.js",
-      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "io-pool.js"]);
+      "manifest.js", "git-classification.js", "watch.js", "dependencies.js", "global-npm.js", "receipt.js", "symlink-policy.js", "apply.js", "apply-affected.js", "apply-affected-observer.js", "io-pool.js"]);
     expect(ADAPTER_FINGERPRINT_MODULES).toContain("capture/private-four-file.js");
     expect(await fingerprintCompiled("core")).toBe(await independentFingerprint(coreBase, CORE_FINGERPRINT_MODULES));
     expect(await fingerprintCompiled("adapter")).toBe(await independentFingerprint(moduleBase, ADAPTER_FINGERPRINT_MODULES));
