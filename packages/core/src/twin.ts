@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { IoPool, Diagnostics, diagnosticStage, type DiagnosticListener } from "./io-pool.js";
+import { IoPool, PREPARATION_LINK_WORKERS, Diagnostics, diagnosticStage, type DiagnosticListener } from "./io-pool.js";
 import { copySource } from "./copy.js";
 import { lstat, realpath } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
@@ -115,7 +115,7 @@ export async function createTwin(options: CreateTwinOptions): Promise<TwinSessio
     copyBefore = copyViews.apply;
     preparationFiles = copyViews.receipt;
     checkScanCancellation(scanOptions);
-    await verifyBaselineLinks(root.source, root.workspace, links, scanOptions);
+    await verifyBaselineLinks(root.source, root.workspace, links, { ...scanOptions, pool: new IoPool(PREPARATION_LINK_WORKERS) });
     const sourceAfter = await lstat(root.source, { bigint: true });
     if (!sourceAfter.isDirectory() || !sameIdentity(sourceIdentity, sourceAfter) || await realpath(root.source) !== root.source) {
       throw new Error("Original root identity changed during preparation");

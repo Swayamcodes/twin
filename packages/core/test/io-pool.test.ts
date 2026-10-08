@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { IoOperation, IoPool, IO_QUEUE, IO_WINDOW } from "../src/io-pool.js";
+import { IoOperation, IoPool, IO_QUEUE, IO_WINDOW, PREPARATION_LINK_WORKERS } from "../src/io-pool.js";
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 const turn = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 describe("bounded ordered IO", () => {
-  it("bounds active, queued and completed-but-uncommitted work behind a stalled oldest job", async () => {
-    const pool = new IoPool(); const gate = deferred(); const output: number[] = []; let admitted = 0;
+  it.each([4, PREPARATION_LINK_WORKERS])("bounds active, queued and completed-but-uncommitted work behind a stalled oldest job at %s workers", async workers => {
+    const pool = new IoPool(workers); const gate = deferred(); const output: number[] = []; let admitted = 0;
     const operation = new IoOperation<number>(pool, outcome => { if (outcome.ok) output.push(outcome.value); });
     const producer = (async () => { for (let i = 0; i < 1000; i++) { await operation.enqueue(async () => { if (i === 0) await gate.promise; return i; }); admitted++; } })();
     await turn(); await turn();
@@ -12,22 +12,22 @@ describe("bounded ordered IO", () => {
     expect(output).toEqual([]); gate.resolve(); await producer; await operation.drain();
     expect(output).toEqual(Array.from({ length: 1000 }, (_, i) => i));
     expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 });
-    expect(pool.inspect().peakActive).toBeLessThanOrEqual(4); expect(pool.inspect().peakQueued).toBeLessThanOrEqual(IO_QUEUE);
+    expect(pool.inspect().peakActive).toBeLessThanOrEqual(workers); expect(pool.inspect().peakQueued).toBeLessThanOrEqual(IO_QUEUE);
     expect(operation.inspect().peakWindow).toBe(IO_WINDOW);
   });
-  it.each(["failure", "cancel"])("drains delayed workers and closes resources after %s", async kind => {
-    const pool = new IoPool(), gate = deferred(), controller = new AbortController(); const failure = new Error(kind);
+  it.each([4, PREPARATION_LINK_WORKERS].flatMap(workers => ["failure", "cancel"].map(kind => ({ workers, kind }))))("drains delayed workers and closes resources after $kind at $workers workers", async ({ workers, kind }) => {
+    const pool = new IoPool(workers), gate = deferred(), controller = new AbortController(); const failure = new Error(kind);
     let started = 0, closed = 0;
     const operation = new IoOperation<number>(pool, () => {}, () => { if (controller.signal.aborted) throw failure; });
     for (let i = 0; i < IO_WINDOW; i++) await operation.enqueue(async () => {
       started++; try { await gate.promise; if (kind === "failure" && i === 1) throw failure; return i; } finally { closed++; }
     });
-    expect(pool.inspect()).toMatchObject({ active: 4, queued: 8 });
+    expect(pool.inspect()).toMatchObject({ active: workers, queued: IO_WINDOW - workers });
     if (kind === "cancel") controller.abort();
     let settled = false; const drain = operation.drain().finally(() => { settled = true; });
     const assertion = expect(drain).rejects.toBe(failure);
     await turn(); expect(settled).toBe(false); expect(closed).toBe(0);
-    gate.resolve(); await assertion; expect(closed).toBe(started); expect(started).toBe(4);
+    gate.resolve(); await assertion; expect(closed).toBe(started); expect(started).toBe(workers);
     expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 });
   });
   it("shares a four-worker pool without poisoning another operation", async () => {
@@ -93,4 +93,24 @@ it("forwards the latest five bounded guard dispositions after the ordinary obser
     { name: "fresh-original", identity: null, coverage: "not-observed", issueCount: 0 },
   ]);
   expect(Buffer.byteLength(JSON.stringify(records.at(-1)))).toBeLessThanOrEqual(4096);
+});
+
+
+it("bounds the shared eight-worker queue across two operation windows", async () => {
+  const pool = new IoPool(PREPARATION_LINK_WORKERS), gate = deferred();
+  const operations = [new IoOperation<number>(pool, () => {}), new IoOperation<number>(pool, () => {})];
+  const producers = operations.map(async operation => { for (let i = 0; i < 24; i++) await operation.enqueue(async () => { await gate.promise; return i; }); });
+  try {
+    await turn(); await turn();
+    expect(pool.inspect()).toMatchObject({ active: 8, queued: 8 });
+    expect(pool.inspect().waiters).toBeLessThanOrEqual(2);
+    for (const operation of operations) expect(operation.inspect().uncommitted).toBeLessThanOrEqual(IO_WINDOW);
+  } finally { gate.resolve(); await Promise.all(producers); await Promise.all(operations.map(operation => operation.drain())); }
+  expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0, peakActive: 8, peakQueued: 8 });
+});
+
+it("keeps the default at four and rejects invalid private profiles", () => {
+  expect(new IoPool().workers).toBe(4);
+  expect(new IoPool(PREPARATION_LINK_WORKERS).workers).toBe(8);
+  for (const workers of [0, -1, 1.5, 9, Number.NaN, Number.POSITIVE_INFINITY]) expect(() => new IoPool(workers)).toThrow("Invalid private IO worker count");
 });

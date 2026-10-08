@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { isPromise } from "node:util/types";
 /** Private job coordinator. No worker may await another permit or descendant. */
 export const IO_WORKERS = 4;
+export const PREPARATION_LINK_WORKERS = 8;
 export const IO_QUEUE = 8;
 export const IO_WINDOW = 12;
 export type IoOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown };
@@ -14,7 +15,7 @@ export class IoPool {
   #peakActive = 0;
   #peakQueued = 0;
   constructor(readonly workers = IO_WORKERS) {
-    if (!Number.isInteger(workers) || workers < 1 || workers > IO_WORKERS) throw new Error("Invalid private IO worker count");
+    if (!Number.isInteger(workers) || workers < 1 || workers > PREPARATION_LINK_WORKERS) throw new Error("Invalid private IO worker count");
   }
   inspect() { return Object.freeze({ active: this.#active, queued: this.#queue.length, waiters: this.#waiters.size,
     peakActive: this.#peakActive, peakQueued: this.#peakQueued }); }

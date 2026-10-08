@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createTwin, type TwinSession } from "../src/index.js";
 import * as globalNpm from "../src/global-npm.js";
 import * as manifests from "../src/manifest.js";
+import * as copies from "../src/copy.js";
+import * as linkPolicy from "../src/symlink-policy.js";
 import { fixtureTest, fingerprint, nodeOptions, put } from "./support.js";
 
 describe("session", () => {
@@ -246,4 +248,50 @@ it("holds the existing session locks before observer reentry and reports early A
   expect(events.filter(event => event.kind === "summary" && event.stage === "apply").at(-1)?.snapshots?.slice(3).every(item => item.coverage === "complete" && item.identity !== null)).toBe(true);
   expect(await session.discard()).toEqual({ status: "removed" });
   expect((await Promise.all(reentry)).every(value => typeof value === "string" && value.startsWith("Cannot "))).toBe(true);
+}));
+
+
+it("selects eight jobs only for preparation links and keeps copy, inventories and Apply at four", async () => fixtureTest(async f => {
+  await put(f.source, "file", "base"); await put(f.source, "delete-me", "base");
+  const copy = vi.spyOn(copies, "copySource"), links = vi.spyOn(linkPolicy, "verifyBaselineLinks");
+  const scan = vi.spyOn(manifests, "captureManifest"), views = vi.spyOn(manifests, "captureManifestViews");
+  try {
+    const session = await f.create();
+    expect(copy.mock.calls[0]?.[1]?.pool?.workers).toBe(4);
+    expect(links.mock.calls[0]?.[3]?.pool?.workers).toBe(8);
+    expect(scan.mock.calls[0]?.[2]?.pool?.workers).toBe(4);
+    expect(views.mock.calls[0]?.[1]?.pool?.workers).toBe(4);
+    expect((await session.run(nodeOptions("edit"))).exitCode).toBe(0);
+    expect(await session.apply()).toMatchObject({ status: "applied" });
+    expect(await session.applyAffected()).toMatchObject({ status: "applied" });
+    for (const call of views.mock.calls) expect(call[1]?.pool?.workers).toBe(4);
+    for (const call of scan.mock.calls) expect(call[2]?.pool?.workers).toBe(4);
+    expect(links.mock.calls.length).toBeGreaterThan(1);
+    for (const call of links.mock.calls.slice(1)) expect(call[3]?.pool).toBeUndefined(); // Apply selects the unchanged default coordinator.
+  } finally { copy.mockRestore(); links.mockRestore(); scan.mockRestore(); views.mockRestore(); }
+}));
+
+it("delays guarded preparation cleanup until both eight-job link walks settle after failure", async () => fixtureTest(async f => {
+  for (let i = 0; i < 16; i++) await put(f.source, `f${i}`, "base");
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+  let failed!: () => void; const failureIssued = new Promise<void>(resolve => { failed = resolve; });
+  let linksStarted = false, cleanupStarted = false, settled = false;
+  const failure = new Error("late copy link worker failure"), real = fsPromises.lstat;
+  const spy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (...args) => {
+    const path = String(args[0]);
+    if (linksStarted && !cleanupStarted && path === join(f.source, "f0")) { entered(); await gate; }
+    if (linksStarted && !cleanupStarted && path.endsWith("/workspace/f0")) { await ready; failed(); throw failure; }
+    return real(...args);
+  }); syncBuiltinESMExports();
+  const pending = createTwin({ sourceDirectory: f.source, scratchParent: f.scratch, onDiagnostic: event => {
+    if (event.kind === "begin" && event.stage === "preparation.links") linksStarted = true;
+    if (event.kind === "begin" && event.stage === "preparation.cleanup") cleanupStarted = true;
+  } }).then(session => { f.sessions.push(session); return undefined; }, (error: unknown) => error).finally(() => { settled = true; });
+  try {
+    await failureIssued; await new Promise<void>(resolve => setTimeout(resolve, 20));
+    expect(settled).toBe(false); expect(cleanupStarted).toBe(false); expect(await readdir(f.scratch)).toHaveLength(1);
+    release(); expect(await pending).toMatchObject({ message: expect.stringContaining('cleanup={"status":"removed"}'), cause: failure });
+    expect(cleanupStarted).toBe(true); expect(await readdir(f.scratch)).toEqual([]);
+  } finally { release(); await pending; spy.mockRestore(); syncBuiltinESMExports(); }
 }));

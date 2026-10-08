@@ -235,3 +235,14 @@ hash and conflict checks. A separate method and explicit invocation flag make
 that narrower promise reviewable; planned no-ops and destructive descendants
 remain obligations. One mutation-attempt flag and object-owned cleanup preserve
 truthful partial failure reporting without pretending endpoint checks are atomic.
+
+## Preparation link scheduling — unreleased checkpoint
+
+Status: `pending commit`; unstaged, unpublished.
+
+I learned that preserving every observation can still improve latency when a
+separate phase admits more independent jobs. Bounded paired measurements support
+eight jobs for preparation link reconciliation, while slower copy measurements
+justify retaining four elsewhere. Explicit queue and result bounds, unchanged
+fresh ancestor checks and settlement before cleanup keep this scheduling change
+separate from a weaker validation contract or a repository performance promise.

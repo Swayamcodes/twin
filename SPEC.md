@@ -197,6 +197,13 @@ admission waiter. Workers never wait for descendants or another permit. These
 are job bounds, not bounds on every syscall or the independent Git, dependency
 and watch observers. No public concurrency setting or threadpool change is added.
 
+Final preparation link reconciliation uses a separate shared coordinator for
+both complete root walks, admitting eight active jobs with the same eight-job
+queue and twelve-result window per operation. Copy, inventories and Apply retain
+four active jobs. Every job keeps its fresh serial ancestor checks; no observation
+is shared or cached. Interleaving changes within the existing non-atomic phase,
+and cleanup still waits for both walks to settle.
+
 Ordinary files still receive independent buffered copies through no-follow source
 handles and exclusive destinations. Detected source identity, size, mode or time
 changes reject preparation. Directories stay private until file workers settle;

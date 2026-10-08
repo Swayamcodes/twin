@@ -2,7 +2,7 @@ import fsPromises, { lstat, mkdir, rename, rmdir, symlink } from "node:fs/promis
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { IoPool } from "../src/io-pool.js";
+import { IoPool, PREPARATION_LINK_WORKERS } from "../src/io-pool.js";
 import { verifyBaselineLinks, checkEntryPath, checkRelativeTarget, copyLinkTarget, directoryNames, discoverLinks, LINK_DISCOVERY_LIMITS } from "../src/symlink-policy.js";
 import { fixtureTest, put } from "./support.js";
 
@@ -53,7 +53,7 @@ describe("structural link policy", () => {
     try { await expect(directoryNames(f.source)).rejects.toThrow("non-UTF-8"); }
     finally { spy.mockRestore(); syncBuiltinESMExports(); }
   }));
-  it("counts ordinary entries towards the discovery limit", async () => fixtureTest(async f => {
+  it.each([4, PREPARATION_LINK_WORKERS])("counts ordinary entries towards the discovery limit at %s workers", async workers => fixtureTest(async f => {
     await put(f.source, "file", "bytes");
     const fileStat = await lstat(join(f.source, "file"), { bigint: true });
     const realRead = fsPromises.readdir, realStat = fsPromises.lstat;
@@ -66,10 +66,10 @@ describe("structural link policy", () => {
       return realStat(...args);
     });
     syncBuiltinESMExports();
-    try { await expect(discoverLinks(f.source)).rejects.toThrow("entry limit"); }
+    try { await expect(discoverLinks(f.source, { pool: new IoPool(workers) })).rejects.toThrow("entry limit"); }
     finally { readSpy.mockRestore(); statSpy.mockRestore(); syncBuiltinESMExports(); }
   }));
-  it("refuses a queued directory replaced with another ordinary directory", async () => fixtureTest(async f => {
+  it.each([4, PREPARATION_LINK_WORKERS])("refuses a queued directory replaced with another ordinary directory at %s workers", async workers => fixtureTest(async f => {
     await put(f.source, "folder/file", "bytes");
     const path = join(f.source, "folder"), saved = join(f.path, "saved-folder");
     const realStat = fsPromises.lstat;
@@ -81,7 +81,7 @@ describe("structural link policy", () => {
       return realStat(...args);
     });
     syncBuiltinESMExports();
-    try { await expect(discoverLinks(f.source)).rejects.toThrow("directory changed"); expect(replaced).toBe(true); }
+    try { await expect(discoverLinks(f.source, { pool: new IoPool(workers) })).rejects.toThrow("directory changed"); expect(replaced).toBe(true); }
     finally {
       spy.mockRestore(); syncBuiltinESMExports();
       if (replaced) { await rmdir(path); await rename(saved, path); }
@@ -89,12 +89,12 @@ describe("structural link policy", () => {
   }));
 });
 
-it("waits for the other tree's delayed checks after a link discovery failure", async () => fixtureTest(async f => {
+it.each([4, PREPARATION_LINK_WORKERS])("waits for the other tree's delayed checks after a link discovery failure at %s workers", async workers => fixtureTest(async f => {
   const copy = join(f.path, "copy");
   for (let i = 0; i < 16; i++) { await put(f.source, `f${i}`, "source"); await put(copy, `f${i}`, "copy"); }
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
   let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
-  const failure = new Error("copy discovery failure"), pool = new IoPool();
+  const failure = new Error("copy discovery failure"), pool = new IoPool(workers);
   const real = fsPromises.lstat; let finished = false;
   const spy = vi.spyOn(fsPromises, "lstat").mockImplementation(async (...args) => {
     if (String(args[0]) === join(f.source, "f0")) { entered(); await gate; }
@@ -105,7 +105,7 @@ it("waits for the other tree's delayed checks after a link discovery failure", a
   try {
     await ready; await new Promise<void>(resolve => setTimeout(resolve, 20)); expect(finished).toBe(false);
     release(); expect(await pending).toBe(failure);
-    expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 }); expect(pool.inspect().peakActive).toBeLessThanOrEqual(4);
+    expect(pool.inspect()).toMatchObject({ active: 0, queued: 0, waiters: 0 }); expect(pool.inspect().peakActive).toBeLessThanOrEqual(workers);
   } finally { release(); await pending; spy.mockRestore(); syncBuiltinESMExports(); }
 }));
 
@@ -122,7 +122,7 @@ it("keeps paired link discovery non-dereferencing and drains both roots with a f
   const root = await allocateRoot({ sourceDirectory: f.source, scratchParent: f.scratch });
   try {
     const baseline = await copySource(root);
-    await verifyBaselineLinks(f.source, root.workspace, baseline, { diagnostics });
+    await verifyBaselineLinks(f.source, root.workspace, baseline, { diagnostics, pool: new IoPool(PREPARATION_LINK_WORKERS) });
     expect(links.size).toBe(1);
     expect(events.filter(event => event.kind === "drained").map(event => event.role).sort()).toEqual(["copy", "source"]);
     expect(events.at(-1)).toMatchObject({ kind: "end", stage: "preparation.links", outcome: "complete" });

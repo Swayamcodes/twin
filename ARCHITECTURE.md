@@ -146,14 +146,22 @@ flow](docs/cli-usage.md).
 
 ## Unreleased bounded startup I/O
 
-`core/src/io-pool.ts` provides a private session-owned coordinator shared by copy,
-manifest and preparation link jobs. It permits four active jobs and eight queued
+`core/src/io-pool.ts` provides a private session-owned coordinator shared by copy
+and manifest jobs. It permits four active jobs and eight queued
 jobs. Each serial producer keeps at most twelve admitted but uncommitted outcomes,
 including completed results, and one admission waiter per operation. Ordered
 commit prevents a delayed oldest result from accumulating unbounded later
 results. Workers do not acquire another permit or await descendants. Standalone
 walks use a local coordinator; independent Git/watch/dependency observations are
 outside this filesystem-job cap. No ambient pool or threadpool setting is changed.
+
+Final preparation link reconciliation instead creates one private eight-worker
+coordinator shared by its two complete root walks. Its queue remains eight jobs;
+each operation retains at most twelve outcomes and one admission waiter. Across
+both walks there can be at most sixteen active/queued jobs and twenty-four retained
+outcomes. Default standalone walks and Apply retain four workers. Every per-job
+ancestor check remains fresh and serial; only cross-job interleaving changes.
+Both walks drain before reconciliation returns or guarded cleanup begins.
 
 Copy admission remains serial for entry kinds, Git policy and link remapping.
 Ordinary files use pinned `O_NOFOLLOW` inputs, exclusive destinations, complete
